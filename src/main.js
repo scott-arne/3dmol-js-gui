@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, getHoveredAtom } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -133,7 +133,10 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     for (const atom of atoms) {
       viewer.addLabel(String(atom[atomProp]), {
         position: { x: atom.x, y: atom.y, z: atom.z },
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: '#000000',
+        backgroundOpacity: 0.15,
+        borderColor: 'rgba(0, 0, 0, 0.4)',
+        borderThickness: 1,
         fontColor: '#FFFFFF',
         fontSize: 10,
       });
@@ -374,6 +377,26 @@ setupClickHandler(handleViewerClick);
   });
 }
 
+// --- Middle-click to recenter on atom under mouse ---
+{
+  const viewerContainer = document.getElementById('viewer-container');
+  viewerContainer.addEventListener('mousedown', (e) => {
+    if (e.button !== 1) return; // middle button only
+    e.preventDefault(); // prevent auto-scroll
+    const atom = getHoveredAtom();
+    if (atom) {
+      const v = getViewer();
+      v.center({ index: atom.index });
+      v.render();
+      terminal.print(`Recentered on ${atom.atom} (${atom.resn} ${atom.chain}:${atom.resi})`, 'info');
+    }
+  });
+  // Prevent middle-click paste behavior on the viewer container
+  viewerContainer.addEventListener('auxclick', (e) => {
+    if (e.button === 1) e.preventDefault();
+  });
+}
+
 // --- Right-click context menu on the viewer ---
 createContextMenu(document.getElementById('viewer-container'), {
   hasSelection() {
@@ -451,7 +474,10 @@ createContextMenu(document.getElementById('viewer-container'), {
     for (const atom of atoms) {
       v.addLabel(String(atom[atomProp]), {
         position: { x: atom.x, y: atom.y, z: atom.z },
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: '#000000',
+        backgroundOpacity: 0.15,
+        borderColor: 'rgba(0, 0, 0, 0.4)',
+        borderThickness: 1,
         fontColor: '#FFFFFF',
         fontSize: 10,
       });

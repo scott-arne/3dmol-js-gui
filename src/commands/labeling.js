@@ -60,7 +60,10 @@ export function registerLabelingCommands(registry) {
         const text = String(atom[atomProp]);
         viewer.addLabel(text, {
           position: { x: atom.x, y: atom.y, z: atom.z },
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          backgroundColor: '#000000',
+          backgroundOpacity: 0.15,
+          borderColor: 'rgba(0, 0, 0, 0.4)',
+          borderThickness: 1,
           fontColor: '#FFFFFF',
           fontSize: 10,
         });

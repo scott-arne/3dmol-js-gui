@@ -143,16 +143,34 @@ let highlightShapes = [];
 /** @type {function|null} Stored click callback for re-registration after model loads. */
 let clickCallback = null;
 
+/** @type {object|null} The atom currently under the mouse cursor. */
+let hoveredAtom = null;
+
 /**
- * Re-register the stored click callback on all atoms.
- * Called internally after addModel to ensure new atoms are clickable.
+ * Re-register the stored click callback and hover tracking on all atoms.
+ * Called internally after addModel to ensure new atoms are clickable/hoverable.
  */
 function registerClickable() {
   if (clickCallback && viewer) {
     viewer.setClickable({}, true, function (atom, viewerInstance, event) {
       clickCallback(atom, viewerInstance, event);
     });
+    viewer.setHoverable(
+      {},
+      true,
+      function (atom) { hoveredAtom = atom; },
+      function () { hoveredAtom = null; }
+    );
   }
+}
+
+/**
+ * Return the atom currently under the mouse cursor, or null.
+ *
+ * @returns {object|null} The hovered atom, or null if none.
+ */
+export function getHoveredAtom() {
+  return hoveredAtom;
 }
 
 /**
