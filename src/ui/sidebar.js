@@ -9,6 +9,9 @@
 /** @type {HTMLElement|null} */
 let activePopup = null;
 
+/** @type {HTMLElement|null} */
+let activePopupAnchor = null;
+
 /** @type {function|null} */
 let activePopupCleanup = null;
 
@@ -20,6 +23,7 @@ function closeActivePopup() {
     activePopup.remove();
     activePopup = null;
   }
+  activePopupAnchor = null;
   if (activePopupCleanup) {
     activePopupCleanup();
     activePopupCleanup = null;
@@ -38,6 +42,10 @@ function closeActivePopup() {
  * @param {function} onClick - Callback invoked with the selected item's value.
  */
 function createPopupMenu(anchor, items, onClick) {
+  if (activePopupAnchor === anchor) {
+    closeActivePopup();
+    return;
+  }
   closeActivePopup();
 
   const menu = document.createElement('div');
@@ -64,6 +72,7 @@ function createPopupMenu(anchor, items, onClick) {
   // Append to body so absolute positioning works relative to viewport
   document.body.appendChild(menu);
   activePopup = menu;
+  activePopupAnchor = anchor;
 
   // Position the popup relative to the anchor button
   const anchorRect = anchor.getBoundingClientRect();
@@ -113,6 +122,27 @@ function createPopupMenu(anchor, items, onClick) {
  * Each key corresponds to a button label. `items` lists the menu entries and
  * `callbackKey` identifies which callback on the callbacks object to invoke.
  */
+/**
+ * Action menu items for selection objects (no Duplicate or Orient).
+ */
+const SELECTION_ACTION_MENU = [
+  { label: 'Rename...', value: 'rename' },
+  { label: 'Delete', value: 'delete' },
+  { separator: true },
+  { label: 'Center', value: 'center' },
+  { label: 'Zoom', value: 'zoom' },
+];
+
+/**
+ * Mapping from S/H/L/C button labels to selection-specific callback keys.
+ */
+const SELECTION_CALLBACK_MAP = {
+  S: 'onSelectionShow',
+  H: 'onSelectionHide',
+  L: 'onSelectionLabel',
+  C: 'onSelectionColor',
+};
+
 const BUTTON_MENUS = {
   A: {
     callbackKey: 'onAction',
@@ -135,6 +165,10 @@ const BUTTON_MENUS = {
       { label: 'Spheres', value: 'sphere' },
       { label: 'Surface', value: 'surface' },
       { label: 'Cross', value: 'cross' },
+      { separator: true },
+      { label: 'Simple', value: 'view:simple' },
+      { label: 'Sites', value: 'view:sites' },
+      { label: 'Ball-and-Stick', value: 'view:ball-and-stick' },
     ],
   },
   H: {
@@ -213,15 +247,17 @@ export function createSidebar(container, callbacks) {
       row.classList.add('dimmed');
     }
 
+    // Clicking anywhere on the row (outside buttons) toggles visibility
+    row.addEventListener('click', () => {
+      callbacks.onToggleVisibility(name);
+    });
+
     // Status circle
     const status = document.createElement('div');
     status.className = 'sidebar-object-status';
     if (obj.visible) {
       status.classList.add('active');
     }
-    status.addEventListener('click', () => {
-      callbacks.onToggleVisibility(name);
-    });
     row.appendChild(status);
 
     // Object name
@@ -243,7 +279,86 @@ export function createSidebar(container, callbacks) {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         createPopupMenu(btn, menuDef.items, (value) => {
-          callbacks[menuDef.callbackKey](name, value);
+          if (value.startsWith('view:') && callbacks.onView) {
+            callbacks.onView(name, value.slice(5));
+          } else {
+            callbacks[menuDef.callbackKey](name, value);
+          }
+        });
+      });
+
+      btnGroup.appendChild(btn);
+    }
+
+    row.appendChild(btnGroup);
+    return row;
+  }
+
+  /**
+   * Build a single selection row for the sidebar.
+   *
+   * @param {string} name - The name of the selection.
+   * @param {object} sel - The selection entry from state.selections.
+   * @returns {HTMLElement} The constructed row element.
+   */
+  function buildSelectionRow(name, sel) {
+    const row = document.createElement('div');
+    row.className = 'sidebar-object sidebar-selection';
+    if (!sel.visible) {
+      row.classList.add('dimmed');
+    }
+
+    // Clicking anywhere on the row (outside buttons) toggles visibility
+    row.addEventListener('click', () => {
+      callbacks.onToggleSelectionVisibility(name);
+    });
+
+    // Status circle
+    const status = document.createElement('div');
+    status.className = 'sidebar-object-status';
+    if (sel.visible) {
+      status.classList.add('active');
+    }
+    row.appendChild(status);
+
+    // Name (parenthesized)
+    const nameEl = document.createElement('span');
+    nameEl.className = 'sidebar-object-name';
+    nameEl.textContent = `(${name})`;
+    row.appendChild(nameEl);
+
+    // Button group
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'sidebar-buttons';
+
+    // A button — uses selection-specific action menu
+    const aBtn = document.createElement('button');
+    aBtn.className = 'sidebar-btn';
+    aBtn.textContent = 'A';
+    aBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      createPopupMenu(aBtn, SELECTION_ACTION_MENU, (value) => {
+        callbacks.onSelectionAction(name, value);
+      });
+    });
+    btnGroup.appendChild(aBtn);
+
+    // S, H, L, C buttons — reuse BUTTON_MENUS items but route to selection callbacks
+    for (const label of ['S', 'H', 'L', 'C']) {
+      const btn = document.createElement('button');
+      btn.className = 'sidebar-btn';
+      btn.textContent = label;
+
+      const menuDef = BUTTON_MENUS[label];
+      const selCallback = SELECTION_CALLBACK_MAP[label];
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        createPopupMenu(btn, menuDef.items, (value) => {
+          if (value.startsWith('view:') && callbacks.onSelectionView) {
+            callbacks.onSelectionView(name, value.slice(5));
+          } else {
+            callbacks[selCallback](name, value);
+          }
         });
       });
 
@@ -264,6 +379,14 @@ export function createSidebar(container, callbacks) {
       container.innerHTML = '';
       for (const [name, obj] of state.objects) {
         container.appendChild(buildObjectRow(name, obj));
+      }
+      if (state.selections.size > 0) {
+        const sep = document.createElement('div');
+        sep.className = 'sidebar-separator';
+        container.appendChild(sep);
+        for (const [name, sel] of state.selections) {
+          container.appendChild(buildSelectionRow(name, sel));
+        }
       }
     },
 

@@ -29,47 +29,60 @@ export function resolveSelection(selStr) {
 
   const state = getState();
 
-  // Check for active selection keywords
-  const lower = trimmed.toLowerCase();
-  if (lower === 'selected' || lower === 'sele') {
-    if (!state.activeSelection) {
-      throw new Error('No active selection — click atoms in the viewer first');
-    }
-    return { spec: state.activeSelection };
+  // Check named selections first (named selections shadow object names)
+  const namedSel = state.selections.get(trimmed);
+  if (namedSel) {
+    return { spec: namedSel.spec };
   }
 
-  // Check named selections first (named selections shadow object names)
-  const namedExpr = state.selections.get(trimmed);
-  const expression = namedExpr || trimmed;
+  // Check if it's an object name
+  const obj = state.objects.get(trimmed);
+  if (obj) {
+    return { spec: { model: obj.model } };
+  }
 
-  // Check if it's an object name (only if not a named selection)
-  if (!namedExpr) {
-    const obj = state.objects.get(expression);
-    if (obj) {
-      return { spec: { model: obj.model } };
+  // Try prefix matching against selections and objects
+  const selMatches = [...state.selections.keys()].filter(k => k.startsWith(trimmed));
+  const objMatches = [...state.objects.keys()].filter(k => k.startsWith(trimmed));
+  const allNameMatches = [...selMatches, ...objMatches];
+  if (allNameMatches.length === 1) {
+    const match = allNameMatches[0];
+    if (selMatches.length === 1) {
+      return { spec: state.selections.get(match).spec };
     }
+    return { spec: { model: state.objects.get(match).model } };
+  }
+  if (allNameMatches.length > 1) {
+    throw new Error(`Ambiguous name "${trimmed}": ${allNameMatches.join(', ')}`);
   }
 
   // Parse as PyMOL selection expression
   let ast;
   try {
-    ast = parse(expression);
+    ast = parse(trimmed);
   } catch (err) {
-    throw new Error(`Invalid selection "${expression}": ${err.message}`);
+    throw new Error(`Invalid selection "${trimmed}": ${err.message}`);
   }
 
   // Try simple conversion to AtomSelectionSpec
   const spec = toAtomSelectionSpec(ast);
   if (spec) {
+    const matched = getAllAtoms(spec);
+    if (!matched || matched.length === 0) {
+      throw new Error(`No atoms match the selection "${trimmed}"`);
+    }
     return { spec };
   }
 
   // Fall back to atom-by-atom evaluation
   const allAtoms = getAllAtoms({});
   if (!allAtoms || allAtoms.length === 0) {
-    throw new Error(`Selection "${expression}" requires atom-level evaluation but no atoms are loaded`);
+    throw new Error(`Selection "${trimmed}" requires atom-level evaluation but no atoms are loaded`);
   }
   const selected = evaluate(ast, allAtoms);
+  if (selected.length === 0) {
+    throw new Error(`No atoms match the selection "${trimmed}"`);
+  }
   return { atoms: selected };
 }
 

@@ -9,6 +9,34 @@
 
 /* global $3Dmol */
 
+/**
+ * Default style options for each representation type.
+ * Representations not listed here use an empty options object.
+ *
+ * Note: 'line' is rendered as thin sticks because WebGL's gl.lineWidth() is
+ * capped at 1px on virtually all modern browsers, making the native line
+ * representation invisible. The 3Dmol.js docs mark linewidth as "deprecated
+ * due to vanishing browser support."
+ */
+const REP_DEFAULTS = {
+  line: { _useStick: true, radius: 0.05, singleBonds: true },
+};
+
+/**
+ * Build a style spec for a representation with its default options applied.
+ *
+ * @param {string} rep - The canonical representation name (e.g. 'line', 'cartoon').
+ * @returns {object} A style spec like `{ cartoon: {} }` or `{ stick: { radius: 0.05 } }`.
+ */
+export function repStyle(rep) {
+  const defaults = REP_DEFAULTS[rep];
+  if (defaults && defaults._useStick) {
+    const { _useStick, ...opts } = defaults;
+    return { stick: opts };
+  }
+  return { [rep]: defaults || {} };
+}
+
 /** @type {object|null} The 3Dmol GLViewer instance. */
 let viewer = null;
 

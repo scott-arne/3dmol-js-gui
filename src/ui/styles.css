@@ -257,6 +257,11 @@ body {
   align-items: center;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.sidebar-object:hover {
+  background: var(--menu-hover);
 }
 
 .sidebar-object-name {
@@ -285,6 +290,19 @@ body {
 
 .sidebar-object.dimmed .sidebar-object-name {
   color: var(--inactive);
+}
+
+/* Sidebar Separator (between objects and selections) */
+.sidebar-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* Sidebar Selection Rows */
+.sidebar-selection .sidebar-object-name {
+  font-style: italic;
+  color: var(--accent);
 }
 
 .sidebar-buttons {

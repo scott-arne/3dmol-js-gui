@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer } from '../viewer.js';
+import { getViewer, repStyle } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
 
 /**
@@ -59,7 +59,7 @@ export function registerDisplayCommands(registry) {
       const selSpec = getSelSpec(result);
       const viewer = getViewer();
 
-      viewer.addStyle(selSpec, { [repName]: {} });
+      viewer.addStyle(selSpec, repStyle(repName));
       viewer.render();
 
       // Update state: when no selection or "all", update all objects;
@@ -127,7 +127,7 @@ export function registerDisplayCommands(registry) {
             obj.representations.delete(repName);
             if (obj.visible) {
               for (const rep of obj.representations) {
-                viewer.addStyle(selSpec, { [rep]: {} });
+                viewer.addStyle(selSpec, repStyle(rep));
               }
             }
           }
@@ -138,7 +138,7 @@ export function registerDisplayCommands(registry) {
             }
             if (obj.visible) {
               for (const rep of obj.representations) {
-                viewer.addStyle(selSpec, { [rep]: {} });
+                viewer.addStyle(selSpec, repStyle(rep));
               }
             }
           }
@@ -149,7 +149,7 @@ export function registerDisplayCommands(registry) {
             if (obj.visible) {
               for (const rep of obj.representations) {
                 if (rep !== repName) {
-                  viewer.addStyle(selSpec, { [rep]: {} });
+                  viewer.addStyle(selSpec, repStyle(rep));
                 }
               }
             }

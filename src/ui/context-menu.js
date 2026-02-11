@@ -23,6 +23,10 @@ const MENU_DEFS = {
       { label: 'Spheres', value: 'sphere' },
       { label: 'Surface', value: 'surface' },
       { label: 'Cross', value: 'cross' },
+      { separator: true },
+      { label: 'Simple', value: 'view:simple' },
+      { label: 'Sites', value: 'view:sites' },
+      { label: 'Ball-and-Stick', value: 'view:ball-and-stick' },
     ],
   },
   Hide: {
@@ -188,8 +192,12 @@ function buildMenu(hasSelection, callbacks) {
         subItem.addEventListener('click', (e) => {
           e.stopPropagation();
           closeMenu();
-          if (hasSelection && callbacks[def.callbackKey]) {
-            callbacks[def.callbackKey](entry.value);
+          if (hasSelection) {
+            if (entry.value.startsWith('view:') && callbacks.onView) {
+              callbacks.onView(entry.value.slice(5));
+            } else if (callbacks[def.callbackKey]) {
+              callbacks[def.callbackKey](entry.value);
+            }
           }
         });
         submenu.appendChild(subItem);

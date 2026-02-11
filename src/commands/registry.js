@@ -24,9 +24,17 @@ export function createCommandRegistry() {
     },
     execute(input, ctx) {
       const { name, args } = parseCommandLine(input);
-      const cmd = commands.get(name);
+      let cmd = commands.get(name);
       if (!cmd) {
-        throw new Error(`Error: unknown command '${name}'`);
+        // Try prefix matching
+        const matches = [...commands.keys()].filter(k => k.startsWith(name));
+        if (matches.length === 1) {
+          cmd = commands.get(matches[0]);
+        } else if (matches.length > 1) {
+          throw new Error(`Ambiguous command "${name}": ${matches.join(', ')}`);
+        } else {
+          throw new Error(`Error: unknown command '${name}'`);
+        }
       }
       return cmd.handler(args, ctx);
     },
@@ -40,6 +48,10 @@ export function createCommandRegistry() {
     },
     has(name) {
       return commands.has(name.toLowerCase());
+    },
+    completions(prefix) {
+      const lower = prefix.toLowerCase();
+      return [...commands.keys()].filter(k => k.startsWith(lower)).sort();
     },
   };
 }

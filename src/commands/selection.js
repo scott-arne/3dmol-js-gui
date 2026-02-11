@@ -33,8 +33,9 @@ export function registerSelectionCommands(registry) {
       const allAtoms = getViewer().selectedAtoms({});
       const matched = evaluate(ast, allAtoms);
 
-      // Store the selection
-      addSelection(name, expression);
+      // Store the selection with its spec and atom count
+      const spec = { index: matched.map(a => a.index) };
+      addSelection(name, expression, spec, matched.length);
 
       ctx.terminal.print(`Selection "${name}" defined: ${matched.length} atoms`, 'result');
     },

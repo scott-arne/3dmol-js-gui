@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -17,6 +17,12 @@ import {
   setSelectionMode,
   addObject,
   removeObject,
+  addSelection,
+  removeSelection,
+  renameSelection,
+  renameObject,
+  toggleSelectionVisibility,
+  pruneSelections,
   notifyStateChange,
   setActiveSelection,
 } from './state.js';
@@ -24,6 +30,7 @@ import { createCommandRegistry, createCommandContext } from './commands/registry
 import { registerAllCommands } from './commands/index.js';
 import { showLoadDialog, showExportDialog } from './ui/dialogs.js';
 import { createContextMenu } from './ui/context-menu.js';
+import { applyPreset, PRESETS } from './presets.js';
 
 const app = document.getElementById('app');
 
@@ -66,15 +73,32 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         viewer.render();
         terminal.print(`Zoomed to "${name}"`, 'result');
         break;
-      case 'delete':
+      case 'delete': {
+        const modelAtoms = viewer.selectedAtoms({ model: obj.model });
+        const removedIndices = modelAtoms.map(a => a.index);
         viewer.removeModel(obj.model);
         viewer.render();
         removeObject(name);
+        pruneSelections(removedIndices);
+        // Clean up stale highlight and selected indices
+        for (const idx of removedIndices) {
+          selectedAtomIndices.delete(idx);
+        }
+        clearHighlight();
+        if (getState().activeSelection) {
+          applyHighlight(getState().activeSelection);
+        }
         terminal.print(`Deleted "${name}"`, 'result');
         break;
-      case 'rename':
-        terminal.print('Rename not yet implemented', 'info');
+      }
+      case 'rename': {
+        const newName = prompt(`Rename "${name}" to:`);
+        if (newName && newName.trim()) {
+          renameObject(name, newName.trim());
+          terminal.print(`Renamed "${name}" to "${newName.trim()}"`, 'result');
+        }
         break;
+      }
       case 'duplicate':
         terminal.print('Duplicate not yet implemented', 'info');
         break;
@@ -86,7 +110,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     const obj = state.objects.get(name);
     if (!obj) return;
     const viewer = getViewer();
-    viewer.addStyle({ model: obj.model }, { [rep]: {} });
+    viewer.addStyle({ model: obj.model }, repStyle(rep));
     obj.representations.add(rep);
     viewer.render();
     notifyStateChange();
@@ -106,7 +130,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       viewer.setStyle({ model: obj.model }, {});
       obj.representations.delete(rep);
       for (const r of obj.representations) {
-        viewer.addStyle({ model: obj.model }, { [r]: {} });
+        viewer.addStyle({ model: obj.model }, repStyle(r));
       }
     }
     viewer.render();
@@ -143,6 +167,18 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
     viewer.render();
     terminal.print(`Labeled "${name}" by ${prop}`, 'result');
+  },
+
+  onView(name, presetName) {
+    const state = getState();
+    const obj = state.objects.get(name);
+    if (!obj) return;
+    const viewer = getViewer();
+    const reps = applyPreset(presetName, viewer, { model: obj.model });
+    obj.representations = new Set(reps);
+    notifyStateChange();
+    const label = PRESETS[presetName.toLowerCase()].label;
+    terminal.print(`Applied "${label}" preset to "${name}"`, 'result');
   },
 
   onColor(name, scheme) {
@@ -183,6 +219,145 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
     viewer.render();
     terminal.print(`Colored "${name}" by ${scheme}`, 'result');
+  },
+
+  // --- Selection sidebar callbacks ---
+
+  onToggleSelectionVisibility(name) {
+    toggleSelectionVisibility(name);
+  },
+
+  onSelectionAction(name, action) {
+    const state = getState();
+    const sel = state.selections.get(name);
+    if (!sel) return;
+    switch (action) {
+      case 'delete':
+        removeSelection(name);
+        terminal.print(`Deleted selection "(${name})"`, 'result');
+        break;
+      case 'rename': {
+        const newName = prompt(`Rename "(${name})" to:`);
+        if (newName && newName.trim()) {
+          renameSelection(name, newName.trim());
+          terminal.print(`Renamed "(${name})" to "(${newName.trim()})"`, 'result');
+        }
+        break;
+      }
+      case 'center':
+        getViewer().center(sel.spec);
+        getViewer().render();
+        terminal.print(`Centered on "(${name})"`, 'result');
+        break;
+      case 'zoom':
+        getViewer().zoomTo(sel.spec);
+        getViewer().render();
+        terminal.print(`Zoomed to "(${name})"`, 'result');
+        break;
+    }
+  },
+
+  onSelectionShow(name, rep) {
+    const sel = getState().selections.get(name);
+    if (!sel) return;
+    getViewer().addStyle(sel.spec, repStyle(rep));
+    getViewer().render();
+    terminal.print(`Showing ${rep} on "(${name})"`, 'result');
+  },
+
+  onSelectionHide(name, rep) {
+    const sel = getState().selections.get(name);
+    if (!sel) return;
+    const v = getViewer();
+    if (rep === 'everything') {
+      v.setStyle(sel.spec, {});
+    } else {
+      v.setStyle(sel.spec, {});
+      const state = getState();
+      for (const [, obj] of state.objects) {
+        if (!obj.visible) continue;
+        const intersect = Object.assign({}, sel.spec, { model: obj.model });
+        for (const r of obj.representations) {
+          if (r !== rep) v.addStyle(intersect, repStyle(r));
+        }
+      }
+    }
+    v.render();
+    terminal.print(`Hiding ${rep} on "(${name})"`, 'result');
+  },
+
+  onSelectionLabel(name, prop) {
+    const sel = getState().selections.get(name);
+    if (!sel) return;
+    const v = getViewer();
+
+    if (prop === 'clear') {
+      v.removeAllLabels();
+      v.render();
+      terminal.print('Labels cleared', 'result');
+      return;
+    }
+
+    const propMap = { atom: 'atom', resn: 'resn', resi: 'resi', chain: 'chain', elem: 'elem', index: 'serial' };
+    const atomProp = propMap[prop] || prop;
+    const atoms = v.selectedAtoms(sel.spec);
+    for (const atom of atoms) {
+      v.addLabel(String(atom[atomProp]), {
+        position: { x: atom.x, y: atom.y, z: atom.z },
+        backgroundColor: '#000000',
+        backgroundOpacity: 0.15,
+        borderColor: 'rgba(0, 0, 0, 0.4)',
+        borderThickness: 1,
+        fontColor: '#FFFFFF',
+        fontSize: 10,
+      });
+    }
+    v.render();
+    terminal.print(`Labeled "(${name})" by ${prop}`, 'result');
+  },
+
+  onSelectionColor(name, scheme) {
+    const sel = getState().selections.get(name);
+    if (!sel) return;
+    const v = getViewer();
+    const state = getState();
+
+    const schemes = {
+      element: 'Jmol', chain: 'chain', ss: 'ssJmol',
+      bfactor: { prop: 'b', gradient: 'roygb' },
+    };
+    const colorMap = {
+      red: '#FF0000', green: '#00FF00', blue: '#0000FF',
+      yellow: '#FFFF00', cyan: '#00FFFF', magenta: '#FF00FF',
+      orange: '#FFA500', white: '#FFFFFF', grey: '#808080',
+    };
+
+    for (const [, obj] of state.objects) {
+      if (!obj.visible) continue;
+      const intersect = Object.assign({}, sel.spec, { model: obj.model });
+      const reps = obj.representations.size > 0 ? obj.representations : new Set(['cartoon']);
+      const styleObj = {};
+      for (const rep of reps) {
+        if (schemes[scheme]) {
+          styleObj[rep] = { colorscheme: schemes[scheme] };
+        } else {
+          const hex = colorMap[scheme] || scheme;
+          styleObj[rep] = { color: hex };
+        }
+      }
+      v.setStyle(intersect, styleObj);
+    }
+    v.render();
+    terminal.print(`Colored "(${name})" by ${scheme}`, 'result');
+  },
+
+  onSelectionView(name, presetName) {
+    const sel = getState().selections.get(name);
+    if (!sel) return;
+    const v = getViewer();
+    applyPreset(presetName, v, sel.spec);
+    const label = PRESETS[presetName.toLowerCase()].label;
+    terminal.print(`Applied "${label}" preset to "(${name})"`, 'result');
   },
 });
 
@@ -227,6 +402,18 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
         terminal.print('Screenshot exported', 'result');
       },
     });
+  },
+
+  onView(presetName) {
+    const v = getViewer();
+    const reps = applyPreset(presetName, v);
+    const state = getState();
+    for (const [, obj] of state.objects) {
+      obj.representations = new Set(reps);
+    }
+    notifyStateChange();
+    const label = PRESETS[presetName.toLowerCase()].label;
+    terminal.print(`Applied "${label}" preset`, 'result');
   },
 
   onSelectionMode(mode) {
@@ -281,6 +468,7 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     clearHighlight();
     applyHighlight(combinedSpec);
     setActiveSelection(combinedSpec);
+    addSelection('sele', description, combinedSpec, atoms.length);
     terminal.print(`Selected ${description} [${atoms.length} atoms]`, 'info');
   },
 
@@ -379,6 +567,7 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     clearHighlight();
     applyHighlight(combinedSpec);
     setActiveSelection(combinedSpec);
+    addSelection('sele', `expand ${description}`, combinedSpec, expandedIndices.size);
     terminal.print(`Expanded to ${description} [${expandedIndices.size} atoms]`, 'info');
   },
 
@@ -505,6 +694,7 @@ function handleViewerClick(atom, viewerInstance, event) {
   clearHighlight();
   applyHighlight(combinedSpec);
   setActiveSelection(combinedSpec);
+  addSelection('sele', 'click selection', combinedSpec, selectedAtomIndices.size);
 
   const verb = isShift ? 'Added' : 'Selected';
   const count = selectedAtomIndices.size;
@@ -540,6 +730,7 @@ setupClickHandler(handleViewerClick);
         selectedAtomIndices.clear();
         clearHighlight();
         setActiveSelection(null);
+        removeSelection('sele');
       }
       atomClickedThisCycle = false;
     }, 0);
@@ -570,11 +761,20 @@ createContextMenu(document.getElementById('viewer-container'), {
     }
   },
 
+  onView(presetName) {
+    const v = getViewer();
+    const selSpec = getState().activeSelection;
+    if (!selSpec) return;
+    applyPreset(presetName, v, selSpec);
+    const label = PRESETS[presetName.toLowerCase()].label;
+    terminal.print(`Applied "${label}" preset to selection`, 'result');
+  },
+
   onShow(rep) {
     const v = getViewer();
     const selSpec = getState().activeSelection;
     if (!selSpec) return;
-    v.addStyle(selSpec, { [rep]: {} });
+    v.addStyle(selSpec, repStyle(rep));
     v.render();
     terminal.print(`Showing ${rep} on selection`, 'result');
   },
@@ -596,7 +796,7 @@ createContextMenu(document.getElementById('viewer-container'), {
         v.setStyle(intersect, {});
         for (const r of obj.representations) {
           if (r !== rep) {
-            v.addStyle(intersect, { [r]: {} });
+            v.addStyle(intersect, repStyle(r));
           }
         }
       }
@@ -694,6 +894,20 @@ terminal.onCommand(async (input) => {
   } catch (e) {
     terminal.print(e.message, 'error');
   }
+});
+
+// --- Tab autocomplete ---
+terminal.setCompleter((prefix, isFirstWord) => {
+  if (isFirstWord) {
+    return registry.completions(prefix);
+  }
+  const state = getState();
+  const lower = prefix.toLowerCase();
+  const names = [
+    ...state.objects.keys(),
+    ...state.selections.keys(),
+  ];
+  return names.filter(n => n.toLowerCase().startsWith(lower)).sort();
 });
 
 // --- Register state change listener ---

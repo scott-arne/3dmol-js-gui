@@ -10,7 +10,7 @@ const state = {
   /** @type {Map<string, {model: object, modelIndex: number, visible: boolean, representations: Set<string>}>} */
   objects: new Map(),
 
-  /** @type {Map<string, string>} name -> selection expression */
+  /** @type {Map<string, {expression: string, spec: object, atomCount: number, visible: boolean}>} name -> selection data */
   selections: new Map(),
 
   /** @type {'atoms'|'residues'|'chains'|'molecules'} */
@@ -121,13 +121,15 @@ export function setSelectionMode(mode) {
 }
 
 /**
- * Add a named selection with the given expression.
+ * Add a named selection with the given expression, spec, and atom count.
  *
  * @param {string} name - The name for the selection.
  * @param {string} expression - The selection expression string.
+ * @param {object} spec - The 3Dmol.js atom selection spec.
+ * @param {number} atomCount - The number of atoms matched.
  */
-export function addSelection(name, expression) {
-  state.selections.set(name, expression);
+export function addSelection(name, expression, spec, atomCount) {
+  state.selections.set(name, { expression, spec, atomCount, visible: true });
   _notify();
 }
 
@@ -139,6 +141,97 @@ export function addSelection(name, expression) {
 export function removeSelection(name) {
   state.selections.delete(name);
   _notify();
+}
+
+/**
+ * Rename a named selection.
+ *
+ * @param {string} oldName - The current name.
+ * @param {string} newName - The new name.
+ * @returns {boolean} True if the rename succeeded.
+ */
+export function renameSelection(oldName, newName) {
+  const entry = state.selections.get(oldName);
+  if (!entry) return false;
+  state.selections.delete(oldName);
+  state.selections.set(newName, entry);
+  _notify();
+  return true;
+}
+
+/**
+ * Rename a molecular object.
+ *
+ * @param {string} oldName - The current name.
+ * @param {string} newName - The new name.
+ * @returns {boolean} True if the rename succeeded.
+ */
+export function renameObject(oldName, newName) {
+  const entry = state.objects.get(oldName);
+  if (!entry) return false;
+  state.objects.delete(oldName);
+  state.objects.set(newName, entry);
+  _notify();
+  return true;
+}
+
+/**
+ * Toggle the visibility flag on the named selection.
+ *
+ * @param {string} name - The name of the selection to toggle.
+ * @returns {object|undefined} The selection entry, or undefined if not found.
+ */
+export function toggleSelectionVisibility(name) {
+  const sel = state.selections.get(name);
+  if (sel) {
+    sel.visible = !sel.visible;
+    _notify();
+  }
+  return sel;
+}
+
+/**
+ * Remove the given atom indices from all stored selections and activeSelection.
+ * Deletes any selection whose atom count drops to zero.
+ *
+ * @param {Array<number>} removedIndices - Atom indices that were removed.
+ */
+export function pruneSelections(removedIndices) {
+  const removed = new Set(removedIndices);
+  let changed = false;
+  const toDelete = [];
+
+  for (const [name, sel] of state.selections) {
+    if (sel.spec && Array.isArray(sel.spec.index)) {
+      const filtered = sel.spec.index.filter(i => !removed.has(i));
+      if (filtered.length !== sel.spec.index.length) {
+        changed = true;
+        if (filtered.length === 0) {
+          toDelete.push(name);
+        } else {
+          sel.spec = { index: filtered };
+          sel.atomCount = filtered.length;
+        }
+      }
+    }
+  }
+
+  for (const name of toDelete) {
+    state.selections.delete(name);
+  }
+
+  if (state.activeSelection && Array.isArray(state.activeSelection.index)) {
+    const filtered = state.activeSelection.index.filter(i => !removed.has(i));
+    if (filtered.length === 0) {
+      state.activeSelection = null;
+      changed = true;
+    } else if (filtered.length !== state.activeSelection.index.length) {
+      state.activeSelection = { index: filtered };
+      changed = true;
+    }
+  }
+
+  if (changed) _notify();
 }
 
 /**

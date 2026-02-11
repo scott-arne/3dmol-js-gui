@@ -211,7 +211,7 @@ describe('PyMOL Selection Parser', () => {
   });
 
   describe('distance operators', () => {
-    it('parses "around 5.0 ligand"', () => {
+    it('parses "around 5.0 ligand" (prefix)', () => {
       const ast = parse('around 5.0 ligand');
       expect(ast).toEqual({
         type: 'around',
@@ -219,7 +219,7 @@ describe('PyMOL Selection Parser', () => {
         child: { type: 'ligand' },
       });
     });
-    it('parses "xaround 3.5 protein"', () => {
+    it('parses "xaround 3.5 protein" (prefix)', () => {
       const ast = parse('xaround 3.5 protein');
       expect(ast).toEqual({
         type: 'xaround',
@@ -227,12 +227,46 @@ describe('PyMOL Selection Parser', () => {
         child: { type: 'protein' },
       });
     });
-    it('parses "beyond 10.0 water"', () => {
+    it('parses "beyond 10.0 water" (prefix)', () => {
       const ast = parse('beyond 10.0 water');
       expect(ast).toEqual({
         type: 'beyond',
         radius: 10.0,
         child: { type: 'water' },
+      });
+    });
+    it('parses "resn TA1 around 5.0" (postfix)', () => {
+      const ast = parse('resn TA1 around 5.0');
+      expect(ast).toEqual({
+        type: 'around',
+        radius: 5.0,
+        child: { type: 'resn', values: ['TA1'] },
+      });
+    });
+    it('parses "ligand xaround 3.5" (postfix)', () => {
+      const ast = parse('ligand xaround 3.5');
+      expect(ast).toEqual({
+        type: 'xaround',
+        radius: 3.5,
+        child: { type: 'ligand' },
+      });
+    });
+    it('parses "protein beyond 10.0" (postfix)', () => {
+      const ast = parse('protein beyond 10.0');
+      expect(ast).toEqual({
+        type: 'beyond',
+        radius: 10.0,
+        child: { type: 'protein' },
+      });
+    });
+    it('parses postfix around with AND operator', () => {
+      const ast = parse('resn TA1 around 5.0 and chain A');
+      expect(ast).toEqual({
+        type: 'and',
+        children: [
+          { type: 'around', radius: 5.0, child: { type: 'resn', values: ['TA1'] } },
+          { type: 'chain', value: 'A' },
+        ],
       });
     });
   });

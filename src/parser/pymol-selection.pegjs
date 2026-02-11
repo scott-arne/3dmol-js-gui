@@ -36,7 +36,18 @@ AndExpr
 
 NotExpr
   = NOT __ child:NotExpr { return { type: 'not', child }; }
+  / PostfixExpr
+
+PostfixExpr
+  = base:Primary __ kw:DistanceKeyword __ r:Float {
+      return { type: kw, radius: r, child: base };
+    }
   / Primary
+
+DistanceKeyword
+  = "around"i !IdentChar { return 'around'; }
+  / "xaround"i !IdentChar { return 'xaround'; }
+  / "beyond"i !IdentChar { return 'beyond'; }
 
 // ---------------------------------------------------------------------------
 // Primary — ordered alternatives (most specific first)

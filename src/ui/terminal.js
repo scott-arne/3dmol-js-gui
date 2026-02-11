@@ -18,6 +18,7 @@ export function createTerminal(container) {
   const commandHistory = [];
   let historyIndex = -1;
   let commandCallback = null;
+  let completerCallback = null;
 
   // --- Build DOM ---
 
@@ -100,6 +101,59 @@ export function createTerminal(container) {
   // --- Keyboard handling ---
 
   textarea.addEventListener('keydown', (e) => {
+    // Tab — autocomplete
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (!completerCallback) return;
+      const text = textarea.value;
+      const cursor = textarea.selectionStart;
+
+      // Find the word being typed
+      const before = text.substring(0, cursor);
+      const after = text.substring(cursor);
+      const isFirstWord = !before.includes(' ');
+
+      let wordStart;
+      if (isFirstWord) {
+        wordStart = 0;
+      } else {
+        // Find start of current argument token (after last comma or space)
+        const lastSep = Math.max(before.lastIndexOf(','), before.lastIndexOf(' '));
+        wordStart = lastSep + 1;
+        // Skip leading whitespace after separator
+        while (wordStart < cursor && before[wordStart] === ' ') wordStart++;
+      }
+
+      const prefix = before.substring(wordStart);
+      if (!prefix) return;
+
+      const matches = completerCallback(prefix, isFirstWord);
+      if (!matches || matches.length === 0) return;
+
+      if (matches.length === 1) {
+        // Single match — complete fully and add trailing space
+        const completion = matches[0];
+        textarea.value = before.substring(0, wordStart) + completion + ' ' + after;
+        const newCursor = wordStart + completion.length + 1;
+        textarea.selectionStart = textarea.selectionEnd = newCursor;
+      } else {
+        // Multiple matches — complete to longest common prefix
+        let common = matches[0];
+        for (let i = 1; i < matches.length; i++) {
+          let j = 0;
+          while (j < common.length && j < matches[i].length && common[j] === matches[i][j]) j++;
+          common = common.substring(0, j);
+        }
+        if (common.length > prefix.length) {
+          textarea.value = before.substring(0, wordStart) + common + after;
+          const newCursor = wordStart + common.length;
+          textarea.selectionStart = textarea.selectionEnd = newCursor;
+        }
+      }
+      autoGrow();
+      return;
+    }
+
     // Enter (without Shift) submits
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -194,6 +248,15 @@ export function createTerminal(container) {
      */
     onCommand(callback) {
       commandCallback = callback;
+    },
+
+    /**
+     * Register a tab-completion callback.
+     *
+     * @param {function} callback - Called with (prefix, isFirstWord) and returns an array of matches.
+     */
+    setCompleter(callback) {
+      completerCallback = callback;
     },
 
     /**

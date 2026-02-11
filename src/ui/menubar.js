@@ -167,6 +167,28 @@ export function createMenuBar(container, callbacks) {
     return dropdown;
   }
 
+  // --- Build View dropdown ---
+  function buildViewDropdown() {
+    const dropdown = document.createElement('div');
+    dropdown.className = 'menubar-dropdown';
+
+    const viewItems = [
+      { label: 'Simple', value: 'simple' },
+      { label: 'Sites', value: 'sites' },
+      { label: 'Ball-and-Stick', value: 'ball-and-stick' },
+    ];
+    for (const entry of viewItems) {
+      dropdown.appendChild(createDropdownItem(entry.label, {
+        onClick: () => {
+          closeDropdown();
+          if (callbacks.onView) callbacks.onView(entry.value);
+        },
+      }));
+    }
+
+    return dropdown;
+  }
+
   // --- Build Window dropdown ---
   function buildWindowDropdown() {
     const dropdown = document.createElement('div');
@@ -215,6 +237,7 @@ export function createMenuBar(container, callbacks) {
   // --- Menu definitions mapping label -> builder ---
   const menuBuilders = {
     File: buildFileDropdown,
+    View: buildViewDropdown,
     Select: buildSelectDropdown,
     Window: buildWindowDropdown,
   };
