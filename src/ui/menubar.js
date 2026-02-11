@@ -1,7 +1,7 @@
 /**
  * Menu bar component for the 3Dmol.js GUI.
  *
- * Provides a horizontal menu bar with File, Selection, and Window dropdowns
+ * Provides a horizontal menu bar with File, Select, and Window dropdowns
  * similar to PyMOL's menu system. Manages dropdown open/close state,
  * selection-mode radio behavior, and independent window toggle checkmarks.
  */
@@ -92,34 +92,76 @@ export function createMenuBar(container, callbacks) {
     return dropdown;
   }
 
-  // --- Build Selection dropdown ---
-  function buildSelectionDropdown() {
+  // --- Helper: add a section header to a dropdown ---
+  function addSectionHeader(dropdown, text) {
+    const header = document.createElement('div');
+    header.className = 'menubar-dropdown-section-header';
+    header.textContent = text;
+    dropdown.appendChild(header);
+  }
+
+  // --- Helper: add a separator to a dropdown ---
+  function addSeparator(dropdown) {
+    const sep = document.createElement('div');
+    sep.className = 'menubar-dropdown-separator';
+    dropdown.appendChild(sep);
+  }
+
+  // --- Build Select dropdown ---
+  function buildSelectDropdown() {
     const dropdown = document.createElement('div');
     dropdown.className = 'menubar-dropdown';
 
-    for (const mode of SELECTION_MODES) {
-      const label = mode.charAt(0).toUpperCase() + mode.slice(1);
-      const isChecked = mode === activeSelectionMode;
-
-      const item = createDropdownItem(label, {
-        checked: isChecked,
+    // --- Selections section ---
+    addSectionHeader(dropdown, 'Selections');
+    const selectItems = [
+      { label: 'Protein', value: 'protein' },
+      { label: 'Ligand', value: 'ligand' },
+      { label: 'Backbone', value: 'backbone' },
+      { label: 'Side Chains', value: 'sidechains' },
+    ];
+    for (const entry of selectItems) {
+      dropdown.appendChild(createDropdownItem(entry.label, {
         onClick: () => {
-          activeSelectionMode = mode;
-          // Update checkmarks: uncheck all, check the selected one
-          const items = dropdown.querySelectorAll('.menubar-dropdown-item');
-          items.forEach((el, i) => {
-            if (SELECTION_MODES[i] === mode) {
-              el.classList.add('checked');
-            } else {
-              el.classList.remove('checked');
-            }
-          });
           closeDropdown();
-          if (callbacks.onSelectionMode) callbacks.onSelectionMode(mode);
+          if (callbacks.onSelect) callbacks.onSelect(entry.value);
         },
-      });
+      }));
+    }
 
-      dropdown.appendChild(item);
+    // --- Expand section ---
+    addSeparator(dropdown);
+    addSectionHeader(dropdown, 'Expand');
+    const expandItems = [
+      { label: 'Residues', value: 'residues' },
+      { label: 'Chains', value: 'chains' },
+      { label: 'Molecules', value: 'molecules' },
+      { label: 'Near Atoms (5\u00C5)', value: 'nearAtoms' },
+      { label: 'Near Residues (5\u00C5)', value: 'nearResidues' },
+    ];
+    for (const entry of expandItems) {
+      dropdown.appendChild(createDropdownItem(entry.label, {
+        onClick: () => {
+          closeDropdown();
+          if (callbacks.onExpand) callbacks.onExpand(entry.value);
+        },
+      }));
+    }
+
+    // --- Action section ---
+    addSeparator(dropdown);
+    addSectionHeader(dropdown, 'Action');
+    const actionItems = [
+      { label: 'Center', value: 'center' },
+      { label: 'Zoom', value: 'zoom' },
+    ];
+    for (const entry of actionItems) {
+      dropdown.appendChild(createDropdownItem(entry.label, {
+        onClick: () => {
+          closeDropdown();
+          if (callbacks.onSelectionAction) callbacks.onSelectionAction(entry.value);
+        },
+      }));
     }
 
     return dropdown;
@@ -173,7 +215,7 @@ export function createMenuBar(container, callbacks) {
   // --- Menu definitions mapping label -> builder ---
   const menuBuilders = {
     File: buildFileDropdown,
-    Selection: buildSelectionDropdown,
+    Select: buildSelectDropdown,
     Window: buildWindowDropdown,
   };
 
@@ -209,6 +251,54 @@ export function createMenuBar(container, callbacks) {
     menuItems.push(menuItem);
   }
 
+  // --- Right-aligned selection mode picker ---
+  const modePicker = document.createElement('div');
+  modePicker.className = 'menubar-mode-picker';
+
+  const modeLabel = document.createElement('span');
+  modeLabel.textContent = activeSelectionMode.charAt(0).toUpperCase() + activeSelectionMode.slice(1);
+  modePicker.appendChild(modeLabel);
+
+  const modeArrow = document.createElement('span');
+  modeArrow.className = 'menubar-mode-arrow';
+  modeArrow.textContent = '\u25BC';
+  modePicker.appendChild(modeArrow);
+
+  modePicker.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    if (openMenuItem === modePicker) {
+      closeDropdown();
+      return;
+    }
+
+    closeDropdown();
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'menubar-dropdown';
+    dropdown.style.right = '0';
+    dropdown.style.left = 'auto';
+
+    for (const mode of SELECTION_MODES) {
+      const label = mode.charAt(0).toUpperCase() + mode.slice(1);
+      dropdown.appendChild(createDropdownItem(label, {
+        checked: mode === activeSelectionMode,
+        onClick: () => {
+          activeSelectionMode = mode;
+          modeLabel.textContent = label;
+          closeDropdown();
+          if (callbacks.onSelectionMode) callbacks.onSelectionMode(mode);
+        },
+      }));
+    }
+
+    modePicker.appendChild(dropdown);
+    openDropdown = dropdown;
+    openMenuItem = modePicker;
+  });
+
+  container.appendChild(modePicker);
+
   // --- Hamburger button for compact mode ---
   const hamburger = document.createElement('div');
   hamburger.className = 'menubar-hamburger';
@@ -226,16 +316,24 @@ export function createMenuBar(container, callbacks) {
     const dropdown = document.createElement('div');
     dropdown.className = 'menubar-dropdown menubar-hamburger-dropdown';
 
-    // Build a flat list with section headers for each menu
     for (const label of Object.keys(menuBuilders)) {
-      const section = document.createElement('div');
-      section.className = 'menubar-hamburger-section';
-      section.textContent = label;
-      dropdown.appendChild(section);
+      const item = document.createElement('div');
+      item.className = 'menubar-hamburger-menu-item';
 
-      const subDropdown = menuBuilders[label]();
-      subDropdown.className = 'menubar-hamburger-section-items';
-      dropdown.appendChild(subDropdown);
+      const labelEl = document.createElement('span');
+      labelEl.textContent = label;
+      item.appendChild(labelEl);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'menubar-hamburger-arrow';
+      arrow.textContent = '\u25B6';
+      item.appendChild(arrow);
+
+      const submenu = menuBuilders[label]();
+      submenu.className = 'menubar-hamburger-submenu';
+      item.appendChild(submenu);
+
+      dropdown.appendChild(item);
     }
 
     hamburger.appendChild(dropdown);
@@ -276,6 +374,7 @@ export function createMenuBar(container, callbacks) {
     setSelectionMode(mode) {
       if (SELECTION_MODES.includes(mode)) {
         activeSelectionMode = mode;
+        modeLabel.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
       }
     },
 

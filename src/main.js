@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, getHoveredAtom } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -234,6 +234,175 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     terminal.print(`Selection mode: ${mode}`, 'info');
   },
 
+  onSelect(type) {
+    const v = getViewer();
+    const AMINO = [
+      'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
+      'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL',
+      'HSD','HSE','HSP','HIE','HID','HIP','CYX','MSE',
+    ];
+
+    let selSpec;
+    let description;
+
+    switch (type) {
+      case 'protein':
+        selSpec = { resn: AMINO };
+        description = 'protein';
+        break;
+      case 'ligand':
+        selSpec = { hetflag: true, not: { resn: ['HOH', 'WAT', 'H2O'] } };
+        description = 'ligand';
+        break;
+      case 'backbone':
+        selSpec = { resn: AMINO, atom: ['N', 'CA', 'C', 'O'] };
+        description = 'backbone';
+        break;
+      case 'sidechains':
+        selSpec = { resn: AMINO, not: { atom: ['N', 'CA', 'C', 'O'] } };
+        description = 'side chains';
+        break;
+      default:
+        return;
+    }
+
+    const atoms = v.selectedAtoms(selSpec);
+    if (atoms.length === 0) {
+      terminal.print(`No atoms matched for ${description}`, 'info');
+      return;
+    }
+
+    selectedAtomIndices.clear();
+    for (const a of atoms) {
+      selectedAtomIndices.add(a.index);
+    }
+    const combinedSpec = { index: [...selectedAtomIndices] };
+
+    clearHighlight();
+    applyHighlight(combinedSpec);
+    setActiveSelection(combinedSpec);
+    terminal.print(`Selected ${description} [${atoms.length} atoms]`, 'info');
+  },
+
+  onExpand(type) {
+    const state = getState();
+    if (!state.activeSelection) {
+      terminal.print('No active selection to expand', 'info');
+      return;
+    }
+
+    const v = getViewer();
+    const currentAtoms = v.selectedAtoms(state.activeSelection);
+    if (currentAtoms.length === 0) {
+      terminal.print('Current selection contains no atoms', 'info');
+      return;
+    }
+
+    const expandedIndices = new Set(currentAtoms.map(a => a.index));
+    let description;
+
+    switch (type) {
+      case 'residues': {
+        const keys = new Set(currentAtoms.map(a => `${a.chain}:${a.resi}`));
+        for (const a of v.selectedAtoms({})) {
+          if (keys.has(`${a.chain}:${a.resi}`)) expandedIndices.add(a.index);
+        }
+        description = 'residues';
+        break;
+      }
+      case 'chains': {
+        const chains = new Set(currentAtoms.map(a => a.chain));
+        for (const a of v.selectedAtoms({})) {
+          if (chains.has(a.chain)) expandedIndices.add(a.index);
+        }
+        description = 'chains';
+        break;
+      }
+      case 'molecules': {
+        const models = new Set(currentAtoms.map(a => a.model));
+        for (const a of v.selectedAtoms({})) {
+          if (models.has(a.model)) expandedIndices.add(a.index);
+        }
+        description = 'molecules';
+        break;
+      }
+      case 'nearAtoms': {
+        const DIST_SQ = 25; // 5Å squared
+        const allAtoms = v.selectedAtoms({});
+        for (const a of allAtoms) {
+          if (expandedIndices.has(a.index)) continue;
+          for (const sel of currentAtoms) {
+            const dx = a.x - sel.x;
+            const dy = a.y - sel.y;
+            const dz = a.z - sel.z;
+            if (dx * dx + dy * dy + dz * dz <= DIST_SQ) {
+              expandedIndices.add(a.index);
+              break;
+            }
+          }
+        }
+        description = 'near atoms (5\u00C5)';
+        break;
+      }
+      case 'nearResidues': {
+        const DIST_SQ = 25;
+        const allAtoms = v.selectedAtoms({});
+        const nearIndices = new Set([...expandedIndices]);
+        for (const a of allAtoms) {
+          if (nearIndices.has(a.index)) continue;
+          for (const sel of currentAtoms) {
+            const dx = a.x - sel.x;
+            const dy = a.y - sel.y;
+            const dz = a.z - sel.z;
+            if (dx * dx + dy * dy + dz * dz <= DIST_SQ) {
+              nearIndices.add(a.index);
+              break;
+            }
+          }
+        }
+        // Expand near atoms to full residues
+        const nearAtomsList = allAtoms.filter(a => nearIndices.has(a.index));
+        const keys = new Set(nearAtomsList.map(a => `${a.chain}:${a.resi}`));
+        for (const a of allAtoms) {
+          if (keys.has(`${a.chain}:${a.resi}`)) expandedIndices.add(a.index);
+        }
+        description = 'near residues (5\u00C5)';
+        break;
+      }
+      default:
+        return;
+    }
+
+    selectedAtomIndices = expandedIndices;
+    const combinedSpec = { index: [...selectedAtomIndices] };
+
+    clearHighlight();
+    applyHighlight(combinedSpec);
+    setActiveSelection(combinedSpec);
+    terminal.print(`Expanded to ${description} [${expandedIndices.size} atoms]`, 'info');
+  },
+
+  onSelectionAction(action) {
+    const state = getState();
+    if (!state.activeSelection) {
+      terminal.print('No active selection', 'info');
+      return;
+    }
+    const v = getViewer();
+    switch (action) {
+      case 'center':
+        v.center(state.activeSelection);
+        v.render();
+        terminal.print('Centered on selection', 'result');
+        break;
+      case 'zoom':
+        v.zoomTo(state.activeSelection);
+        v.render();
+        terminal.print('Zoomed to selection', 'result');
+        break;
+    }
+  },
+
   onToggleSidebar() {
     app.classList.toggle('sidebar-hidden');
     getViewer().resize();
@@ -374,26 +543,6 @@ setupClickHandler(handleViewerClick);
       }
       atomClickedThisCycle = false;
     }, 0);
-  });
-}
-
-// --- Middle-click to recenter on atom under mouse ---
-{
-  const viewerContainer = document.getElementById('viewer-container');
-  viewerContainer.addEventListener('mousedown', (e) => {
-    if (e.button !== 1) return; // middle button only
-    e.preventDefault(); // prevent auto-scroll
-    const atom = getHoveredAtom();
-    if (atom) {
-      const v = getViewer();
-      v.center({ index: atom.index });
-      v.render();
-      terminal.print(`Recentered on ${atom.atom} (${atom.resn} ${atom.chain}:${atom.resi})`, 'info');
-    }
-  });
-  // Prevent middle-click paste behavior on the viewer container
-  viewerContainer.addEventListener('auxclick', (e) => {
-    if (e.button === 1) e.preventDefault();
   });
 }
 

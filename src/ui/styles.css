@@ -134,6 +134,16 @@ body {
   margin: 4px 0;
 }
 
+.menubar-dropdown-section-header {
+  padding: 4px 16px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--inactive);
+  font-weight: 600;
+  cursor: default;
+}
+
 /* --- Hamburger Button (Compact Menu) --- */
 .menubar-hamburger {
   padding: 0 12px;
@@ -157,27 +167,66 @@ body {
   min-width: 200px;
 }
 
-.menubar-hamburger-section {
+.menubar-hamburger-menu-item {
   padding: 6px 16px;
-  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.menubar-hamburger-menu-item:hover {
+  background: var(--menu-hover);
+}
+
+.menubar-hamburger-arrow {
+  font-size: 9px;
+  margin-left: 12px;
+  color: var(--inactive);
+}
+
+.menubar-hamburger-submenu {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  min-width: 180px;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1001;
+  padding: 4px 0;
+  border-radius: 3px;
+}
+
+.menubar-hamburger-menu-item:hover > .menubar-hamburger-submenu {
+  display: block;
+}
+
+/* --- Selection Mode Picker --- */
+.menubar-mode-picker {
+  margin-left: auto;
+  padding: 0 12px;
+  cursor: pointer;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  font-size: 12px;
   color: var(--accent);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  user-select: none;
 }
 
-.menubar-hamburger-section-items {
-  position: static;
-  border: none;
-  box-shadow: none;
-  min-width: unset;
-  background: transparent;
-  border-radius: 0;
-  padding: 0 0 4px 0;
+.menubar-mode-picker:hover {
+  background: var(--menu-hover);
 }
 
-.menubar-hamburger-section-items .menubar-dropdown-item {
-  padding-left: 28px;
+.menubar-mode-arrow {
+  font-size: 8px;
+  color: var(--inactive);
 }
 
 /* --- Viewer Container --- */
