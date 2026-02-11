@@ -1,0 +1,681 @@
+/* ============================================================
+   3Dmol.js GUI - Dark Theme Stylesheet
+   CSS Grid layout with dark charcoal palette
+   ============================================================ */
+
+/* --- CSS Variables --- */
+:root {
+  --bg: #2b2b2b;
+  --panel-bg: #333333;
+  --border: #555555;
+  --text: #e0e0e0;
+  --accent: #4CAF50;
+  --inactive: #888888;
+  --menu-hover: #444444;
+  --terminal-bg: #1e1e1e;
+  --terminal-text: #a0d0a0;
+  --dropdown-bg: #3a3a3a;
+  --error: #ff6b6b;
+}
+
+/* --- Reset / Base --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* --- Layout (CSS Grid) --- */
+#app {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  grid-template-areas:
+    "menubar  menubar"
+    "viewer   sidebar"
+    "terminal terminal";
+  grid-template-rows: 28px 1fr auto;
+  grid-template-columns: 1fr 240px;
+}
+
+#app.sidebar-hidden {
+  grid-template-areas:
+    "menubar  menubar"
+    "viewer   viewer"
+    "terminal terminal";
+  grid-template-columns: 1fr 0px;
+}
+
+#app.terminal-hidden {
+  grid-template-areas:
+    "menubar  menubar"
+    "viewer   sidebar";
+  grid-template-rows: 28px 1fr;
+}
+
+#app.sidebar-hidden.terminal-hidden {
+  grid-template-areas:
+    "menubar  menubar"
+    "viewer   viewer";
+  grid-template-rows: 28px 1fr;
+  grid-template-columns: 1fr 0px;
+}
+
+/* --- Menu Bar --- */
+.menubar {
+  grid-area: menubar;
+  height: 28px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.menubar-item {
+  padding: 0 12px;
+  cursor: pointer;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.menubar-item:hover {
+  background: var(--menu-hover);
+}
+
+.menubar-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  padding: 4px 0;
+  border-radius: 3px;
+}
+
+.menubar-dropdown-item {
+  padding: 6px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menubar-dropdown-item:hover {
+  background: var(--menu-hover);
+}
+
+.menubar-dropdown-item.checked::before {
+  content: "\2713";
+  margin-right: 8px;
+}
+
+.menubar-dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* --- Hamburger Button (Compact Menu) --- */
+.menubar-hamburger {
+  padding: 0 12px;
+  cursor: pointer;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  user-select: none;
+  position: relative;
+}
+
+.menubar-hamburger:hover {
+  background: var(--menu-hover);
+}
+
+.menubar-hamburger-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+}
+
+.menubar-hamburger-section {
+  padding: 6px 16px;
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.menubar-hamburger-section-items {
+  position: static;
+  border: none;
+  box-shadow: none;
+  min-width: unset;
+  background: transparent;
+  border-radius: 0;
+  padding: 0 0 4px 0;
+}
+
+.menubar-hamburger-section-items .menubar-dropdown-item {
+  padding-left: 28px;
+}
+
+/* --- Viewer Container --- */
+.viewer-container {
+  grid-area: viewer;
+  position: relative;
+  overflow: hidden;
+  min-height: 200px;
+}
+
+/* --- Sidebar --- */
+.sidebar {
+  grid-area: sidebar;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 4px;
+}
+
+#app.sidebar-hidden .sidebar {
+  display: none;
+}
+
+/* Sidebar Object Rows */
+.sidebar-object {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-object-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-object-status {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  cursor: pointer;
+  background: var(--inactive);
+}
+
+.sidebar-object-status.active {
+  background: var(--accent);
+}
+
+.sidebar-object.dimmed {
+  opacity: 1;
+}
+
+.sidebar-object.dimmed .sidebar-object-name {
+  color: var(--inactive);
+}
+
+.sidebar-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+}
+
+.sidebar-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+  text-align: center;
+  line-height: 22px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sidebar-btn:hover {
+  background: var(--menu-hover);
+}
+
+/* --- Terminal --- */
+.terminal {
+  grid-area: terminal;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+}
+
+#app.terminal-hidden .terminal {
+  display: none;
+}
+
+/* Terminal Output */
+.terminal-output {
+  height: 120px;
+  overflow-y: auto;
+  padding: 8px;
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--terminal-text);
+  background: var(--terminal-bg);
+}
+
+.terminal-output.collapsed {
+  display: none;
+}
+
+/* Terminal Lines */
+.terminal-line {
+  padding: 1px 0;
+}
+
+.terminal-line.error {
+  color: var(--error);
+}
+
+.terminal-line.command {
+  color: var(--text);
+  opacity: 0.7;
+}
+
+.terminal-line.info {
+  color: var(--terminal-text);
+}
+
+.terminal-line.result {
+  color: #ffffff;
+}
+
+/* Terminal Input Row */
+.terminal-input-row {
+  display: flex;
+  flex-direction: row;
+  border-top: 1px solid var(--border);
+  padding: 4px 8px;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.terminal-prompt {
+  color: var(--accent);
+  line-height: 24px;
+}
+
+.terminal-input {
+  flex: 1;
+  resize: none;
+  background: var(--terminal-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  min-height: 24px;
+  max-height: 96px;
+  overflow-y: auto;
+  outline: none;
+  border-radius: 3px;
+}
+
+.terminal-send {
+  padding: 4px 10px;
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.terminal-send:hover {
+  opacity: 0.85;
+}
+
+.terminal-collapse {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Modal Dialogs --- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.modal-tabs {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.modal-tab {
+  padding: 8px 16px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.modal-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.modal-body {
+  padding: 8px 0;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 8px;
+  background: var(--terminal-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 3px;
+  margin-bottom: 12px;
+}
+
+.modal-panel {
+  padding: 4px 0;
+}
+
+.modal-btn {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* --- Popup Menus --- */
+.popup-menu {
+  position: absolute;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1500;
+  min-width: 160px;
+  border-radius: 3px;
+  padding: 4px 0;
+}
+
+.popup-menu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.popup-menu-item:hover {
+  background: var(--menu-hover);
+}
+
+.popup-menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* --- Scrollbar Styling --- */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--inactive);
+  border-radius: 3px;
+}
+
+/* --- Utility Classes --- */
+.hidden {
+  display: none !important;
+}
+
+.dimmed {
+  opacity: 0.5;
+}
+
+.error-text {
+  color: var(--error);
+}
+
+.info-text {
+  color: var(--terminal-text);
+}
+
+/* --- Context Menu (Right-Click) --- */
+.context-menu {
+  position: absolute;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1500;
+  min-width: 140px;
+  border-radius: 3px;
+  padding: 4px 0;
+}
+
+.context-menu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.context-menu-item:hover {
+  background: var(--menu-hover);
+}
+
+.context-menu-item.disabled {
+  color: var(--inactive);
+  cursor: default;
+}
+
+.context-menu-item.disabled:hover {
+  background: transparent;
+}
+
+.context-menu-arrow {
+  font-size: 9px;
+  margin-left: 12px;
+  color: var(--inactive);
+}
+
+.context-menu-submenu {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  min-width: 140px;
+  border-radius: 3px;
+  padding: 4px 0;
+  z-index: 1501;
+}
+
+.context-menu-item:not(.disabled):hover > .context-menu-submenu {
+  display: block;
+}
+
+.context-menu-submenu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-submenu-item:hover {
+  background: var(--menu-hover);
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* --- Quick-Start Overlay --- */
+.quickstart-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quickstart-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 32px 36px;
+  min-width: 420px;
+  max-width: 520px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.quickstart-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.quickstart-subtitle {
+  font-size: 13px;
+  color: var(--inactive);
+  margin-bottom: 24px;
+}
+
+.quickstart-commands {
+  text-align: left;
+  margin: 0 auto 24px auto;
+  max-width: 380px;
+}
+
+.quickstart-cmd-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.quickstart-cmd {
+  font-family: 'Menlo', 'Consolas', monospace;
+  color: var(--accent);
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+.quickstart-cmd-desc {
+  color: var(--inactive);
+}
+
+.quickstart-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.quickstart-try-btn {
+  padding: 10px 32px;
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.quickstart-try-btn:hover {
+  opacity: 0.85;
+}
+
+.quickstart-dismiss {
+  background: none;
+  border: none;
+  color: var(--inactive);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.quickstart-dismiss:hover {
+  color: var(--text);
+}
