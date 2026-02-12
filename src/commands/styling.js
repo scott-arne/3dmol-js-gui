@@ -9,6 +9,7 @@ import { getState, notifyStateChange } from '../state.js';
  * @type {Object<string, string>}
  */
 const COLOR_MAP = {
+  // Basic colors
   red: '#FF0000',
   green: '#00FF00',
   blue: '#0000FF',
@@ -23,6 +24,38 @@ const COLOR_MAP = {
   lime: '#00FF00',
   pink: '#FFC0CB',
   purple: '#800080',
+
+  // Extended palette (matteoferla)
+  turquoise: '#30D5C8',
+  coral: '#FF7F50',
+  teal: '#008080',
+  sage: '#B2AC88',
+  lavender: '#E6E6FA',
+  mustard: '#FFDB58',
+  aquamarine: '#7FFFD4',
+  feijoa: '#A5D785',
+  rose: '#FF007F',
+  paleturquoise: '#AFEEEE',
+  lightcoral: '#F08080',
+  lightgreen: '#90EE90',
+  lightyellow: '#FFFFE0',
+  lightorange: '#FFA07A',
+  lightpink: '#FFB6C1',
+  robinsegg: '#00CCCC',
+  cerulean: '#007BA7',
+  periwinkle: '#CCCCFF',
+
+  // Pastel palette
+  canary: '#FBF8CC',
+  orangecream: '#FDE4CF',
+  peach: '#FFCFD2',
+  lightpurple: '#F1C0E8',
+  purpleblue: '#A3C4F3',
+  lightblue: '#8EECF5',
+  marine: '#98F5E1',
+  pastelgreen: '#B9FBC0',
+  pastelblue: '#90DBF4',
+  pastelpurple: '#CFBAF0',
 };
 
 /**
