@@ -21,23 +21,37 @@ const REP_MAP = {
   crosses: 'cross',
   ribbon: 'ribbon',
   ribbons: 'ribbon',
+  everything: 'everything',
 };
 
 /**
  * Normalize a representation name to its canonical 3Dmol.js style name.
  *
+ * Supports prefix matching: if the input is not an exact key, it matches
+ * against all keys that start with the input. Ambiguous prefixes throw.
+ *
  * @param {string} name - The representation name to normalize.
  * @returns {string} The canonical representation name.
- * @throws {Error} If the name is not a recognized representation.
+ * @throws {Error} If the name is not a recognized representation or is ambiguous.
  */
 function normalizeRep(name) {
-  const rep = REP_MAP[name.toLowerCase()];
-  if (!rep) {
-    throw new Error(
-      `Unknown representation "${name}". Valid: ${Object.keys(REP_MAP).join(', ')}`
-    );
+  const lower = name.toLowerCase();
+  const rep = REP_MAP[lower];
+  if (rep) return rep;
+
+  // Try prefix matching
+  const matches = Object.keys(REP_MAP).filter(k => k.startsWith(lower));
+  if (matches.length === 1) {
+    return REP_MAP[matches[0]];
   }
-  return rep;
+  if (matches.length > 1) {
+    // Deduplicate canonical names for the error message
+    const unique = [...new Set(matches.map(k => REP_MAP[k]))];
+    throw new Error(`Ambiguous representation "${name}": ${unique.join(', ')}`);
+  }
+  throw new Error(
+    `Unknown representation "${name}". Valid: ${[...new Set(Object.values(REP_MAP))].join(', ')}`
+  );
 }
 
 /**
@@ -96,13 +110,14 @@ export function registerDisplayCommands(registry) {
         throw new Error('Usage: hide <representation> [, selection]');
       }
       const raw = parts[0].trim();
+      const repName = normalizeRep(raw);
       const selStr = parts.slice(1).join(', ') || null;
       const result = resolveSelection(selStr);
       const selSpec = getSelSpec(result);
       const viewer = getViewer();
       const state = getState();
 
-      if (raw.toLowerCase() === 'everything') {
+      if (repName === 'everything') {
         viewer.setStyle(selSpec, {});
         // Only clear representations for model-level or global scope.
         // Atom-level selections should not affect the object-wide representation set.
@@ -118,7 +133,6 @@ export function registerDisplayCommands(registry) {
           }
         }
       } else {
-        const repName = normalizeRep(raw);
         // Clear styles on selected atoms, then re-add remaining reps on same scope
         viewer.setStyle(selSpec, {});
 
