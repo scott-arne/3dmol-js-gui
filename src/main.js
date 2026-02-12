@@ -110,8 +110,26 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     const obj = state.objects.get(name);
     if (!obj) return;
     const viewer = getViewer();
-    viewer.addStyle({ model: obj.model }, repStyle(rep));
+    const sel = { model: obj.model };
+
+    // Line/stick interaction: both map to 3Dmol stick geometry
+    const skipVisual = rep === 'line' && obj.representations.has('stick');
+    const rebuildVisual = rep === 'stick' && obj.representations.has('line');
+
     obj.representations.add(rep);
+
+    if (skipVisual) {
+      // Sticks already cover lines — no visual change needed
+    } else if (rebuildVisual) {
+      viewer.setStyle(sel, {});
+      for (const r of obj.representations) {
+        if (r === 'line' && obj.representations.has('stick')) continue;
+        viewer.addStyle(sel, repStyle(r));
+      }
+    } else {
+      viewer.addStyle(sel, repStyle(rep));
+    }
+
     viewer.render();
     notifyStateChange();
     terminal.print(`Showing ${rep} on "${name}"`, 'result');
@@ -122,15 +140,18 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     const obj = state.objects.get(name);
     if (!obj) return;
     const viewer = getViewer();
+    const sel = { model: obj.model };
 
     if (rep === 'everything') {
-      viewer.setStyle({ model: obj.model }, {});
+      viewer.setStyle(sel, {});
       obj.representations.clear();
     } else {
-      viewer.setStyle({ model: obj.model }, {});
+      viewer.setStyle(sel, {});
       obj.representations.delete(rep);
       for (const r of obj.representations) {
-        viewer.addStyle({ model: obj.model }, repStyle(r));
+        // Skip line when stick is also active (stick covers line)
+        if (r === 'line' && obj.representations.has('stick')) continue;
+        viewer.addStyle(sel, repStyle(r));
       }
     }
     viewer.render();

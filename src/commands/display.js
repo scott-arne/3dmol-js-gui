@@ -72,26 +72,48 @@ export function registerDisplayCommands(registry) {
       const result = resolveSelection(selStr);
       const selSpec = getSelSpec(result);
       const viewer = getViewer();
-
-      viewer.addStyle(selSpec, repStyle(repName));
-      viewer.render();
-
-      // Update state: when no selection or "all", update all objects;
-      // when selection is model-level, update only that object.
-      // Atom-level selections (index, chain/resi, etc.) are sub-object and
-      // should NOT add to the object-wide representation set.
       const state = getState();
+
+      // Collect affected objects (only model-level and global scopes update state)
+      const affectedObjs = [];
       if (!selStr) {
-        for (const [, obj] of state.objects) {
-          obj.representations.add(repName);
-        }
+        for (const [, obj] of state.objects) affectedObjs.push(obj);
       } else if (result.spec && result.spec.model) {
         for (const [, obj] of state.objects) {
-          if (obj.model === result.spec.model) {
-            obj.representations.add(repName);
-          }
+          if (obj.model === result.spec.model) affectedObjs.push(obj);
         }
       }
+
+      // Line/stick interaction: both map to 3Dmol stick geometry.
+      // When both are active, only thick sticks need to render.
+      const skipVisual = repName === 'line' &&
+        affectedObjs.some(o => o.representations.has('stick'));
+      const rebuildVisual = repName === 'stick' &&
+        affectedObjs.some(o => o.representations.has('line'));
+
+      // Update state
+      for (const obj of affectedObjs) {
+        obj.representations.add(repName);
+      }
+
+      // Apply visual update
+      if (skipVisual) {
+        // Sticks already cover lines — no visual change needed
+      } else if (rebuildVisual) {
+        // Clear and rebuild so thin sticks are replaced, not layered
+        viewer.setStyle(selSpec, {});
+        for (const [, obj] of state.objects) {
+          if (!obj.visible) continue;
+          for (const rep of obj.representations) {
+            if (rep === 'line' && obj.representations.has('stick')) continue;
+            viewer.addStyle(selSpec, repStyle(rep));
+          }
+        }
+      } else {
+        viewer.addStyle(selSpec, repStyle(repName));
+      }
+
+      viewer.render();
       notifyStateChange();
 
       ctx.terminal.print(
@@ -141,6 +163,8 @@ export function registerDisplayCommands(registry) {
             obj.representations.delete(repName);
             if (obj.visible) {
               for (const rep of obj.representations) {
+                // Skip line when stick is also active (stick covers line)
+                if (rep === 'line' && obj.representations.has('stick')) continue;
                 viewer.addStyle(selSpec, repStyle(rep));
               }
             }
@@ -152,6 +176,7 @@ export function registerDisplayCommands(registry) {
             }
             if (obj.visible) {
               for (const rep of obj.representations) {
+                if (rep === 'line' && obj.representations.has('stick')) continue;
                 viewer.addStyle(selSpec, repStyle(rep));
               }
             }
@@ -162,9 +187,9 @@ export function registerDisplayCommands(registry) {
           for (const [, obj] of state.objects) {
             if (obj.visible) {
               for (const rep of obj.representations) {
-                if (rep !== repName) {
-                  viewer.addStyle(selSpec, repStyle(rep));
-                }
+                if (rep === repName) continue;
+                if (rep === 'line' && obj.representations.has('stick')) continue;
+                viewer.addStyle(selSpec, repStyle(rep));
               }
             }
           }
