@@ -26,6 +26,7 @@ import {
   notifyStateChange,
   setActiveSelection,
 } from './state.js';
+import { CHAIN_PALETTES, SS_PALETTES, BFACTOR_DEFAULTS, buildBfactorScheme } from './ui/color-swatches.js';
 import { createCommandRegistry, createCommandContext } from './commands/registry.js';
 import { registerAllCommands } from './commands/index.js';
 import { showLoadDialog, showExportDialog } from './ui/dialogs.js';
@@ -202,27 +203,82 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     terminal.print(`Applied "${label}" preset to "${name}"`, 'result');
   },
 
-  onColor(name, scheme) {
+  onColor(name, rawScheme) {
     const state = getState();
     const obj = state.objects.get(name);
     if (!obj) return;
     const viewer = getViewer();
     const selSpec = { model: obj.model };
 
+    // Parse optional carbon color from "element:#RRGGBB" format
+    let scheme = rawScheme;
+    let carbonHex = null;
+    if (scheme.startsWith('element:')) {
+      carbonHex = scheme.slice(8);
+      scheme = 'element';
+    }
+
+    // Parse optional chain palette from "chain:paletteName" format
+    let chainPalette = null;
+    if (scheme.startsWith('chain:')) {
+      chainPalette = scheme.slice(6);
+      scheme = 'chain';
+    }
+
+    // Parse optional SS palette from "ss:paletteName" format
+    let ssPalette = null;
+    if (scheme.startsWith('ss:')) {
+      ssPalette = scheme.slice(3);
+      scheme = 'ss';
+    }
+
     // Check if it is a coloring scheme
-    const schemes = { element: 'Jmol', chain: 'chain', ss: 'ssJmol', bfactor: { prop: 'b', gradient: 'roygb' } };
+    const bfMin = state.settings.bfactorMin ?? BFACTOR_DEFAULTS.min;
+    const bfMax = state.settings.bfactorMax ?? BFACTOR_DEFAULTS.max;
+    const schemes = { element: 'Jmol', chain: 'chain', ss: 'ssJmol', bfactor: buildBfactorScheme(bfMin, bfMax) };
     if (schemes[scheme]) {
-      const colorscheme = schemes[scheme];
-      const styleObj = {};
-      for (const rep of obj.representations) {
-        styleObj[rep] = { colorscheme };
+      let colorscheme = schemes[scheme];
+
+      // Build custom chain colorscheme from palette
+      if (chainPalette && CHAIN_PALETTES[chainPalette]) {
+        const palette = CHAIN_PALETTES[chainPalette].colors;
+        const atoms = viewer.selectedAtoms(selSpec);
+        const chains = [...new Set(atoms.map(a => a.chain))].sort();
+        const map = {};
+        chains.forEach((ch, i) => { map[ch] = palette[i % palette.length]; });
+        colorscheme = { prop: 'chain', map };
       }
-      if (Object.keys(styleObj).length === 0) {
-        styleObj.cartoon = { colorscheme };
+
+      // Build custom SS colorscheme from palette
+      if (ssPalette) {
+        const pal = SS_PALETTES.find(p => p.key === ssPalette);
+        if (pal && pal.key !== 'default') {
+          colorscheme = { prop: 'ss', map: { h: pal.helix, s: pal.sheet, c: pal.loop, '': pal.loop } };
+        }
+      }
+
+      const reps = obj.representations.size > 0 ? obj.representations : new Set(['cartoon']);
+      const styleObj = {};
+      for (const rep of reps) {
+        if (scheme === 'bfactor') {
+          styleObj[rep] = { colorfunc: colorscheme };
+        } else {
+          styleObj[rep] = { colorscheme };
+        }
       }
       viewer.setStyle(selSpec, styleObj);
+
+      // Override carbon atoms with the chosen swatch color
+      if (carbonHex) {
+        const carbonSel = Object.assign({}, selSpec, { elem: 'C' });
+        const carbonStyle = {};
+        for (const rep of reps) {
+          carbonStyle[rep] = { color: carbonHex };
+        }
+        viewer.setStyle(carbonSel, carbonStyle);
+      }
     } else {
-      // Named color
+      // Named color or hex value
       const colorMap = {
         red: '#FF0000', green: '#00FF00', blue: '#0000FF',
         yellow: '#FFFF00', cyan: '#00FFFF', magenta: '#FF00FF',
@@ -239,7 +295,8 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       viewer.setStyle(selSpec, styleObj);
     }
     viewer.render();
-    terminal.print(`Colored "${name}" by ${scheme}`, 'result');
+    const display = carbonHex ? `element (C=${carbonHex})` : chainPalette ? `chain (${chainPalette})` : ssPalette ? `ss (${ssPalette})` : scheme;
+    terminal.print(`Colored "${name}" by ${display}`, 'result');
   },
 
   // --- Selection sidebar callbacks ---
@@ -337,21 +394,61 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     terminal.print(`Labeled "(${name})" by ${prop}`, 'result');
   },
 
-  onSelectionColor(name, scheme) {
+  onSelectionColor(name, rawScheme) {
     const sel = getState().selections.get(name);
     if (!sel) return;
     const v = getViewer();
     const state = getState();
 
+    let scheme = rawScheme;
+    let carbonHex = null;
+    if (scheme.startsWith('element:')) {
+      carbonHex = scheme.slice(8);
+      scheme = 'element';
+    }
+
+    let chainPalette = null;
+    if (scheme.startsWith('chain:')) {
+      chainPalette = scheme.slice(6);
+      scheme = 'chain';
+    }
+
+    let ssPalette = null;
+    if (scheme.startsWith('ss:')) {
+      ssPalette = scheme.slice(3);
+      scheme = 'ss';
+    }
+
+    const bfMin = state.settings.bfactorMin ?? BFACTOR_DEFAULTS.min;
+    const bfMax = state.settings.bfactorMax ?? BFACTOR_DEFAULTS.max;
     const schemes = {
       element: 'Jmol', chain: 'chain', ss: 'ssJmol',
-      bfactor: { prop: 'b', gradient: 'roygb' },
+      bfactor: buildBfactorScheme(bfMin, bfMax),
     };
     const colorMap = {
       red: '#FF0000', green: '#00FF00', blue: '#0000FF',
       yellow: '#FFFF00', cyan: '#00FFFF', magenta: '#FF00FF',
       orange: '#FFA500', white: '#FFFFFF', grey: '#808080',
     };
+
+    // Build custom chain colorscheme once for the whole selection
+    let customScheme = null;
+    if (chainPalette && CHAIN_PALETTES[chainPalette]) {
+      const palette = CHAIN_PALETTES[chainPalette].colors;
+      const atoms = v.selectedAtoms(sel.spec);
+      const chains = [...new Set(atoms.map(a => a.chain))].sort();
+      const map = {};
+      chains.forEach((ch, i) => { map[ch] = palette[i % palette.length]; });
+      customScheme = { prop: 'chain', map };
+    }
+
+    // Build custom SS colorscheme from palette
+    if (ssPalette) {
+      const pal = SS_PALETTES.find(p => p.key === ssPalette);
+      if (pal && pal.key !== 'default') {
+        customScheme = { prop: 'ss', map: { h: pal.helix, s: pal.sheet, c: pal.loop, '': pal.loop } };
+      }
+    }
 
     for (const [, obj] of state.objects) {
       if (!obj.visible) continue;
@@ -360,16 +457,31 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       const styleObj = {};
       for (const rep of reps) {
         if (schemes[scheme]) {
-          styleObj[rep] = { colorscheme: schemes[scheme] };
+          const val = customScheme || schemes[scheme];
+          if (scheme === 'bfactor') {
+            styleObj[rep] = { colorfunc: val };
+          } else {
+            styleObj[rep] = { colorscheme: val };
+          }
         } else {
           const hex = colorMap[scheme] || scheme;
           styleObj[rep] = { color: hex };
         }
       }
       v.setStyle(intersect, styleObj);
+
+      if (carbonHex && schemes[scheme]) {
+        const carbonSel = Object.assign({}, intersect, { elem: 'C' });
+        const carbonStyle = {};
+        for (const rep of reps) {
+          carbonStyle[rep] = { color: carbonHex };
+        }
+        v.setStyle(carbonSel, carbonStyle);
+      }
     }
     v.render();
-    terminal.print(`Colored "(${name})" by ${scheme}`, 'result');
+    const display = carbonHex ? `element (C=${carbonHex})` : chainPalette ? `chain (${chainPalette})` : ssPalette ? `ss (${ssPalette})` : scheme;
+    terminal.print(`Colored "(${name})" by ${display}`, 'result');
   },
 
   onSelectionView(name, presetName) {
@@ -856,21 +968,61 @@ createContextMenu(document.getElementById('viewer-container'), {
     terminal.print(`Labeled selection by ${prop}`, 'result');
   },
 
-  onColor(scheme) {
+  onColor(rawScheme) {
     const v = getViewer();
     const state = getState();
     const selSpec = state.activeSelection;
     if (!selSpec) return;
 
+    let scheme = rawScheme;
+    let carbonHex = null;
+    if (scheme.startsWith('element:')) {
+      carbonHex = scheme.slice(8);
+      scheme = 'element';
+    }
+
+    let chainPalette = null;
+    if (scheme.startsWith('chain:')) {
+      chainPalette = scheme.slice(6);
+      scheme = 'chain';
+    }
+
+    let ssPalette = null;
+    if (scheme.startsWith('ss:')) {
+      ssPalette = scheme.slice(3);
+      scheme = 'ss';
+    }
+
+    const bfMin = state.settings.bfactorMin ?? BFACTOR_DEFAULTS.min;
+    const bfMax = state.settings.bfactorMax ?? BFACTOR_DEFAULTS.max;
     const schemes = {
       element: 'Jmol', chain: 'chain', ss: 'ssJmol',
-      bfactor: { prop: 'b', gradient: 'roygb' },
+      bfactor: buildBfactorScheme(bfMin, bfMax),
     };
     const colorMap = {
       red: '#FF0000', green: '#00FF00', blue: '#0000FF',
       yellow: '#FFFF00', cyan: '#00FFFF', magenta: '#FF00FF',
       orange: '#FFA500', white: '#FFFFFF', grey: '#808080',
     };
+
+    // Build custom chain colorscheme once for the whole selection
+    let customScheme = null;
+    if (chainPalette && CHAIN_PALETTES[chainPalette]) {
+      const palette = CHAIN_PALETTES[chainPalette].colors;
+      const atoms = v.selectedAtoms(selSpec);
+      const chains = [...new Set(atoms.map(a => a.chain))].sort();
+      const map = {};
+      chains.forEach((ch, i) => { map[ch] = palette[i % palette.length]; });
+      customScheme = { prop: 'chain', map };
+    }
+
+    // Build custom SS colorscheme from palette
+    if (ssPalette) {
+      const pal = SS_PALETTES.find(p => p.key === ssPalette);
+      if (pal && pal.key !== 'default') {
+        customScheme = { prop: 'ss', map: { h: pal.helix, s: pal.sheet, c: pal.loop, '': pal.loop } };
+      }
+    }
 
     // Apply color to each object's active representations on the intersection
     for (const [, obj] of state.objects) {
@@ -880,16 +1032,31 @@ createContextMenu(document.getElementById('viewer-container'), {
       const styleObj = {};
       for (const rep of reps) {
         if (schemes[scheme]) {
-          styleObj[rep] = { colorscheme: schemes[scheme] };
+          const val = customScheme || schemes[scheme];
+          if (scheme === 'bfactor') {
+            styleObj[rep] = { colorfunc: val };
+          } else {
+            styleObj[rep] = { colorscheme: val };
+          }
         } else {
           const hex = colorMap[scheme] || scheme;
           styleObj[rep] = { color: hex };
         }
       }
       v.setStyle(intersect, styleObj);
+
+      if (carbonHex && schemes[scheme]) {
+        const carbonSel = Object.assign({}, intersect, { elem: 'C' });
+        const carbonStyle = {};
+        for (const rep of reps) {
+          carbonStyle[rep] = { color: carbonHex };
+        }
+        v.setStyle(carbonSel, carbonStyle);
+      }
     }
     v.render();
-    terminal.print(`Colored selection by ${scheme}`, 'result');
+    const display = carbonHex ? `element (C=${carbonHex})` : chainPalette ? `chain (${chainPalette})` : ssPalette ? `ss (${ssPalette})` : scheme;
+    terminal.print(`Colored selection by ${display}`, 'result');
   },
 });
 

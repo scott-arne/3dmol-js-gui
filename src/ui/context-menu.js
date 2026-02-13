@@ -6,6 +6,8 @@
  * is selected.
  */
 
+import { CARBON_SWATCHES, SOLID_SWATCHES, CHAIN_PALETTES, SS_PALETTES } from './color-swatches.js';
+
 const MENU_DEFS = {
   Action: {
     callbackKey: 'onAction',
@@ -57,20 +59,11 @@ const MENU_DEFS = {
   Color: {
     callbackKey: 'onColor',
     items: [
-      { label: 'By Element', value: 'element' },
-      { label: 'By Chain', value: 'chain' },
-      { label: 'By SS', value: 'ss' },
+      { label: 'Solid', value: 'solid', submenu: 'solid-swatches' },
+      { label: 'By Element', value: 'element', submenu: 'element-swatches' },
+      { label: 'By Chain', value: 'chain', submenu: 'chain-palettes' },
+      { label: 'By SS', value: 'ss', submenu: 'ss-palettes' },
       { label: 'By B-Factor', value: 'bfactor' },
-      { separator: true },
-      { label: 'Red', value: 'red' },
-      { label: 'Green', value: 'green' },
-      { label: 'Blue', value: 'blue' },
-      { label: 'Yellow', value: 'yellow' },
-      { label: 'Cyan', value: 'cyan' },
-      { label: 'Magenta', value: 'magenta' },
-      { label: 'Orange', value: 'orange' },
-      { label: 'White', value: 'white' },
-      { label: 'Grey', value: 'grey' },
     ],
   },
 };
@@ -185,6 +178,177 @@ function buildMenu(hasSelection, callbacks) {
         const sep = document.createElement('div');
         sep.className = 'context-menu-separator';
         submenu.appendChild(sep);
+      } else if (entry.submenu === 'element-swatches') {
+        const subItem = document.createElement('div');
+        subItem.className = 'context-menu-submenu-item context-menu-has-submenu';
+
+        const entryLabel = document.createElement('span');
+        entryLabel.textContent = entry.label;
+        subItem.appendChild(entryLabel);
+
+        const entryArrow = document.createElement('span');
+        entryArrow.className = 'context-menu-arrow';
+        entryArrow.textContent = '\u25B6';
+        subItem.appendChild(entryArrow);
+
+        // Nested swatch submenu
+        const nestedSub = document.createElement('div');
+        nestedSub.className = 'context-menu-submenu';
+
+        // "Standard" option
+        const stdItem = document.createElement('div');
+        stdItem.className = 'context-menu-submenu-item';
+        stdItem.textContent = 'Standard';
+        stdItem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeMenu();
+          if (hasSelection && callbacks[def.callbackKey]) {
+            callbacks[def.callbackKey](entry.value);
+          }
+        });
+        nestedSub.appendChild(stdItem);
+
+        const nestedSep = document.createElement('div');
+        nestedSep.className = 'context-menu-separator';
+        nestedSub.appendChild(nestedSep);
+
+        // Swatch grid
+        const grid = document.createElement('div');
+        grid.className = 'swatch-grid';
+        for (const swatch of CARBON_SWATCHES) {
+          const cell = document.createElement('div');
+          cell.className = 'swatch-cell';
+          cell.style.backgroundColor = swatch.hex;
+          cell.title = `${swatch.label} (${swatch.hex})`;
+          cell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeMenu();
+            if (hasSelection && callbacks[def.callbackKey]) {
+              callbacks[def.callbackKey](entry.value + ':' + swatch.hex);
+            }
+          });
+          grid.appendChild(cell);
+        }
+        nestedSub.appendChild(grid);
+
+        subItem.appendChild(nestedSub);
+        submenu.appendChild(subItem);
+      } else if (entry.submenu === 'solid-swatches') {
+        const subItem = document.createElement('div');
+        subItem.className = 'context-menu-submenu-item context-menu-has-submenu';
+
+        const entryLabel = document.createElement('span');
+        entryLabel.textContent = entry.label;
+        subItem.appendChild(entryLabel);
+
+        const entryArrow = document.createElement('span');
+        entryArrow.className = 'context-menu-arrow';
+        entryArrow.textContent = '\u25B6';
+        subItem.appendChild(entryArrow);
+
+        // Nested solid swatch submenu
+        const nestedSub = document.createElement('div');
+        nestedSub.className = 'context-menu-submenu';
+
+        const grid = document.createElement('div');
+        grid.className = 'swatch-grid';
+        for (const swatch of SOLID_SWATCHES) {
+          const cell = document.createElement('div');
+          cell.className = 'swatch-cell';
+          cell.style.backgroundColor = swatch.hex;
+          cell.title = `${swatch.label} (${swatch.hex})`;
+          cell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeMenu();
+            if (hasSelection && callbacks[def.callbackKey]) {
+              callbacks[def.callbackKey](swatch.hex);
+            }
+          });
+          grid.appendChild(cell);
+        }
+        nestedSub.appendChild(grid);
+
+        subItem.appendChild(nestedSub);
+        submenu.appendChild(subItem);
+      } else if (entry.submenu === 'chain-palettes') {
+        const subItem = document.createElement('div');
+        subItem.className = 'context-menu-submenu-item context-menu-has-submenu';
+
+        const entryLabel = document.createElement('span');
+        entryLabel.textContent = entry.label;
+        subItem.appendChild(entryLabel);
+
+        const entryArrow = document.createElement('span');
+        entryArrow.className = 'context-menu-arrow';
+        entryArrow.textContent = '\u25B6';
+        subItem.appendChild(entryArrow);
+
+        const nestedSub = document.createElement('div');
+        nestedSub.className = 'context-menu-submenu';
+
+        for (const [key, palette] of Object.entries(CHAIN_PALETTES)) {
+          const palItem = document.createElement('div');
+          palItem.className = 'context-menu-submenu-item';
+          palItem.textContent = palette.label;
+          palItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeMenu();
+            if (hasSelection && callbacks[def.callbackKey]) {
+              callbacks[def.callbackKey]('chain:' + key);
+            }
+          });
+          nestedSub.appendChild(palItem);
+        }
+
+        subItem.appendChild(nestedSub);
+        submenu.appendChild(subItem);
+      } else if (entry.submenu === 'ss-palettes') {
+        const subItem = document.createElement('div');
+        subItem.className = 'context-menu-submenu-item context-menu-has-submenu';
+
+        const entryLabel = document.createElement('span');
+        entryLabel.textContent = entry.label;
+        subItem.appendChild(entryLabel);
+
+        const entryArrow = document.createElement('span');
+        entryArrow.className = 'context-menu-arrow';
+        entryArrow.textContent = '\u25B6';
+        subItem.appendChild(entryArrow);
+
+        const nestedSub = document.createElement('div');
+        nestedSub.className = 'context-menu-submenu';
+
+        for (const pal of SS_PALETTES) {
+          const palItem = document.createElement('div');
+          palItem.className = 'context-menu-submenu-item ss-palette-item';
+
+          const h = document.createElement('span');
+          h.textContent = 'Helix';
+          h.style.color = pal.helix;
+          palItem.appendChild(h);
+          palItem.appendChild(document.createTextNode(' \u2013 '));
+          const s = document.createElement('span');
+          s.textContent = 'Sheet';
+          s.style.color = pal.sheet;
+          palItem.appendChild(s);
+          palItem.appendChild(document.createTextNode(' \u2013 '));
+          const l = document.createElement('span');
+          l.textContent = 'Loop';
+          l.style.color = pal.loop;
+          palItem.appendChild(l);
+
+          palItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeMenu();
+            if (hasSelection && callbacks[def.callbackKey]) {
+              callbacks[def.callbackKey]('ss:' + pal.key);
+            }
+          });
+          nestedSub.appendChild(palItem);
+        }
+
+        subItem.appendChild(nestedSub);
+        submenu.appendChild(subItem);
       } else {
         const subItem = document.createElement('div');
         subItem.className = 'context-menu-submenu-item';

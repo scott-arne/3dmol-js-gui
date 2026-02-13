@@ -546,6 +546,53 @@ body {
   margin: 4px 0;
 }
 
+/* Popup menu submenu support */
+.popup-menu-has-submenu {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.popup-menu-arrow {
+  font-size: 9px;
+  margin-left: 12px;
+  color: var(--inactive);
+}
+
+.popup-menu-submenu {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  min-width: 140px;
+  border-radius: 3px;
+  padding: 4px 0;
+  z-index: 1501;
+}
+
+.popup-menu-submenu.popup-menu-submenu-left {
+  left: auto;
+  right: 100%;
+}
+
+.popup-menu-has-submenu:hover > .popup-menu-submenu {
+  display: block;
+}
+
+.popup-menu-submenu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.popup-menu-submenu-item:hover {
+  background: var(--menu-hover);
+}
+
 /* --- Scrollbar Styling --- */
 ::-webkit-scrollbar {
   width: 6px;
@@ -650,6 +697,41 @@ body {
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+}
+
+/* Context menu nested submenu (sub-submenu inside a submenu item) */
+.context-menu-submenu-item.context-menu-has-submenu {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.context-menu-submenu-item.context-menu-has-submenu:hover > .context-menu-submenu {
+  display: block;
+}
+
+/* --- Color Swatch Grid (shared by popup and context menus) --- */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  padding: 6px 8px;
+}
+
+.swatch-cell {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: transform 0.1s ease;
+}
+
+.swatch-cell:hover {
+  transform: scale(1.2);
+  border-color: #ffffff;
+  z-index: 1;
 }
 
 /* --- Quick-Start Overlay --- */

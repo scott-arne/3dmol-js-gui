@@ -1,7 +1,8 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer } from '../viewer.js';
+import { getViewer, repStyle } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
+import { buildBfactorScheme, BFACTOR_DEFAULTS } from '../ui/color-swatches.js';
 
 /**
  * Map of standard color names to their hex values.
@@ -299,5 +300,111 @@ export function registerStylingCommands(registry) {
     },
     usage: 'set <setting>, <value>',
     help: 'Change a viewer setting. Settings: bg_color, stick_radius, sphere_scale, label_size.',
+  });
+
+  registry.register('cartoon_style', {
+    handler: (args, ctx) => {
+      const parts = parseArgs(args);
+      if (parts.length === 0) {
+        throw new Error(
+          'Usage: cartoon_style <style> [, entry]\nStyles: default, rectangle, oval, trace, parabola, edged'
+        );
+      }
+      const styleInput = parts[0].trim().toLowerCase();
+      const entryName = parts.length > 1 ? parts[1].trim() : null;
+
+      const VALID_STYLES = {
+        default: 'rectangle',
+        rectangle: 'rectangle',
+        oval: 'oval',
+        trace: 'trace',
+        parabola: 'parabola',
+        edged: 'edged',
+      };
+      const styleValue = VALID_STYLES[styleInput];
+      if (!styleValue) {
+        throw new Error(
+          `Unknown cartoon style "${styleInput}". Valid: ${Object.keys(VALID_STYLES).join(', ')}`
+        );
+      }
+
+      const viewer = getViewer();
+      const state = getState();
+      let count = 0;
+
+      for (const [name, obj] of state.objects) {
+        if (entryName && name !== entryName) continue;
+        if (!obj.visible) continue;
+        if (!obj.representations.has('cartoon')) continue;
+
+        const selSpec = { model: obj.model };
+        viewer.setStyle(selSpec, {});
+        for (const rep of obj.representations) {
+          const style = repStyle(rep);
+          if (rep === 'cartoon') {
+            style.cartoon = Object.assign({}, style.cartoon, { style: styleValue });
+          }
+          viewer.addStyle(selSpec, style);
+        }
+        count++;
+      }
+
+      if (entryName && count === 0) {
+        throw new Error(
+          `Object "${entryName}" not found or has no cartoon representation`
+        );
+      }
+
+      viewer.render();
+      const target = entryName || 'all objects';
+      ctx.terminal.print(`Set cartoon style to ${styleValue} for ${target}`, 'result');
+    },
+    usage: 'cartoon_style <style> [, entry]',
+    help: 'Set cartoon rendering style. Styles: default, rectangle, oval, trace, parabola, edged.',
+  });
+
+  registry.register('bfactor_spectrum', {
+    handler: (args, ctx) => {
+      const parts = parseArgs(args);
+      if (parts.length < 2) {
+        throw new Error('Usage: bfactor_spectrum <min>, <max>');
+      }
+      const min = parseFloat(parts[0]);
+      const max = parseFloat(parts[1]);
+      if (isNaN(min) || isNaN(max)) {
+        throw new Error('min and max must be numbers');
+      }
+      if (min >= max) {
+        throw new Error('min must be less than max');
+      }
+
+      const state = getState();
+      state.settings.bfactorMin = min;
+      state.settings.bfactorMax = max;
+
+      // Re-apply B-factor coloring to all visible objects
+      const viewer = getViewer();
+      const colorfunc = buildBfactorScheme(min, max);
+      for (const [, obj] of state.objects) {
+        if (!obj.visible) continue;
+        const selSpec = { model: obj.model };
+        const reps = obj.representations.size > 0
+          ? obj.representations
+          : new Set(['cartoon']);
+        const styleObj = {};
+        for (const rep of reps) {
+          styleObj[rep] = { colorfunc };
+        }
+        viewer.setStyle(selSpec, styleObj);
+      }
+      viewer.render();
+      notifyStateChange();
+      ctx.terminal.print(
+        `B-factor spectrum set to ${min}\u2013${max} (pastel blue \u2192 pastel red)`,
+        'result'
+      );
+    },
+    usage: 'bfactor_spectrum <min>, <max>',
+    help: 'Set B-factor coloring range and apply. Values below min are pastel blue, above max are pastel red.',
   });
 }

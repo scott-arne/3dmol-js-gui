@@ -6,6 +6,8 @@
  * molecular objects.
  */
 
+import { CARBON_SWATCHES, SOLID_SWATCHES, CHAIN_PALETTES, SS_PALETTES } from './color-swatches.js';
+
 /** @type {HTMLElement|null} */
 let activePopup = null;
 
@@ -56,6 +58,165 @@ function createPopupMenu(anchor, items, onClick) {
       const sep = document.createElement('div');
       sep.className = 'popup-menu-separator';
       menu.appendChild(sep);
+    } else if (item.submenu === 'element-swatches') {
+      const menuItem = document.createElement('div');
+      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = item.label;
+      menuItem.appendChild(labelSpan);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'popup-menu-arrow';
+      arrow.textContent = '\u25B6';
+      menuItem.appendChild(arrow);
+
+      const submenu = document.createElement('div');
+      submenu.className = 'popup-menu-submenu';
+
+      // "Standard" option — plain Jmol with no carbon override
+      const stdItem = document.createElement('div');
+      stdItem.className = 'popup-menu-submenu-item';
+      stdItem.textContent = 'Standard';
+      stdItem.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeActivePopup();
+        onClick(item.value);
+      });
+      submenu.appendChild(stdItem);
+
+      const sep = document.createElement('div');
+      sep.className = 'popup-menu-separator';
+      submenu.appendChild(sep);
+
+      // Swatch grid
+      const grid = document.createElement('div');
+      grid.className = 'swatch-grid';
+      for (const swatch of CARBON_SWATCHES) {
+        const cell = document.createElement('div');
+        cell.className = 'swatch-cell';
+        cell.style.backgroundColor = swatch.hex;
+        cell.title = `${swatch.label} (${swatch.hex})`;
+        cell.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick(item.value + ':' + swatch.hex);
+        });
+        grid.appendChild(cell);
+      }
+      submenu.appendChild(grid);
+
+      menuItem.appendChild(submenu);
+      menu.appendChild(menuItem);
+    } else if (item.submenu === 'solid-swatches') {
+      const menuItem = document.createElement('div');
+      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = item.label;
+      menuItem.appendChild(labelSpan);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'popup-menu-arrow';
+      arrow.textContent = '\u25B6';
+      menuItem.appendChild(arrow);
+
+      const submenu = document.createElement('div');
+      submenu.className = 'popup-menu-submenu';
+
+      const grid = document.createElement('div');
+      grid.className = 'swatch-grid';
+      for (const swatch of SOLID_SWATCHES) {
+        const cell = document.createElement('div');
+        cell.className = 'swatch-cell';
+        cell.style.backgroundColor = swatch.hex;
+        cell.title = `${swatch.label} (${swatch.hex})`;
+        cell.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick(swatch.hex);
+        });
+        grid.appendChild(cell);
+      }
+      submenu.appendChild(grid);
+
+      menuItem.appendChild(submenu);
+      menu.appendChild(menuItem);
+    } else if (item.submenu === 'chain-palettes') {
+      const menuItem = document.createElement('div');
+      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = item.label;
+      menuItem.appendChild(labelSpan);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'popup-menu-arrow';
+      arrow.textContent = '\u25B6';
+      menuItem.appendChild(arrow);
+
+      const submenu = document.createElement('div');
+      submenu.className = 'popup-menu-submenu';
+
+      for (const [key, palette] of Object.entries(CHAIN_PALETTES)) {
+        const palItem = document.createElement('div');
+        palItem.className = 'popup-menu-submenu-item';
+        palItem.textContent = palette.label;
+        palItem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick('chain:' + key);
+        });
+        submenu.appendChild(palItem);
+      }
+
+      menuItem.appendChild(submenu);
+      menu.appendChild(menuItem);
+    } else if (item.submenu === 'ss-palettes') {
+      const menuItem = document.createElement('div');
+      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = item.label;
+      menuItem.appendChild(labelSpan);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'popup-menu-arrow';
+      arrow.textContent = '\u25B6';
+      menuItem.appendChild(arrow);
+
+      const submenu = document.createElement('div');
+      submenu.className = 'popup-menu-submenu';
+
+      for (const pal of SS_PALETTES) {
+        const palItem = document.createElement('div');
+        palItem.className = 'popup-menu-submenu-item ss-palette-item';
+
+        const h = document.createElement('span');
+        h.textContent = 'Helix';
+        h.style.color = pal.helix;
+        palItem.appendChild(h);
+        palItem.appendChild(document.createTextNode(' \u2013 '));
+        const s = document.createElement('span');
+        s.textContent = 'Sheet';
+        s.style.color = pal.sheet;
+        palItem.appendChild(s);
+        palItem.appendChild(document.createTextNode(' \u2013 '));
+        const l = document.createElement('span');
+        l.textContent = 'Loop';
+        l.style.color = pal.loop;
+        palItem.appendChild(l);
+
+        palItem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick('ss:' + pal.key);
+        });
+        submenu.appendChild(palItem);
+      }
+
+      menuItem.appendChild(submenu);
+      menu.appendChild(menuItem);
     } else {
       const menuItem = document.createElement('div');
       menuItem.className = 'popup-menu-item';
@@ -98,6 +259,13 @@ function createPopupMenu(anchor, items, onClick) {
   }
   if (left < 0) left = 0;
   menu.style.left = `${left}px`;
+
+  // Flip submenus to open leftward if the popup is near the right edge
+  if (left + menuRect.width + 160 > window.innerWidth) {
+    for (const sub of menu.querySelectorAll('.popup-menu-submenu')) {
+      sub.classList.add('popup-menu-submenu-left');
+    }
+  }
 
   // Close when clicking outside
   function onDocumentClick(e) {
@@ -199,44 +367,11 @@ const BUTTON_MENUS = {
   C: {
     callbackKey: 'onColor',
     items: [
-      { label: 'By Element', value: 'element' },
-      { label: 'By Chain', value: 'chain' },
-      { label: 'By SS', value: 'ss' },
+      { label: 'Solid', value: 'solid', submenu: 'solid-swatches' },
+      { label: 'By Element', value: 'element', submenu: 'element-swatches' },
+      { label: 'By Chain', value: 'chain', submenu: 'chain-palettes' },
+      { label: 'By SS', value: 'ss', submenu: 'ss-palettes' },
       { label: 'By B-Factor', value: 'bfactor' },
-      { separator: true },
-      { label: 'Red', value: 'red' },
-      { label: 'Green', value: 'green' },
-      { label: 'Blue', value: 'blue' },
-      { label: 'Yellow', value: 'yellow' },
-      { label: 'Cyan', value: 'cyan' },
-      { label: 'Magenta', value: 'magenta' },
-      { label: 'Orange', value: 'orange' },
-      { label: 'White', value: 'white' },
-      { label: 'Grey', value: 'grey' },
-      { separator: true },
-      { label: 'Turquoise', value: 'turquoise' },
-      { label: 'Coral', value: 'coral' },
-      { label: 'Teal', value: 'teal' },
-      { label: 'Sage', value: 'sage' },
-      { label: 'Lavender', value: 'lavender' },
-      { label: 'Mustard', value: 'mustard' },
-      { label: 'Aquamarine', value: 'aquamarine' },
-      { label: 'Feijoa', value: 'feijoa' },
-      { label: 'Rose', value: 'rose' },
-      { label: 'Cerulean', value: 'cerulean' },
-      { label: 'Periwinkle', value: 'periwinkle' },
-      { separator: true },
-      { label: 'Canary', value: 'canary' },
-      { label: 'Orange Cream', value: 'orangecream' },
-      { label: 'Peach', value: 'peach' },
-      { label: 'Marine', value: 'marine' },
-      { label: 'Light Coral', value: 'lightcoral' },
-      { label: 'Light Green', value: 'lightgreen' },
-      { label: 'Light Blue', value: 'lightblue' },
-      { label: 'Light Purple', value: 'lightpurple' },
-      { label: 'Light Yellow', value: 'lightyellow' },
-      { label: 'Light Orange', value: 'lightorange' },
-      { label: 'Light Pink', value: 'lightpink' },
     ],
   },
 };

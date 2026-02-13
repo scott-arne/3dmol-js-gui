@@ -7,6 +7,7 @@
  */
 
 import { repStyle } from './viewer.js';
+import { CHAIN_PALETTES } from './ui/color-swatches.js';
 
 const WATER_RESN = ['HOH', 'WAT', 'H2O'];
 
@@ -22,16 +23,39 @@ function merge(base, extra) {
 }
 
 /**
+ * Build a pastel chain colorscheme from a set of atoms.
+ *
+ * Discovers unique chain IDs, sorts them, and maps each to a color from the
+ * pastel palette (cycling if there are more chains than colors).
+ *
+ * @param {Array} atoms - Atom objects with a `.chain` property.
+ * @returns {{prop: string, map: Object}} A 3Dmol.js custom colorscheme object.
+ */
+function pastelChainScheme(atoms) {
+  const palette = CHAIN_PALETTES.pastel.colors;
+  const chains = [...new Set(atoms.map(a => a.chain))].sort();
+  const map = {};
+  chains.forEach((ch, i) => { map[ch] = palette[i % palette.length]; });
+  return { prop: 'chain', map };
+}
+
+/**
  * Available preset definitions keyed by lowercase name.
  */
 export const PRESETS = {
   simple: {
     label: 'Simple',
-    description: 'Cartoon for protein/nucleic, sticks for ligands',
+    description: 'Cartoon for protein/nucleic (pastel chain), grey sticks for ligands',
     apply(viewer, base) {
       viewer.setStyle(base, {});
-      viewer.addStyle(merge(base, { hetflag: true, not: { resn: WATER_RESN } }), repStyle('stick'));
-      viewer.addStyle(merge(base, { hetflag: false }), repStyle('cartoon'));
+      viewer.addStyle(
+        merge(base, { hetflag: true, not: { resn: WATER_RESN } }),
+        { stick: { color: '#808080' } }
+      );
+      const proteinSel = merge(base, { hetflag: false });
+      const atoms = viewer.selectedAtoms(proteinSel);
+      const colorscheme = pastelChainScheme(atoms);
+      viewer.addStyle(proteinSel, { cartoon: { colorscheme } });
       viewer.render();
       return new Set(['cartoon', 'stick']);
     },
@@ -39,12 +63,15 @@ export const PRESETS = {
 
   sites: {
     label: 'Sites',
-    description: 'Simple + sticks for residues within 5A of ligands',
+    description: 'Simple (pastel chain) + sticks for residues within 5A of ligands',
     apply(viewer, base) {
       viewer.setStyle(base, {});
       const hetSpec = merge(base, { hetflag: true, not: { resn: WATER_RESN } });
-      viewer.addStyle(hetSpec, repStyle('stick'));
-      viewer.addStyle(merge(base, { hetflag: false }), repStyle('cartoon'));
+      viewer.addStyle(hetSpec, { stick: { color: '#808080' } });
+      const proteinSel = merge(base, { hetflag: false });
+      const proteinAtoms = viewer.selectedAtoms(proteinSel);
+      const colorscheme = pastelChainScheme(proteinAtoms);
+      viewer.addStyle(proteinSel, { cartoon: { colorscheme } });
 
       // Find residues within 5 angstroms of HETATM and show as sticks
       const hetAtoms = viewer.selectedAtoms(hetSpec);
@@ -68,7 +95,7 @@ export const PRESETS = {
             if (nearResKeys.has(`${a.chain}:${a.resi}`)) nearIndices.push(a.index);
           }
           if (nearIndices.length > 0) {
-            viewer.addStyle({ index: nearIndices }, repStyle('stick'));
+            viewer.addStyle({ index: nearIndices }, { stick: { colorscheme } });
           }
         }
       }
