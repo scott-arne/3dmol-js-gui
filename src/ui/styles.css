@@ -18,6 +18,53 @@
   --error: #ff6b6b;
 }
 
+/* --- Light Theme Overrides --- */
+body[data-theme="light"] {
+  --bg: #f5f5f5;
+  --panel-bg: #ffffff;
+  --border: #d0d0d0;
+  --text: #1a1a1a;
+  --accent: #2e7d32;
+  --inactive: #999999;
+  --menu-hover: #e8e8e8;
+  --terminal-bg: #fafafa;
+  --terminal-text: #2e7d32;
+  --dropdown-bg: #ffffff;
+  --error: #d32f2f;
+}
+
+body[data-theme="light"] .terminal-line.result {
+  color: #1a1a1a;
+}
+
+body[data-theme="light"] .swatch-cell {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+body[data-theme="light"] .swatch-cell:hover {
+  border-color: #000000;
+}
+
+body[data-theme="light"] .modal-overlay,
+body[data-theme="light"] .quickstart-overlay {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+body[data-theme="light"] .menubar-dropdown,
+body[data-theme="light"] .menubar-hamburger-submenu,
+body[data-theme="light"] .popup-menu,
+body[data-theme="light"] .popup-menu-submenu,
+body[data-theme="light"] .context-menu,
+body[data-theme="light"] .context-menu-submenu,
+body[data-theme="light"] .modal,
+body[data-theme="light"] .quickstart-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+body[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+}
+
 /* --- Reset / Base --- */
 *,
 *::before,

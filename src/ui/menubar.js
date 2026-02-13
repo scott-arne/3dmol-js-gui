@@ -30,6 +30,7 @@ export function createMenuBar(container, callbacks) {
   let sidebarChecked = true;
   let terminalChecked = true;
   let compactChecked = false;
+  let activeTheme = 'dark';
   let openDropdown = null; // reference to the currently open dropdown element
   let openMenuItem = null; // reference to the currently active menu-item element
   let hamburgerDropdown = null; // reference to the hamburger dropdown when open
@@ -82,7 +83,7 @@ export function createMenuBar(container, callbacks) {
       },
     }));
 
-    dropdown.appendChild(createDropdownItem('Export...', {
+    dropdown.appendChild(createDropdownItem('Export Image...', {
       onClick: () => {
         closeDropdown();
         if (callbacks.onExport) callbacks.onExport();
@@ -230,6 +231,24 @@ export function createMenuBar(container, callbacks) {
       },
     });
     dropdown.appendChild(compactItem);
+
+    addSeparator(dropdown);
+    addSectionHeader(dropdown, 'Theme');
+
+    const themes = [
+      { label: 'Dark', value: 'dark' },
+      { label: 'Light', value: 'light' },
+    ];
+    for (const theme of themes) {
+      dropdown.appendChild(createDropdownItem(theme.label, {
+        checked: activeTheme === theme.value,
+        onClick: () => {
+          activeTheme = theme.value;
+          closeDropdown();
+          if (callbacks.onThemeChange) callbacks.onThemeChange(theme.value);
+        },
+      }));
+    }
 
     return dropdown;
   }
@@ -398,6 +417,17 @@ export function createMenuBar(container, callbacks) {
       if (SELECTION_MODES.includes(mode)) {
         activeSelectionMode = mode;
         modeLabel.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+      }
+    },
+
+    /**
+     * Programmatically update the active theme.
+     *
+     * @param {'dark'|'light'} theme - The theme name.
+     */
+    setTheme(theme) {
+      if (theme === 'dark' || theme === 'light') {
+        activeTheme = theme;
       }
     },
 

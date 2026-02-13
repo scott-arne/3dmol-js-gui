@@ -21,6 +21,8 @@ const state = {
 
   settings: {
     bgColor: '#000000',
+    theme: 'dark',
+    userSetBgColor: false,
   },
 
   /** @type {Array<function>} */

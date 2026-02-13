@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, addTrackedLabel, clearAllLabels, refreshLabels } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -167,7 +167,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     const viewer = getViewer();
 
     if (prop === 'clear') {
-      viewer.removeAllLabels();
+      clearAllLabels();
       viewer.render();
       terminal.print('Labels cleared', 'result');
       return;
@@ -175,17 +175,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
 
     const propMap = { atom: 'atom', resn: 'resn', resi: 'resi', chain: 'chain', elem: 'elem', index: 'serial' };
     const atomProp = propMap[prop] || prop;
-    const atoms = viewer.selectedAtoms({ model: obj.model });
+    let atoms = viewer.selectedAtoms({ model: obj.model });
+    if (['resn', 'resi', 'chain'].includes(prop)) {
+      atoms = atoms.filter(a => a.atom === 'CA');
+    }
     for (const atom of atoms) {
-      viewer.addLabel(String(atom[atomProp]), {
-        position: { x: atom.x, y: atom.y, z: atom.z },
-        backgroundColor: '#000000',
-        backgroundOpacity: 0.15,
-        borderColor: 'rgba(0, 0, 0, 0.4)',
-        borderThickness: 1,
-        fontColor: '#FFFFFF',
-        fontSize: 10,
-      });
+      addTrackedLabel(String(atom[atomProp]), { x: atom.x, y: atom.y, z: atom.z });
     }
     viewer.render();
     terminal.print(`Labeled "${name}" by ${prop}`, 'result');
@@ -370,7 +365,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     const v = getViewer();
 
     if (prop === 'clear') {
-      v.removeAllLabels();
+      clearAllLabels();
       v.render();
       terminal.print('Labels cleared', 'result');
       return;
@@ -378,17 +373,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
 
     const propMap = { atom: 'atom', resn: 'resn', resi: 'resi', chain: 'chain', elem: 'elem', index: 'serial' };
     const atomProp = propMap[prop] || prop;
-    const atoms = v.selectedAtoms(sel.spec);
+    let atoms = v.selectedAtoms(sel.spec);
+    if (['resn', 'resi', 'chain'].includes(prop)) {
+      atoms = atoms.filter(a => a.atom === 'CA');
+    }
     for (const atom of atoms) {
-      v.addLabel(String(atom[atomProp]), {
-        position: { x: atom.x, y: atom.y, z: atom.z },
-        backgroundColor: '#000000',
-        backgroundOpacity: 0.15,
-        borderColor: 'rgba(0, 0, 0, 0.4)',
-        borderThickness: 1,
-        fontColor: '#FFFFFF',
-        fontSize: 10,
-      });
+      addTrackedLabel(String(atom[atomProp]), { x: atom.x, y: atom.y, z: atom.z });
     }
     v.render();
     terminal.print(`Labeled "(${name})" by ${prop}`, 'result');
@@ -740,7 +730,50 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
   onToggleCompact(isCompact) {
     menubar.setCompact(isCompact);
   },
+
+  onThemeChange(theme) {
+    const state = getState();
+    state.settings.theme = theme;
+    document.body.dataset.theme = theme === 'light' ? 'light' : '';
+
+    if (!state.settings.userSetBgColor) {
+      const bgColor = theme === 'light' ? '#ffffff' : '#000000';
+      state.settings.bgColor = bgColor;
+      getViewer().setBackgroundColor(bgColor);
+    }
+
+    refreshLabels();
+    getViewer().render();
+    notifyStateChange();
+
+    try {
+      localStorage.setItem('3dmol-gui-theme', theme);
+    } catch (e) {
+      // localStorage may be unavailable
+    }
+  },
 });
+
+// --- Restore saved theme preference ---
+{
+  let savedTheme = 'dark';
+  try {
+    savedTheme = localStorage.getItem('3dmol-gui-theme') || 'dark';
+  } catch (e) {
+    // localStorage unavailable
+  }
+  if (savedTheme === 'light') {
+    const state = getState();
+    state.settings.theme = 'light';
+    document.body.dataset.theme = 'light';
+    menubar.setTheme('light');
+    if (!state.settings.userSetBgColor) {
+      state.settings.bgColor = '#ffffff';
+      getViewer().setBackgroundColor('#ffffff');
+      getViewer().render();
+    }
+  }
+}
 
 // --- Command system ---
 const registry = createCommandRegistry();
@@ -944,7 +977,7 @@ createContextMenu(document.getElementById('viewer-container'), {
     if (!selSpec) return;
 
     if (prop === 'clear') {
-      v.removeAllLabels();
+      clearAllLabels();
       v.render();
       terminal.print('Labels cleared', 'result');
       return;
@@ -952,17 +985,12 @@ createContextMenu(document.getElementById('viewer-container'), {
 
     const propMap = { atom: 'atom', resn: 'resn', resi: 'resi', chain: 'chain', elem: 'elem', index: 'serial' };
     const atomProp = propMap[prop] || prop;
-    const atoms = v.selectedAtoms(selSpec);
+    let atoms = v.selectedAtoms(selSpec);
+    if (['resn', 'resi', 'chain'].includes(prop)) {
+      atoms = atoms.filter(a => a.atom === 'CA');
+    }
     for (const atom of atoms) {
-      v.addLabel(String(atom[atomProp]), {
-        position: { x: atom.x, y: atom.y, z: atom.z },
-        backgroundColor: '#000000',
-        backgroundOpacity: 0.15,
-        borderColor: 'rgba(0, 0, 0, 0.4)',
-        borderThickness: 1,
-        fontColor: '#FFFFFF',
-        fontSize: 10,
-      });
+      addTrackedLabel(String(atom[atomProp]), { x: atom.x, y: atom.y, z: atom.z });
     }
     v.render();
     terminal.print(`Labeled selection by ${prop}`, 'result');

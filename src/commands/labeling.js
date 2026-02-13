@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection } from './resolve-selection.js';
-import { getViewer } from '../viewer.js';
+import { getViewer, addTrackedLabel, clearAllLabels } from '../viewer.js';
 
 /**
  * Valid label property names that can be used with the label command.
@@ -56,17 +56,11 @@ export function registerLabelingCommands(registry) {
       }
 
       const atomProp = PROP_MAP[property];
+      if (['resn', 'resi', 'chain'].includes(property)) {
+        atoms = atoms.filter(a => a.atom === 'CA');
+      }
       for (const atom of atoms) {
-        const text = String(atom[atomProp]);
-        viewer.addLabel(text, {
-          position: { x: atom.x, y: atom.y, z: atom.z },
-          backgroundColor: '#000000',
-          backgroundOpacity: 0.15,
-          borderColor: 'rgba(0, 0, 0, 0.4)',
-          borderThickness: 1,
-          fontColor: '#FFFFFF',
-          fontSize: 10,
-        });
+        addTrackedLabel(String(atom[atomProp]), { x: atom.x, y: atom.y, z: atom.z });
       }
       viewer.render();
 
@@ -78,9 +72,8 @@ export function registerLabelingCommands(registry) {
 
   registry.register('unlabel', {
     handler: (args, ctx) => {
-      const viewer = getViewer();
-      viewer.removeAllLabels();
-      viewer.render();
+      clearAllLabels();
+      getViewer().render();
       ctx.terminal.print('All labels removed', 'result');
     },
     usage: 'unlabel',

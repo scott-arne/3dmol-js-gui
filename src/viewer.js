@@ -37,6 +37,64 @@ export function repStyle(rep) {
   return { [rep]: defaults || {} };
 }
 
+/** @type {Array<{text: string, position: {x: number, y: number, z: number}}>} */
+let trackedLabels = [];
+
+/**
+ * Return a label style spec appropriate for the current viewer background.
+ *
+ * Uses the body data-theme attribute to determine contrast: light theme gets
+ * bold black text, dark theme gets bold white text. No background is drawn.
+ *
+ * @returns {object} A 3Dmol label style spec.
+ */
+export function labelStyle() {
+  const isLight = document.body.dataset.theme === 'light';
+  return {
+    backgroundOpacity: 0,
+    borderThickness: 0,
+    fontColor: isLight ? '#000000' : '#FFFFFF',
+    fontSize: 12,
+    bold: true,
+  };
+}
+
+/**
+ * Add a tracked label to the viewer.
+ *
+ * Wraps viewer.addLabel so that labels can be rebuilt on theme change.
+ *
+ * @param {string} text - The label text.
+ * @param {{x: number, y: number, z: number}} position - The label position.
+ */
+export function addTrackedLabel(text, position) {
+  trackedLabels.push({ text, position });
+  viewer.addLabel(text, { position, ...labelStyle() });
+}
+
+/**
+ * Remove all labels and clear the tracked list.
+ */
+export function clearAllLabels() {
+  viewer.removeAllLabels();
+  trackedLabels = [];
+}
+
+/**
+ * Rebuild all tracked labels with the current label style.
+ *
+ * Called after a theme change to update label colors.
+ */
+export function refreshLabels() {
+  if (trackedLabels.length === 0) return;
+  viewer.removeAllLabels();
+  const style = labelStyle();
+  for (const lbl of trackedLabels) {
+    viewer.addLabel(lbl.text, { position: lbl.position, ...style });
+  }
+  viewer.render();
+}
+
 /** @type {object|null} The 3Dmol GLViewer instance. */
 let viewer = null;
 

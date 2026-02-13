@@ -242,6 +242,7 @@ export function registerStylingCommands(registry) {
 
       const state = getState();
       state.settings.bgColor = hex;
+      state.settings.userSetBgColor = true;
       notifyStateChange();
 
       ctx.terminal.print(`Background color set to ${hex}`, 'result');
@@ -267,6 +268,7 @@ export function registerStylingCommands(registry) {
           viewer.setBackgroundColor(hex);
           const state = getState();
           state.settings.bgColor = hex;
+          state.settings.userSetBgColor = true;
           break;
         }
         case 'stick_radius': {
