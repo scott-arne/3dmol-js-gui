@@ -1,0 +1,19 @@
+# Development
+docs/
+tests/
+demo/
+.claude/
+.gitkeep
+
+# Config
+vite.config.js
+vitest.config.js
+.eslintrc*
+.prettierrc*
+
+# Source (dist/ is the published artifact)
+src/
+
+# Misc
+*.log
+.DS_Store

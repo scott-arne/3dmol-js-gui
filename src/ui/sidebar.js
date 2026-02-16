@@ -1,7 +1,7 @@
 /**
  * Sidebar component for the 3Dmol.js GUI.
  *
- * Renders a PyMOL-like object list with status indicators and popup menus
+ * Renders an object list with status indicators and popup menus
  * for controlling visibility, representation, labeling, and coloring of
  * molecular objects.
  */

@@ -1,5 +1,5 @@
 /**
- * Selection Evaluator for PyMOL-style selection AST nodes.
+ * Selection Evaluator for selection AST nodes.
  *
  * Evaluates AST produced by the PEG parser against arrays of atom objects
  * (3Dmol.js-style atoms with serial, atom, resn, resi, chain, elem, ss, x, y, z).

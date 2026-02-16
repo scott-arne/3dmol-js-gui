@@ -1155,7 +1155,7 @@ terminal.print('3Dmol.js GUI ready. Type "help" for commands.', 'info');
 
   const subtitle = document.createElement('div');
   subtitle.className = 'quickstart-subtitle';
-  subtitle.textContent = 'A PyMOL-like interface for molecular visualization';
+  subtitle.textContent = 'An interface for molecular visualization';
 
   const cmdList = document.createElement('div');
   cmdList.className = 'quickstart-commands';

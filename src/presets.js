@@ -12,6 +12,36 @@ import { CHAIN_PALETTES } from './ui/color-swatches.js';
 const WATER_RESN = ['HOH', 'WAT', 'H2O'];
 
 /**
+ * Apply Jmol element coloring with per-chain carbon colors from the pastel
+ * palette. Uses the same two-pass approach as the sidebar "By Element" color
+ * menu: first set Jmol colorscheme, then override carbon atoms per chain.
+ *
+ * @param {object} viewer - The 3Dmol GLViewer instance.
+ * @param {object} selSpec - The selection spec to color.
+ * @param {Array<string>} reps - Representation names to apply coloring to.
+ */
+function applyElementByChain(viewer, selSpec, reps) {
+  const palette = CHAIN_PALETTES.pastel.colors;
+  const atoms = viewer.selectedAtoms(selSpec);
+  const chains = [...new Set(atoms.map(a => a.chain))].sort();
+
+  // Non-carbon atoms: Jmol element coloring
+  const nonCarbonSel = Object.assign({}, selSpec, { not: { elem: 'C' } });
+  const jmolStyle = {};
+  for (const rep of reps) jmolStyle[rep] = { colorscheme: 'Jmol' };
+  viewer.addStyle(nonCarbonSel, jmolStyle);
+
+  // Carbon atoms: per-chain pastel palette color
+  chains.forEach((ch, i) => {
+    const color = palette[i % palette.length];
+    const carbonSel = Object.assign({}, selSpec, { elem: 'C', chain: ch });
+    const carbonStyle = {};
+    for (const rep of reps) carbonStyle[rep] = { color };
+    viewer.addStyle(carbonSel, carbonStyle);
+  });
+}
+
+/**
  * Merge a base selection spec with additional criteria.
  *
  * @param {object} base - The base selection spec (may be empty).
@@ -23,39 +53,19 @@ function merge(base, extra) {
 }
 
 /**
- * Build a pastel chain colorscheme from a set of atoms.
- *
- * Discovers unique chain IDs, sorts them, and maps each to a color from the
- * pastel palette (cycling if there are more chains than colors).
- *
- * @param {Array} atoms - Atom objects with a `.chain` property.
- * @returns {{prop: string, map: Object}} A 3Dmol.js custom colorscheme object.
- */
-function pastelChainScheme(atoms) {
-  const palette = CHAIN_PALETTES.pastel.colors;
-  const chains = [...new Set(atoms.map(a => a.chain))].sort();
-  const map = {};
-  chains.forEach((ch, i) => { map[ch] = palette[i % palette.length]; });
-  return { prop: 'chain', map };
-}
-
-/**
  * Available preset definitions keyed by lowercase name.
  */
 export const PRESETS = {
   simple: {
     label: 'Simple',
-    description: 'Cartoon for protein/nucleic (pastel chain), grey sticks for ligands',
+    description: 'Element-colored cartoon with per-chain carbons, sticks for ligands',
     apply(viewer, base) {
       viewer.setStyle(base, {});
       viewer.addStyle(
         merge(base, { hetflag: true, not: { resn: WATER_RESN } }),
-        { stick: { color: '#808080' } }
+        { stick: { colorscheme: 'Jmol' } }
       );
-      const proteinSel = merge(base, { hetflag: false });
-      const atoms = viewer.selectedAtoms(proteinSel);
-      const colorscheme = pastelChainScheme(atoms);
-      viewer.addStyle(proteinSel, { cartoon: { colorscheme } });
+      applyElementByChain(viewer, merge(base, { hetflag: false }), ['cartoon']);
       viewer.render();
       return new Set(['cartoon', 'stick']);
     },
@@ -63,15 +73,13 @@ export const PRESETS = {
 
   sites: {
     label: 'Sites',
-    description: 'Simple (pastel chain) + sticks for residues within 5A of ligands',
+    description: 'Element-colored cartoon with per-chain carbons + sticks near ligands',
     apply(viewer, base) {
       viewer.setStyle(base, {});
       const hetSpec = merge(base, { hetflag: true, not: { resn: WATER_RESN } });
-      viewer.addStyle(hetSpec, { stick: { color: '#808080' } });
+      viewer.addStyle(hetSpec, { stick: { colorscheme: 'Jmol' } });
       const proteinSel = merge(base, { hetflag: false });
-      const proteinAtoms = viewer.selectedAtoms(proteinSel);
-      const colorscheme = pastelChainScheme(proteinAtoms);
-      viewer.addStyle(proteinSel, { cartoon: { colorscheme } });
+      applyElementByChain(viewer, proteinSel, ['cartoon']);
 
       // Find residues within 5 angstroms of HETATM and show as sticks
       const hetAtoms = viewer.selectedAtoms(hetSpec);
@@ -95,7 +103,7 @@ export const PRESETS = {
             if (nearResKeys.has(`${a.chain}:${a.resi}`)) nearIndices.push(a.index);
           }
           if (nearIndices.length > 0) {
-            viewer.addStyle({ index: nearIndices }, { stick: { colorscheme } });
+            applyElementByChain(viewer, { index: nearIndices }, ['stick']);
           }
         }
       }

@@ -1,8 +1,24 @@
 {
   "name": "3dmol-js-gui",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "description": "A GUI for 3Dmol.js with a command terminal, interactive sidebar, and selection language.",
+  "license": "MIT",
+  "keywords": [
+    "3dmol",
+    "molecular-visualization",
+    "selection-language",
+    "protein",
+    "pdb",
+    "gui",
+    "chemistry",
+    "biology"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/USER/3dmol-js-gui.git"
+  },
+  "homepage": "https://github.com/USER/3dmol-js-gui",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

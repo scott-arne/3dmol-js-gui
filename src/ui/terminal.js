@@ -1,7 +1,7 @@
 /**
  * Terminal UI component for the 3Dmol.js GUI.
  *
- * Provides a PyMOL-like command terminal with scrollable output, auto-growing
+ * Provides a command terminal with scrollable output, auto-growing
  * textarea input, command history, and collapse toggle.
  */
 

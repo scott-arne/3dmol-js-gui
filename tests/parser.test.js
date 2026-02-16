@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parse } from '../src/parser/pymol-selection.pegjs';
+import { parse } from '../src/parser/selection.pegjs';
 
-describe('PyMOL Selection Parser', () => {
+describe('Selection Parser', () => {
 
   describe('constants', () => {
     it('parses "all"', () => {

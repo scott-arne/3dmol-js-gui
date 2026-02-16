@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluate, toAtomSelectionSpec } from '../src/parser/evaluator.js';
-import { parse } from '../src/parser/pymol-selection.pegjs';
+import { parse } from '../src/parser/selection.pegjs';
 
 const atoms = [
   { serial: 0, atom: 'N',  resn: 'ALA', resi: 1, chain: 'A', elem: 'N',  ss: 'h', x: 0, y: 0, z: 0 },

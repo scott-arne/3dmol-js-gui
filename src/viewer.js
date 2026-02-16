@@ -1,5 +1,5 @@
 /**
- * 3Dmol.js viewer wrapper for the PyMOL-like GUI.
+ * 3Dmol.js viewer wrapper for the GUI.
  *
  * Provides a thin abstraction over the $3Dmol global, handling viewer
  * initialization, model loading (both from RCSB and raw data), model removal,

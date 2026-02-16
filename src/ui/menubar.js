@@ -1,8 +1,8 @@
 /**
  * Menu bar component for the 3Dmol.js GUI.
  *
- * Provides a horizontal menu bar with File, Select, and Window dropdowns
- * similar to PyMOL's menu system. Manages dropdown open/close state,
+ * Provides a horizontal menu bar with File, Select, and Window dropdowns.
+ * Manages dropdown open/close state,
  * selection-mode radio behavior, and independent window toggle checkmarks.
  */
 

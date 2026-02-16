@@ -2,7 +2,7 @@ import { parseArgs } from './registry.js';
 import { resolveSelection } from './resolve-selection.js';
 import { getViewer } from '../viewer.js';
 import { getState, addSelection } from '../state.js';
-import { parse } from '../parser/pymol-selection.pegjs';
+import { parse } from '../parser/selection.pegjs';
 import { evaluate } from '../parser/evaluator.js';
 
 /**

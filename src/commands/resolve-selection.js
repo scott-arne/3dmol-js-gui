@@ -1,4 +1,4 @@
-import { parse } from '../parser/pymol-selection.pegjs';
+import { parse } from '../parser/selection.pegjs';
 import { evaluate, toAtomSelectionSpec } from '../parser/evaluator.js';
 import { getState } from '../state.js';
 import { getAllAtoms } from '../viewer.js';
@@ -12,7 +12,7 @@ import { getAllAtoms } from '../viewer.js';
  * 2. Check if it matches a named selection in ``state.selections`` -> use that expression
  * 3. Check if it matches an object name in ``state.objects`` -> ``{ spec: { model: obj.model } }``
  *    (skipped if a named selection matched, so named selections shadow object names)
- * 4. Parse as PyMOL selection expression:
+ * 4. Parse as selection expression:
  *
  *    a. Try ``toAtomSelectionSpec`` for simple expressions -> ``{ spec: ... }``
  *    b. Fall back to atom-by-atom evaluation -> ``{ atoms: [...] }``
@@ -56,7 +56,7 @@ export function resolveSelection(selStr) {
     throw new Error(`Ambiguous name "${trimmed}": ${allNameMatches.join(', ')}`);
   }
 
-  // Parse as PyMOL selection expression
+  // Parse as selection expression
   let ast;
   try {
     ast = parse(trimmed);

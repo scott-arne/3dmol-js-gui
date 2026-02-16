@@ -1,4 +1,4 @@
-// PyMOL Selection Language Parser — Peggy PEG Grammar
+// Selection Language Parser — Peggy PEG Grammar
 // Produces AST nodes for consumption by 3Dmol.js GUI.
 //
 // Operator precedence (lowest to highest): XOR < OR < AND < NOT
