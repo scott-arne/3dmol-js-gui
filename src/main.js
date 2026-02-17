@@ -744,21 +744,75 @@ terminal.setCompleter((prefix, isFirstWord) => {
 // --- Register state change listener ---
 onStateChange(() => sidebar.refresh(getState()));
 
-// --- Welcome message ---
-terminal.print('3Dmol.js GUI ready. Type "help" for commands.', 'info');
+// --- Initialization / Quick-start ---
+let dismissQuickstart = null;
+const init = window.__C3D_INIT__;
 
-// --- Quick-start overlay ---
-let dismissQuickstart = showQuickstart({
-  async onTry() {
-    terminal.print('> fetch 1CRN', 'command');
-    try {
-      await registry.execute('fetch 1CRN', ctx);
-    } catch (e) {
-      terminal.print(e.message, 'error');
+if (init) {
+  // Load molecules
+  const molecules = init.molecules || [];
+  for (const mol of molecules) {
+    const model = loadModelData(mol.data, mol.format);
+    const modelIndex = model.getID ? model.getID() : null;
+    addObject(mol.name || mol.format, model, modelIndex);
+  }
+
+  // Clear default styles applied by loadModelData, then apply custom styles
+  const v = getViewer();
+  v.setStyle({}, {});
+  const styles = init.styles || [];
+  for (const s of styles) {
+    v.addStyle(s.selection || {}, s.style || {});
+  }
+
+  // Configure UI visibility
+  if (init.ui) {
+    if (init.ui.sidebar === false) {
+      app.classList.add('sidebar-hidden');
     }
-  },
-  onDismiss() {},
-});
+    if (init.ui.terminal === false) {
+      app.classList.add('terminal-hidden');
+    }
+    if (init.ui.menubar === false) {
+      document.getElementById('menubar-container').style.display = 'none';
+    }
+  }
+
+  // Set background color
+  if (init.background) {
+    v.setBackgroundColor(init.background);
+    const state = getState();
+    state.settings.bgColor = init.background;
+    state.settings.userSetBgColor = true;
+    notifyStateChange();
+  }
+
+  // Apply zoom
+  if (init.zoomTo !== undefined && init.zoomTo !== null) {
+    v.zoomTo(init.zoomTo);
+  } else {
+    v.zoomTo();
+  }
+
+  v.render();
+  terminal.print(`Loaded ${molecules.length} molecule(s) from initialization`, 'info');
+} else {
+  // --- Welcome message ---
+  terminal.print('3Dmol.js GUI ready. Type "help" for commands.', 'info');
+
+  // --- Quick-start overlay ---
+  dismissQuickstart = showQuickstart({
+    async onTry() {
+      terminal.print('> fetch 1CRN', 'command');
+      try {
+        await registry.execute('fetch 1CRN', ctx);
+      } catch (e) {
+        terminal.print(e.message, 'error');
+      }
+    },
+    onDismiss() {},
+  });
+}
 
 // --- Terminal command handler ---
 terminal.onCommand(async (input) => {
