@@ -1,8 +1,8 @@
 /**
- * Modal dialog components for file loading and exporting.
+ * Modal dialog and overlay components for the GUI.
  *
- * Provides showLoadDialog (with Fetch PDB and Local File tabs) and
- * showExportDialog (with PNG export) used by the File menu.
+ * Provides showLoadDialog (with Fetch PDB and Local File tabs),
+ * showExportDialog (with PNG export), and showQuickstart (welcome overlay).
  */
 
 import { getViewer } from '../viewer.js';
@@ -81,7 +81,7 @@ export function showLoadDialog(callbacks) {
   filePanel.className = 'modal-panel hidden';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro';
+  fileInput.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif';
   const loadBtn = document.createElement('button');
   loadBtn.className = 'modal-btn';
   loadBtn.textContent = 'Load';
@@ -208,4 +208,148 @@ export function showExportDialog(callbacks) {
   });
 
   document.body.appendChild(overlay);
+}
+
+/**
+ * Show a quick-start overlay with example commands.
+ *
+ * @param {object} callbacks
+ * @param {function} callbacks.onTry - Called when "Try it!" is clicked.
+ * @param {function} callbacks.onDismiss - Called when dismissed.
+ * @returns {function} A dismiss function to programmatically close the overlay.
+ */
+export function showQuickstart(callbacks) {
+  const exampleCommands = [
+    { cmd: 'fetch 1CRN', desc: 'Download a structure from the PDB' },
+    { cmd: 'show cartoon', desc: 'Display as cartoon ribbon' },
+    { cmd: 'color chain', desc: 'Color by chain assignment' },
+    { cmd: 'zoom', desc: 'Zoom to fit the molecule' },
+    { cmd: 'help', desc: 'List all available commands' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'quickstart-overlay';
+
+  const card = document.createElement('div');
+  card.className = 'quickstart-card';
+
+  const title = document.createElement('div');
+  title.className = 'quickstart-title';
+  title.textContent = '3Dmol.js GUI';
+
+  const subtitle = document.createElement('div');
+  subtitle.className = 'quickstart-subtitle';
+  subtitle.textContent = 'An interface for molecular visualization';
+
+  const cmdList = document.createElement('div');
+  cmdList.className = 'quickstart-commands';
+  for (const { cmd, desc } of exampleCommands) {
+    const row = document.createElement('div');
+    row.className = 'quickstart-cmd-row';
+    const cmdEl = document.createElement('span');
+    cmdEl.className = 'quickstart-cmd';
+    cmdEl.textContent = cmd;
+    const descEl = document.createElement('span');
+    descEl.className = 'quickstart-cmd-desc';
+    descEl.textContent = desc;
+    row.appendChild(cmdEl);
+    row.appendChild(descEl);
+    cmdList.appendChild(row);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'quickstart-actions';
+
+  const tryBtn = document.createElement('button');
+  tryBtn.className = 'quickstart-try-btn';
+  tryBtn.textContent = 'Try it!';
+
+  const dismissLink = document.createElement('button');
+  dismissLink.className = 'quickstart-dismiss';
+  dismissLink.textContent = 'Dismiss';
+
+  actions.appendChild(tryBtn);
+  actions.appendChild(dismissLink);
+  card.appendChild(title);
+  card.appendChild(subtitle);
+  card.appendChild(cmdList);
+  card.appendChild(actions);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  function dismiss() {
+    if (overlay.parentNode) overlay.remove();
+  }
+
+  tryBtn.addEventListener('click', () => {
+    dismiss();
+    if (callbacks.onTry) callbacks.onTry();
+  });
+
+  dismissLink.addEventListener('click', () => {
+    dismiss();
+    if (callbacks.onDismiss) callbacks.onDismiss();
+  });
+
+  return dismiss;
+}
+
+/**
+ * Show a rename dialog.
+ *
+ * @param {string} currentName - The current name.
+ * @param {function} onConfirm - Called with the new name string.
+ */
+export function showRenameDialog(currentName, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'modal';
+
+  const header = document.createElement('div');
+  header.className = 'modal-header';
+  const title = document.createElement('span');
+  title.textContent = 'Rename';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'modal-close';
+  closeBtn.textContent = '\u00d7';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+  dialog.appendChild(header);
+
+  const content = document.createElement('div');
+  content.className = 'modal-body';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'modal-input';
+  input.value = currentName;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmBtn.click();
+  });
+  content.appendChild(input);
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'modal-btn';
+  confirmBtn.textContent = 'Rename';
+  confirmBtn.addEventListener('click', () => {
+    const newName = input.value.trim();
+    if (newName && newName !== currentName) {
+      onConfirm(newName);
+    }
+    overlay.remove();
+  });
+  content.appendChild(confirmBtn);
+
+  dialog.appendChild(content);
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+  input.select();
+  input.focus();
 }
