@@ -274,13 +274,41 @@ export function registerStylingCommands(registry) {
         case 'stick_radius': {
           const radius = parseFloat(value);
           if (isNaN(radius)) throw new Error('stick_radius must be a number');
-          viewer.setStyle({}, { stick: { radius } });
+          const stState = getState();
+          stState.settings.stickRadius = radius;
+          for (const [, obj] of stState.objects) {
+            if (!obj.visible || !obj.representations.has('stick')) continue;
+            const selSpec = { model: obj.model };
+            viewer.setStyle(selSpec, {});
+            for (const rep of obj.representations) {
+              if (rep === 'line' && obj.representations.has('stick')) continue;
+              const style = repStyle(rep);
+              if (rep === 'stick') {
+                style.stick = Object.assign({}, style.stick, { radius });
+              }
+              viewer.addStyle(selSpec, style);
+            }
+          }
           break;
         }
         case 'sphere_scale': {
           const scale = parseFloat(value);
           if (isNaN(scale)) throw new Error('sphere_scale must be a number');
-          viewer.setStyle({}, { sphere: { scale } });
+          const spState = getState();
+          spState.settings.sphereScale = scale;
+          for (const [, obj] of spState.objects) {
+            if (!obj.visible || !obj.representations.has('sphere')) continue;
+            const selSpec = { model: obj.model };
+            viewer.setStyle(selSpec, {});
+            for (const rep of obj.representations) {
+              if (rep === 'line' && obj.representations.has('stick')) continue;
+              const style = repStyle(rep);
+              if (rep === 'sphere') {
+                style.sphere = Object.assign({}, style.sphere, { scale });
+              }
+              viewer.addStyle(selSpec, style);
+            }
+          }
           break;
         }
         case 'label_size': {
@@ -342,6 +370,7 @@ export function registerStylingCommands(registry) {
         const selSpec = { model: obj.model };
         viewer.setStyle(selSpec, {});
         for (const rep of obj.representations) {
+          if (rep === 'line' && obj.representations.has('stick')) continue;
           const style = repStyle(rep);
           if (rep === 'cartoon') {
             style.cartoon = Object.assign({}, style.cartoon, { style: styleValue });

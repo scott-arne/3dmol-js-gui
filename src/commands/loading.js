@@ -1,6 +1,8 @@
 import { fetchPDB, loadModelData } from '../viewer.js';
 import { addObject } from '../state.js';
 
+let fetching = false;
+
 /**
  * Register the loading commands (fetch, load) into the given command registry.
  *
@@ -13,14 +15,20 @@ export function registerLoadingCommands(registry) {
       if (!/^[A-Z0-9]{4}$/.test(pdbId)) {
         throw new Error('Usage: fetch <pdb_id> (must be a 4-character PDB ID)');
       }
-      ctx.terminal.print(`Fetching PDB ${pdbId}...`, 'info');
+      if (fetching) {
+        throw new Error('A fetch is already in progress. Please wait.');
+      }
+      fetching = true;
       try {
+        ctx.terminal.print(`Fetching PDB ${pdbId}...`, 'info');
         const model = await fetchPDB(pdbId);
         const modelIndex = model.getID ? model.getID() : null;
         const name = addObject(pdbId, model, modelIndex);
         ctx.terminal.print(`Loaded ${pdbId} as "${name}"`, 'result');
       } catch (e) {
         throw new Error(`Failed to fetch ${pdbId}: ${e.message}`);
+      } finally {
+        fetching = false;
       }
     },
     usage: 'fetch <pdb_id>',
@@ -32,7 +40,7 @@ export function registerLoadingCommands(registry) {
       const input = document.createElement('input');
       input.type = 'file';
       input.style.display = 'none';
-      input.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro';
+      input.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif';
       input.onchange = (e) => {
         const file = e.target.files[0];
         if (!file) return;

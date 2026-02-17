@@ -155,6 +155,9 @@ export function removeSelection(name) {
 export function renameSelection(oldName, newName) {
   const entry = state.selections.get(oldName);
   if (!entry) return false;
+  if (state.selections.has(newName)) {
+    throw new Error(`A selection named "${newName}" already exists`);
+  }
   state.selections.delete(oldName);
   state.selections.set(newName, entry);
   _notify();
@@ -171,6 +174,9 @@ export function renameSelection(oldName, newName) {
 export function renameObject(oldName, newName) {
   const entry = state.objects.get(oldName);
   if (!entry) return false;
+  if (state.objects.has(newName)) {
+    throw new Error(`An object named "${newName}" already exists`);
+  }
   state.objects.delete(oldName);
   state.objects.set(newName, entry);
   _notify();
