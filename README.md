@@ -2,18 +2,6 @@
 
 A graphical interface for [3Dmol.js](https://3dmol.csb.pitt.edu/), providing an interactive molecular viewer with a command terminal, sidebar object manager, and an expressive selection language. Designed for structural biologists and computational chemists who want a desktop-style workflow in the browser.
 
-## Features
-
-- **Interactive Viewer** — Click atoms to select, right-click for context menus
-- **Command Terminal** — 30 commands with tab-completion and command history
-- **Selection Language** — Expressive atom selection with boolean operators, property selectors, and macro syntax
-- **Sidebar** — Manage objects and named selections with visibility toggles, renaming, and per-object labels
-- **Representations** — Cartoon, stick, line, sphere, surface, cross, ribbon
-- **Coloring** — 60+ named colors, custom color definitions, and schemes (element, chain, secondary structure, B-factor spectrum)
-- **Presets** — Quick-apply view styles: Simple, Sites, Ball-and-Stick
-- **Themes** — Dark and light themes with persistent preference
-- **Export** — Save views as PNG images
-
 ## Getting Started
 
 ### Prerequisites
@@ -38,7 +26,7 @@ From the command terminal, fetch a structure from the RCSB PDB:
 fetch 1ubq
 ```
 
-Or use **File > Load...** to open a local structure file.
+Or use **File > Load...** to open a local structure file (PDB, SDF, MOL2, XYZ, CIF, CUBE, PQR, GRO).
 
 ## Building
 
@@ -49,6 +37,8 @@ Or use **File > Load...** to open a local structure file.
 | Preview | `npm run preview` | Serves the production build locally |
 | Tests | `npm test` | Runs the test suite once |
 | Test (watch) | `npm run test:watch` | Reruns tests on file changes |
+
+The production build uses relative asset paths (`base: './'`), so the output can be served from any directory without path adjustments.
 
 ## Commands
 
@@ -108,6 +98,8 @@ Selections can be typed in the command terminal or used as arguments to commands
 | `loop` | Loop regions |
 | `hydrogen` / `h.` | Hydrogen atoms |
 | `heavy` | Non-hydrogen atoms |
+| `polar_hydrogen` / `polarh` | Hydrogen atoms bonded to N, O, or S |
+| `nonpolar_hydrogen` / `apolarh` | Hydrogen atoms bonded to C |
 
 ### Property Selectors
 
@@ -143,9 +135,9 @@ Use the slash-separated macro format for quick selections:
 
 Examples:
 
-- `//A/10/CA` — atom CA in residue 10 of chain A
-- `//A/10` — all atoms in residue 10 of chain A
-- `//A` — all atoms in chain A
+- `//A/10/CA` -- atom CA in residue 10 of chain A
+- `//A/10` -- all atoms in residue 10 of chain A
+- `//A` -- all atoms in chain A
 
 ### Combining Expressions
 
@@ -164,6 +156,7 @@ label active_site, resn
 ├── vite.config.js          Vite build config with Peggy plugin
 ├── src/
 │   ├── main.js             Application bootstrap and wiring
+│   ├── actions.js          Shared color, label, show/hide, and view actions
 │   ├── viewer.js           3Dmol.js wrapper (init, load, select, highlight)
 │   ├── state.js            Observable application state store
 │   ├── presets.js           View preset definitions
@@ -180,7 +173,7 @@ label active_site, resn
 │   │   ├── selection.js    Select/count_atoms/get_model commands
 │   │   └── styling.js      Color/set/bg_color/cartoon_style commands
 │   ├── parser/
-│   │   ├── selection.pegjs          PEG grammar for selection language
+│   │   ├── selection.pegjs PEG grammar for selection language
 │   │   └── evaluator.js    AST evaluator for parsed selections
 │   └── ui/
 │       ├── styles.css      All CSS (dark + light themes)
@@ -189,18 +182,47 @@ label active_site, resn
 │       ├── terminal.js     Command terminal with history and completion
 │       ├── context-menu.js Right-click context menu
 │       ├── color-swatches.js Color picker palette and B-factor scheme
-│       └── dialogs.js      Modal dialogs (load file, quickstart)
+│       └── dialogs.js      Modal dialogs (quickstart, rename, file load)
 └── tests/
-    ├── parser.test.js      Selection language parser tests
-    ├── evaluator.test.js   AST evaluator tests
-    └── commands.test.js    Command handler tests
+    ├── parser.test.js      Selection language parser tests (76)
+    ├── evaluator.test.js   AST evaluator tests (33)
+    ├── commands.test.js    Command handler tests (8)
+    ├── state.test.js       Application state tests (29)
+    ├── actions.test.js     Shared action function tests (10)
+    ├── integration.test.js Command registry integration tests (5)
+    ├── helpers/
+    │   └── mock-3dmol.js   3Dmol.js viewer mock for tests
+    └── ui/
+        └── terminal.test.js  Terminal component tests (5)
 ```
 
-## Hosting and Distribution
+## Hosting and Deployment
+
+### Static Hosting
+
+The production build outputs a self-contained `dist/` folder that can be deployed to any static hosting provider:
+
+```bash
+npm run build
+```
+
+- **GitHub Pages** -- Push `dist/` to a `gh-pages` branch or use GitHub Actions to build and deploy automatically.
+- **Netlify / Vercel** -- Connect the repository, set the build command to `npm run build`, and the publish directory to `dist`.
+- **Any web server** -- Copy the contents of `dist/` to the document root.
+
+### 3Dmol.js Dependency
+
+3Dmol.js is loaded from the official CDN at runtime. No additional server-side dependencies are required.
+
+To self-host the 3Dmol.js library instead, replace the CDN `<script>` tag in `index.html` with a path to your own hosted copy:
+
+```html
+<script src="/lib/3Dmol-min.js"></script>
+```
 
 ### npm
 
-1. Update the `repository` URLs in `package.json` to point to your repository.
+1. Update the `repository` URL in `package.json` to point to your repository.
 2. Authenticate with npm:
    ```bash
    npm login
@@ -214,20 +236,6 @@ label active_site, resn
    ```bash
    npm publish
    ```
-5. Users install with:
-   ```bash
-   npm install 3dmol-js-gui
-   ```
-
-### Static Hosting
-
-The production build outputs a self-contained `dist/` folder that can be deployed to any static hosting provider:
-
-- **GitHub Pages** — Push `dist/` to a `gh-pages` branch or use GitHub Actions to build and deploy automatically.
-- **Netlify / Vercel** — Connect the repository, set the build command to `npm run build`, and the publish directory to `dist`.
-- **Any web server** — Copy the contents of `dist/` to the document root.
-
-> **Note:** 3Dmol.js is loaded from CDN at runtime. No additional server-side dependencies are required.
 
 ## License
 
