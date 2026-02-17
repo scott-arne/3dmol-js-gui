@@ -535,16 +535,61 @@ export function createSidebar(container, callbacks) {
      * @param {object} state - The application state containing an objects Map.
      */
     refresh(state) {
-      container.innerHTML = '';
+      const expectedNames = new Set();
+
+      // Update or add object rows
       for (const [name, obj] of state.objects) {
-        container.appendChild(buildObjectRow(name, obj));
+        expectedNames.add('obj:' + name);
+        let row = container.querySelector(`[data-kind="object"][data-name="${CSS.escape(name)}"]`);
+        if (!row) {
+          row = buildObjectRow(name, obj);
+          row.dataset.kind = 'object';
+          row.dataset.name = name;
+          const sep = container.querySelector('.sidebar-separator');
+          if (sep) {
+            container.insertBefore(row, sep);
+          } else {
+            container.appendChild(row);
+          }
+        } else {
+          row.classList.toggle('dimmed', !obj.visible);
+          const status = row.querySelector('.sidebar-object-status');
+          if (status) status.classList.toggle('active', obj.visible);
+        }
       }
-      if (state.selections.size > 0) {
-        const sep = document.createElement('div');
+
+      // Handle separator
+      const hasSelections = state.selections.size > 0;
+      let sep = container.querySelector('.sidebar-separator');
+      if (hasSelections && !sep) {
+        sep = document.createElement('div');
         sep.className = 'sidebar-separator';
         container.appendChild(sep);
-        for (const [name, sel] of state.selections) {
-          container.appendChild(buildSelectionRow(name, sel));
+      } else if (!hasSelections && sep) {
+        sep.remove();
+      }
+
+      // Update or add selection rows
+      for (const [name, sel] of state.selections) {
+        expectedNames.add('sel:' + name);
+        let row = container.querySelector(`[data-kind="selection"][data-name="${CSS.escape(name)}"]`);
+        if (!row) {
+          row = buildSelectionRow(name, sel);
+          row.dataset.kind = 'selection';
+          row.dataset.name = name;
+          container.appendChild(row);
+        } else {
+          row.classList.toggle('dimmed', !sel.visible);
+          const status = row.querySelector('.sidebar-object-status');
+          if (status) status.classList.toggle('active', sel.visible);
+        }
+      }
+
+      // Remove stale rows
+      for (const row of [...container.querySelectorAll('[data-kind]')]) {
+        const key = row.dataset.kind === 'object' ? 'obj:' : 'sel:';
+        if (!expectedNames.has(key + row.dataset.name)) {
+          row.remove();
         }
       }
     },

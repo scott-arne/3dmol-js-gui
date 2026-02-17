@@ -6,6 +6,7 @@
  */
 
 const MAX_HISTORY = 100;
+const MAX_LINES = 1000;
 
 /**
  * Create a terminal component and mount it inside the given container element.
@@ -222,6 +223,9 @@ export function createTerminal(container) {
       line.className = 'terminal-line' + (type ? ' ' + type : '');
       line.textContent = text;
       output.appendChild(line);
+      while (output.childElementCount > MAX_LINES) {
+        output.removeChild(output.firstChild);
+      }
       output.scrollTop = output.scrollHeight;
     },
 

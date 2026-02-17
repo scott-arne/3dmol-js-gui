@@ -245,14 +245,40 @@ export function evaluate(ast, atoms) {
     case 'heavy':
       return atoms.filter(a => a.elem !== 'H');
 
-    case 'polar_hydrogen':
-      // Simplified: hydrogens bonded to N, O, S — approximate by checking
-      // if atom name starts with H and is near a heteroatom
-      return atoms.filter(a => a.elem === 'H');
+    case 'polar_hydrogen': {
+      const hydrogens = atoms.filter(a => a.elem === 'H');
+      const heavyAtoms = atoms.filter(a => a.elem !== 'H');
+      const polarElements = new Set(['N', 'O', 'S']);
+      return hydrogens.filter(h => {
+        let nearestDist = Infinity;
+        let nearestElem = null;
+        for (const heavy of heavyAtoms) {
+          const d = distance(h, heavy);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestElem = heavy.elem;
+          }
+        }
+        return nearestElem && polarElements.has(nearestElem.toUpperCase());
+      });
+    }
 
-    case 'nonpolar_hydrogen':
-      // Simplified: hydrogens bonded to C
-      return atoms.filter(a => a.elem === 'H');
+    case 'nonpolar_hydrogen': {
+      const hydrogens = atoms.filter(a => a.elem === 'H');
+      const heavyAtoms = atoms.filter(a => a.elem !== 'H');
+      return hydrogens.filter(h => {
+        let nearestDist = Infinity;
+        let nearestElem = null;
+        for (const heavy of heavyAtoms) {
+          const d = distance(h, heavy);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearestElem = heavy.elem;
+          }
+        }
+        return nearestElem && nearestElem.toUpperCase() === 'C';
+      });
+    }
 
     // --- Secondary structure ---
     case 'helix':
