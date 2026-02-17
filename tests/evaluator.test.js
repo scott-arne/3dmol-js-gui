@@ -84,6 +84,20 @@ describe('Selection Evaluator', () => {
     });
   });
 
+  describe('polar and nonpolar hydrogen', () => {
+    it('polar_hydrogen returns H atoms near N/O/S', () => {
+      // Atom serial 5 is H at (0,-1,0), nearest heavy atom is N at serial 0 (0,0,0) distance 1.0
+      const result = selectAtoms('polar_hydrogen');
+      expect(result).toEqual([5]);
+    });
+
+    it('nonpolar_hydrogen returns H atoms near C', () => {
+      // The only H (serial 5) is nearest to N, not C, so no nonpolar H
+      const result = selectAtoms('nonpolar_hydrogen');
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('secondary structure', () => {
     it('selects helix', () => {
       expect(selectAtoms('helix')).toEqual([0, 1, 2, 3, 4, 5, 10, 11]);
