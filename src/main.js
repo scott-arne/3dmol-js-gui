@@ -809,7 +809,7 @@ if (init) {
       app.classList.add('terminal-hidden');
     }
     if (init.ui.menubar === false) {
-      document.getElementById('menubar-container').style.display = 'none';
+      app.classList.add('menubar-hidden');
     }
   }
 

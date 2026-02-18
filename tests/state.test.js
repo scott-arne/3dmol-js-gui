@@ -72,10 +72,10 @@ describe('addObject', () => {
     expect(name3).toBe('A_3');
   });
 
-  it('sets default representations to cartoon', () => {
+  it('sets default representations to line', () => {
     addObject('X', {}, 0);
     const obj = getState().objects.get('X');
-    expect(obj.representations).toEqual(new Set(['cartoon']));
+    expect(obj.representations).toEqual(new Set(['line']));
   });
 
   it('sets visible to true by default', () => {

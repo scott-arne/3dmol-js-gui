@@ -123,6 +123,38 @@ body {
   grid-template-columns: 1fr 0px;
 }
 
+#app.menubar-hidden {
+  grid-template-areas:
+    "viewer   sidebar"
+    "terminal terminal";
+  grid-template-rows: 1fr auto;
+}
+
+#app.menubar-hidden .menubar {
+  display: none;
+}
+
+#app.menubar-hidden.sidebar-hidden {
+  grid-template-areas:
+    "viewer   viewer"
+    "terminal terminal";
+  grid-template-rows: 1fr auto;
+  grid-template-columns: 1fr 0px;
+}
+
+#app.menubar-hidden.terminal-hidden {
+  grid-template-areas:
+    "viewer   sidebar";
+  grid-template-rows: 1fr;
+}
+
+#app.menubar-hidden.sidebar-hidden.terminal-hidden {
+  grid-template-areas:
+    "viewer   viewer";
+  grid-template-rows: 1fr;
+  grid-template-columns: 1fr 0px;
+}
+
 /* --- Menu Bar --- */
 .menubar {
   grid-area: menubar;
