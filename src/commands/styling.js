@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer, repStyle } from '../viewer.js';
+import { getViewer, repStyle, repKey } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
 import { buildBfactorScheme, BFACTOR_DEFAULTS } from '../ui/color-swatches.js';
 
@@ -165,11 +165,11 @@ export function registerStylingCommands(registry) {
           reps.add(rep);
         }
       }
-      if (reps.size === 0) reps.add('cartoon');
+      if (reps.size === 0) reps.add('line');
 
       const styleObj = {};
       for (const rep of reps) {
-        styleObj[rep] = { color: hex };
+        styleObj[repKey(rep)] = { color: hex };
       }
       viewer.setStyle(selSpec, styleObj);
       viewer.render();
@@ -421,10 +421,10 @@ export function registerStylingCommands(registry) {
         const selSpec = { model: obj.model };
         const reps = obj.representations.size > 0
           ? obj.representations
-          : new Set(['cartoon']);
+          : new Set(['line']);
         const styleObj = {};
         for (const rep of reps) {
-          styleObj[rep] = { colorfunc };
+          styleObj[repKey(rep)] = { colorfunc };
         }
         viewer.setStyle(selSpec, styleObj);
       }

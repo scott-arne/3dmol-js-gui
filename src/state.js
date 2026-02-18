@@ -80,7 +80,7 @@ export function addObject(name, model, modelIndex) {
     model,
     modelIndex,
     visible: true,
-    representations: new Set(['cartoon']),
+    representations: new Set(['line']),
   });
 
   _notify();

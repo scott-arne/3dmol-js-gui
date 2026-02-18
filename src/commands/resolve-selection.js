@@ -90,12 +90,12 @@ export function resolveSelection(selStr) {
  * Convert a resolveSelection result to a 3Dmol.js AtomSelectionSpec.
  *
  * If the result contains a spec, returns it directly. If it contains atoms,
- * builds a spec using the atom indices.
+ * builds a spec using atom serial numbers.
  *
  * @param {{ spec?: object, atoms?: Array<object> }} result - The result from resolveSelection.
  * @returns {object} A 3Dmol.js AtomSelectionSpec.
  */
 export function getSelSpec(result) {
   if (result.spec) return result.spec;
-  return { index: result.atoms.map((a) => a.index) };
+  return { serial: result.atoms.map((a) => a.serial) };
 }

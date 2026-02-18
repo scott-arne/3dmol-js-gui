@@ -19,11 +19,26 @@
  * due to vanishing browser support."
  */
 const REP_DEFAULTS = {
-  line: { _useStick: true, radius: 0.05, singleBonds: true },
+  line: { _useStick: true, radius: 0.05, doubleBondScaling: 1.5, tripleBondScaling: 1.0 },
+  stick: { radius: 0.25 },
 };
 
 /** Atom count threshold above which highlights use addStyle instead of per-atom spheres. */
 const HIGHLIGHT_THRESHOLD = 500;
+
+/**
+ * Return the 3Dmol.js style key for a representation name.
+ *
+ * Representations that use `_useStick` in REP_DEFAULTS map to 'stick';
+ * all others use their own name as the key.
+ *
+ * @param {string} rep - The canonical representation name (e.g. 'line', 'cartoon').
+ * @returns {string} The 3Dmol.js style key (e.g. 'stick', 'cartoon').
+ */
+export function repKey(rep) {
+  const defaults = REP_DEFAULTS[rep];
+  return (defaults && defaults._useStick) ? 'stick' : rep;
+}
 
 /**
  * Build a style spec for a representation with its default options applied.
@@ -163,7 +178,7 @@ export function getViewerElement() {
  * Fetch a PDB file from RCSB and load it into the viewer.
  *
  * Uses the native fetch() API to download the structure, adds the model
- * with PDB format, applies a default cartoon representation, then zooms
+ * with PDB format, applies a default wire representation, then zooms
  * and renders.
  *
  * @param {string} pdbId - The 4-character PDB identifier (e.g. "1UBQ").
@@ -182,7 +197,7 @@ export async function fetchPDB(pdbId) {
 
   const data = await response.text();
   const model = viewer.addModel(data, 'pdb');
-  viewer.setStyle({ model: model }, { cartoon: {} });
+  viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();
   viewer.render();
@@ -193,7 +208,7 @@ export async function fetchPDB(pdbId) {
 /**
  * Load molecular data directly into the viewer from a string.
  *
- * Adds the model, applies a default cartoon style, zooms to fit, and
+ * Adds the model, applies a default wire style, zooms to fit, and
  * renders the scene.
  *
  * @param {string} data - The molecular data as a string.
@@ -202,7 +217,7 @@ export async function fetchPDB(pdbId) {
  */
 export function loadModelData(data, format) {
   const model = viewer.addModel(data, format);
-  viewer.setStyle({ model: model }, { cartoon: {} });
+  viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();
   viewer.render();
@@ -229,6 +244,178 @@ export function removeModel(model) {
  */
 export function getAllAtoms(selSpec) {
   return viewer.selectedAtoms(selSpec || {});
+}
+
+/**
+ * Compute eigendecomposition of a 3x3 symmetric matrix via Jacobi iteration.
+ *
+ * @param {number[][]} A - A 3x3 symmetric matrix.
+ * @returns {{eigenvalues: number[], eigenvectors: number[][]}} Eigenvalues and
+ *   eigenvectors (each eigenvector as a 3-element array, columns of the
+ *   rotation matrix V where A = V * D * V^T).
+ */
+function jacobiEigen3x3(A) {
+  const a = A.map(row => [...row]);
+  const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+
+  for (let iter = 0; iter < 50; iter++) {
+    let p = 0, q = 1;
+    let maxVal = Math.abs(a[0][1]);
+    if (Math.abs(a[0][2]) > maxVal) { p = 0; q = 2; maxVal = Math.abs(a[0][2]); }
+    if (Math.abs(a[1][2]) > maxVal) { p = 1; q = 2; maxVal = Math.abs(a[1][2]); }
+
+    if (maxVal < 1e-10) break;
+
+    const diff = a[p][p] - a[q][q];
+    let t;
+    if (Math.abs(diff) < 1e-10) {
+      t = 1;
+    } else {
+      const phi = diff / (2 * a[p][q]);
+      t = 1 / (Math.abs(phi) + Math.sqrt(phi * phi + 1));
+      if (phi < 0) t = -t;
+    }
+    const c = 1 / Math.sqrt(t * t + 1);
+    const s = t * c;
+
+    const app = a[p][p] + t * a[p][q];
+    const aqq = a[q][q] - t * a[p][q];
+    a[p][q] = 0;
+    a[q][p] = 0;
+    a[p][p] = app;
+    a[q][q] = aqq;
+
+    for (let r = 0; r < 3; r++) {
+      if (r === p || r === q) continue;
+      const arp = c * a[r][p] + s * a[r][q];
+      const arq = -s * a[r][p] + c * a[r][q];
+      a[r][p] = arp; a[p][r] = arp;
+      a[r][q] = arq; a[q][r] = arq;
+    }
+    for (let r = 0; r < 3; r++) {
+      const vrp = c * v[r][p] + s * v[r][q];
+      const vrq = -s * v[r][p] + c * v[r][q];
+      v[r][p] = vrp;
+      v[r][q] = vrq;
+    }
+  }
+
+  return {
+    eigenvalues: [a[0][0], a[1][1], a[2][2]],
+    eigenvectors: [
+      [v[0][0], v[1][0], v[2][0]],
+      [v[0][1], v[1][1], v[2][1]],
+      [v[0][2], v[1][2], v[2][2]],
+    ],
+  };
+}
+
+/**
+ * Convert a 3x3 rotation matrix to a quaternion [x, y, z, w].
+ *
+ * @param {number[][]} R - A 3x3 rotation matrix.
+ * @returns {number[]} The quaternion as [x, y, z, w].
+ */
+function matToQuat(R) {
+  const trace = R[0][0] + R[1][1] + R[2][2];
+  let w, x, y, z;
+
+  if (trace > 0) {
+    const s = 2 * Math.sqrt(trace + 1);
+    w = 0.25 * s;
+    x = (R[2][1] - R[1][2]) / s;
+    y = (R[0][2] - R[2][0]) / s;
+    z = (R[1][0] - R[0][1]) / s;
+  } else if (R[0][0] > R[1][1] && R[0][0] > R[2][2]) {
+    const s = 2 * Math.sqrt(1 + R[0][0] - R[1][1] - R[2][2]);
+    w = (R[2][1] - R[1][2]) / s;
+    x = 0.25 * s;
+    y = (R[0][1] + R[1][0]) / s;
+    z = (R[0][2] + R[2][0]) / s;
+  } else if (R[1][1] > R[2][2]) {
+    const s = 2 * Math.sqrt(1 + R[1][1] - R[0][0] - R[2][2]);
+    w = (R[0][2] - R[2][0]) / s;
+    x = (R[0][1] + R[1][0]) / s;
+    y = 0.25 * s;
+    z = (R[1][2] + R[2][1]) / s;
+  } else {
+    const s = 2 * Math.sqrt(1 + R[2][2] - R[0][0] - R[1][1]);
+    w = (R[1][0] - R[0][1]) / s;
+    x = (R[0][2] + R[2][0]) / s;
+    y = (R[1][2] + R[2][1]) / s;
+    z = 0.25 * s;
+  }
+
+  return [x, y, z, w];
+}
+
+/**
+ * Orient the view by aligning the principal axes of the selected atoms with
+ * the screen axes (longest dimension horizontal, second-longest vertical,
+ * shortest perpendicular to screen), then zoom to fit.
+ *
+ * Uses PCA (eigendecomposition of the coordinate covariance matrix) to
+ * determine the principal axes, builds a rotation quaternion, and applies it
+ * via the viewer's setView API.
+ *
+ * @param {object} [selSpec] - A 3Dmol atom selection spec. Defaults to all atoms.
+ */
+export function orientView(selSpec) {
+  const atoms = viewer.selectedAtoms(selSpec || {});
+  if (atoms.length < 2) {
+    viewer.zoomTo(selSpec || {});
+    viewer.render();
+    return;
+  }
+
+  // Centroid
+  const n = atoms.length;
+  let cx = 0, cy = 0, cz = 0;
+  for (const a of atoms) { cx += a.x; cy += a.y; cz += a.z; }
+  cx /= n; cy /= n; cz /= n;
+
+  // Covariance matrix
+  const cov = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const a of atoms) {
+    const dx = a.x - cx, dy = a.y - cy, dz = a.z - cz;
+    cov[0][0] += dx * dx; cov[0][1] += dx * dy; cov[0][2] += dx * dz;
+    cov[1][1] += dy * dy; cov[1][2] += dy * dz;
+    cov[2][2] += dz * dz;
+  }
+  cov[1][0] = cov[0][1]; cov[2][0] = cov[0][2]; cov[2][1] = cov[1][2];
+
+  // Eigendecomposition → principal axes
+  const { eigenvalues, eigenvectors } = jacobiEigen3x3(cov);
+
+  // Sort by eigenvalue descending: largest → x, second → y, smallest → z
+  const idx = [0, 1, 2].sort((a, b) => eigenvalues[b] - eigenvalues[a]);
+  const pc1 = eigenvectors[idx[0]];
+  const pc2 = eigenvectors[idx[1]];
+  let pc3 = eigenvectors[idx[2]];
+
+  // Ensure right-handed coordinate system
+  const cross = [
+    pc1[1] * pc2[2] - pc1[2] * pc2[1],
+    pc1[2] * pc2[0] - pc1[0] * pc2[2],
+    pc1[0] * pc2[1] - pc1[1] * pc2[0],
+  ];
+  const dot = cross[0] * pc3[0] + cross[1] * pc3[1] + cross[2] * pc3[2];
+  if (dot < 0) {
+    pc3 = [-pc3[0], -pc3[1], -pc3[2]];
+  }
+
+  // Rotation matrix: rows are principal axes → maps PC directions to screen axes
+  const q = matToQuat([pc1, pc2, pc3]);
+
+  // Zoom to set correct center and zoom level, then override rotation
+  viewer.zoomTo(selSpec || {});
+  const view = viewer.getView();
+  view[4] = q[0];
+  view[5] = q[1];
+  view[6] = q[2];
+  view[7] = q[3];
+  viewer.setView(view);
+  viewer.render();
 }
 
 /** @type {Array<object>} Shape objects for the current highlight overlay. */

@@ -6,7 +6,7 @@
  * representations.
  */
 
-import { getViewer, repStyle, addTrackedLabel, clearAllLabels } from './viewer.js';
+import { getViewer, repStyle, repKey, addTrackedLabel, clearAllLabels } from './viewer.js';
 import { getState, notifyStateChange } from './state.js';
 import { CHAIN_PALETTES, SS_PALETTES, BFACTOR_DEFAULTS, buildBfactorScheme } from './ui/color-swatches.js';
 import { applyPreset, PRESETS } from './presets.js';
@@ -122,10 +122,11 @@ function applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, c
     const colorscheme = customScheme || schemes[scheme];
     const styleObj = {};
     for (const rep of reps) {
+      const key = repKey(rep);
       if (scheme === 'bfactor') {
-        styleObj[rep] = { colorfunc: colorscheme };
+        styleObj[key] = { colorfunc: colorscheme };
       } else {
-        styleObj[rep] = { colorscheme };
+        styleObj[key] = { colorscheme };
       }
     }
     viewer.setStyle(selSpec, styleObj);
@@ -134,7 +135,7 @@ function applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, c
       const carbonSel = Object.assign({}, selSpec, { elem: 'C' });
       const carbonStyle = {};
       for (const rep of reps) {
-        carbonStyle[rep] = { color: carbonHex };
+        carbonStyle[repKey(rep)] = { color: carbonHex };
       }
       viewer.setStyle(carbonSel, carbonStyle);
     }
@@ -142,7 +143,7 @@ function applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, c
     const hex = COLOR_MAP[scheme] || scheme;
     const styleObj = {};
     for (const rep of reps) {
-      styleObj[rep] = { color: hex };
+      styleObj[repKey(rep)] = { color: hex };
     }
     viewer.setStyle(selSpec, styleObj);
   }
@@ -163,7 +164,7 @@ export function applyColor(selSpec, representations, rawScheme) {
   const viewer = getViewer();
   const { scheme, carbonHex, chainPalette, ssPalette } = parseColorScheme(rawScheme);
   const { schemes, customScheme } = buildColorSchemes(scheme, chainPalette, ssPalette, selSpec);
-  const reps = representations.size > 0 ? representations : new Set(['cartoon']);
+  const reps = representations.size > 0 ? representations : new Set(['line']);
 
   applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, carbonHex);
   viewer.render();
@@ -187,7 +188,7 @@ export function applyColorToSelection(selSpec, rawScheme) {
   for (const [, obj] of state.objects) {
     if (!obj.visible) continue;
     const intersect = Object.assign({}, selSpec, { model: obj.model });
-    const reps = obj.representations.size > 0 ? obj.representations : new Set(['cartoon']);
+    const reps = obj.representations.size > 0 ? obj.representations : new Set(['line']);
 
     applyColorStyle(viewer, intersect, reps, scheme, schemes, customScheme, carbonHex);
   }

@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer } from '../viewer.js';
+import { getViewer, orientView } from '../viewer.js';
 
 /**
  * Register the camera commands (zoom, center, orient, rotate, translate, clip,
@@ -45,19 +45,17 @@ export function registerCameraCommands(registry) {
 
   registry.register('orient', {
     handler: (args, ctx) => {
-      const viewer = getViewer();
       if (args.trim()) {
         const result = resolveSelection(args.trim());
         const selSpec = getSelSpec(result);
-        viewer.zoomTo(selSpec);
+        orientView(selSpec);
       } else {
-        viewer.zoomTo();
+        orientView();
       }
-      viewer.render();
       ctx.terminal.print('Oriented to selection', 'result');
     },
     usage: 'orient [selection]',
-    help: 'Orient the view to fit the selection.',
+    help: 'Align the longest dimension of the molecule with the x-axis, second-longest with y, shortest with z, then zoom to fit.',
   });
 
   registry.register('rotate', {

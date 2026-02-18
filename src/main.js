@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, refreshLabels } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, refreshLabels, orientView } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -35,6 +35,8 @@ import {
   applyLabel, applyShow, applyHide, applyHideSelection,
   applyViewPreset, getPresetLabel,
 } from './actions.js';
+import { applyPreset } from './presets.js';
+import { resolveSelection, getSelSpec } from './commands/resolve-selection.js';
 
 // Guard: ensure 3Dmol.js is loaded
 if (typeof $3Dmol === 'undefined') {
@@ -81,6 +83,9 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         terminal.print(`Centered on "${name}"`, 'result');
         break;
       case 'orient':
+        orientView({ model: obj.model });
+        terminal.print(`Oriented "${name}"`, 'result');
+        break;
       case 'zoom':
         viewer.zoomTo({ model: obj.model });
         viewer.render();
@@ -749,20 +754,50 @@ let dismissQuickstart = null;
 const init = window.__C3D_INIT__;
 
 if (init) {
-  // Load molecules
+  const v = getViewer();
+
+  // Load molecules (addModel only, no per-molecule styling/zoom/render)
   const molecules = init.molecules || [];
   for (const mol of molecules) {
-    const model = loadModelData(mol.data, mol.format);
-    const modelIndex = model.getID ? model.getID() : null;
-    addObject(mol.name || mol.format, model, modelIndex);
+    try {
+      const model = v.addModel(mol.data, mol.format);
+      const modelIndex = model.getID ? model.getID() : null;
+      const name = addObject(mol.name || mol.format, model, modelIndex);
+      if (mol.disabled) {
+        const st = getState();
+        const obj = st.objects.get(name);
+        if (obj) {
+          obj.visible = false;
+          model.hide();
+        }
+      }
+    } catch (e) {
+      terminal.print(`Failed to load "${mol.name || mol.format}": ${e.message}`, 'error');
+    }
   }
 
-  // Clear default styles applied by loadModelData, then apply custom styles
-  const v = getViewer();
+  // Re-register click handler now that all models are loaded
+  setupClickHandler(handleViewerClick);
+
+  // Apply styles: preset takes precedence, then custom styles, then default wire
   v.setStyle({}, {});
-  const styles = init.styles || [];
-  for (const s of styles) {
-    v.addStyle(s.selection || {}, s.style || {});
+
+  if (init.preset) {
+    const reps = applyPreset(init.preset, v);
+    const st = getState();
+    for (const [, obj] of st.objects) {
+      obj.representations = new Set(reps);
+    }
+    notifyStateChange();
+  } else {
+    const styles = init.styles || [];
+    if (styles.length > 0) {
+      for (const s of styles) {
+        v.addStyle(s.selection || {}, s.style || {});
+      }
+    } else {
+      v.setStyle({}, repStyle('line'));
+    }
   }
 
   // Configure UI visibility
@@ -787,10 +822,21 @@ if (init) {
     notifyStateChange();
   }
 
-  // Apply zoom
-  if (init.zoomTo !== undefined && init.zoomTo !== null) {
-    v.zoomTo(init.zoomTo);
-  } else {
+  // Apply zoom (wrapped in try-catch so failures don't prevent render)
+  try {
+    if (init.zoomTo !== undefined && init.zoomTo !== null) {
+      if (typeof init.zoomTo === 'string') {
+        const result = resolveSelection(init.zoomTo);
+        const selSpec = getSelSpec(result);
+        v.zoomTo(selSpec);
+      } else {
+        v.zoomTo(init.zoomTo);
+      }
+    } else {
+      v.zoomTo();
+    }
+  } catch (e) {
+    terminal.print(`Zoom failed: ${e.message}`, 'error');
     v.zoomTo();
   }
 
