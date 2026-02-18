@@ -94,8 +94,36 @@ function closeMenu() {
  * @param {function(string): void} callbacks.onColor - Called with color/scheme value.
  */
 export function createContextMenu(container, callbacks) {
+  const DRAG_THRESHOLD = 4; // pixels
+  const HOLD_THRESHOLD = 300; // ms
+  let rightDownPos = null;
+  let rightDownTime = 0;
+
+  container.addEventListener('mousedown', (e) => {
+    if (e.button === 2) {
+      rightDownPos = { x: e.clientX, y: e.clientY };
+      rightDownTime = Date.now();
+    }
+  });
+
+  // Suppress the native context menu unconditionally; we handle it on mouseup
   container.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+  });
+
+  container.addEventListener('mouseup', (e) => {
+    if (e.button !== 2 || !rightDownPos) return;
+
+    const dx = Math.abs(e.clientX - rightDownPos.x);
+    const dy = Math.abs(e.clientY - rightDownPos.y);
+    const elapsed = Date.now() - rightDownTime;
+    rightDownPos = null;
+
+    // Only open menu on a quick, stationary right click
+    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD || elapsed > HOLD_THRESHOLD) {
+      return;
+    }
+
     closeMenu();
 
     const hasSelection = callbacks.hasSelection();

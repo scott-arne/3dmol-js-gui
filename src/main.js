@@ -822,9 +822,19 @@ if (init) {
     notifyStateChange();
   }
 
-  // Apply zoom (wrapped in try-catch so failures don't prevent render)
+  // Apply orient or zoom (wrapped in try-catch so failures don't prevent render)
   try {
-    if (init.zoomTo !== undefined && init.zoomTo !== null) {
+    if (init.orient !== undefined && init.orient !== null && init.orient !== false) {
+      if (init.orient === true) {
+        orientView();
+      } else if (typeof init.orient === 'string') {
+        const result = resolveSelection(init.orient);
+        const selSpec = getSelSpec(result);
+        orientView(selSpec);
+      } else {
+        orientView(init.orient);
+      }
+    } else if (init.zoomTo !== undefined && init.zoomTo !== null) {
       if (typeof init.zoomTo === 'string') {
         const result = resolveSelection(init.zoomTo);
         const selSpec = getSelSpec(result);
