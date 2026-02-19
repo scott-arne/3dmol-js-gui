@@ -793,7 +793,14 @@ if (init) {
     const styles = init.styles || [];
     if (styles.length > 0) {
       for (const s of styles) {
-        v.addStyle(s.selection || {}, s.style || {});
+        let sel;
+        if (typeof s.selection === 'string') {
+          const result = resolveSelection(s.selection);
+          sel = getSelSpec(result);
+        } else {
+          sel = s.selection || {};
+        }
+        v.addStyle(sel, s.style || {});
       }
     } else {
       v.setStyle({}, repStyle('line'));
@@ -811,6 +818,21 @@ if (init) {
     if (init.ui.menubar === false) {
       app.classList.add('menubar-hidden');
     }
+  }
+
+  // Apply theme
+  if (init.theme === 'light' || init.theme === 'dark') {
+    const state = getState();
+    state.settings.theme = init.theme;
+    document.body.dataset.theme = init.theme === 'light' ? 'light' : '';
+    menubar.setTheme(init.theme);
+    if (!state.settings.userSetBgColor) {
+      const bgColor = init.theme === 'light' ? '#ffffff' : '#000000';
+      state.settings.bgColor = bgColor;
+      v.setBackgroundColor(bgColor);
+    }
+    refreshLabels();
+    notifyStateChange();
   }
 
   // Set background color

@@ -142,6 +142,28 @@ export function initViewer(container) {
     antialias: true,
   });
 
+  // Intercept wheel events before 3Dmol.js to dampen zoom speed and clamp
+  // the zoom level. Using capture phase on the parent element ensures this
+  // handler fires before 3Dmol's own handler on the child canvas.
+  const ZOOM_SCALE = 0.001;
+  const MAX_ZOOM = 250;
+
+  viewerElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const factor = 1 - e.deltaY * ZOOM_SCALE;
+    viewer.zoom(factor);
+
+    const view = viewer.getView();
+    if (view[3] > MAX_ZOOM) {
+      view[3] = MAX_ZOOM;
+      viewer.setView(view);
+    }
+
+    viewer.render();
+  }, { capture: true, passive: false });
+
   let resizeRAF = null;
   const resizeObserver = new ResizeObserver(() => {
     if (resizeRAF) return;

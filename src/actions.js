@@ -106,46 +106,95 @@ function buildColorSchemes(scheme, chainPalette, ssPalette, selSpec) {
 }
 
 /**
- * Apply a style object and optional carbon override for a given selection and
- * set of representations.
+ * Set color on atoms matching a selection for a specific set of 3Dmol style keys.
  *
  * @param {object} viewer - The 3Dmol viewer instance.
  * @param {object} selSpec - The selection spec.
- * @param {Set<string>} reps - The representations to style.
+ * @param {string[]} repKeys - 3Dmol style keys (e.g. 'cartoon', 'stick').
  * @param {string} scheme - The parsed scheme name.
  * @param {object} schemes - The schemes map.
  * @param {object|null} customScheme - A custom colorscheme override, if any.
  * @param {string|null} carbonHex - A hex color for carbon atoms, if any.
  */
-function applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, carbonHex) {
+function setColorOnReps(viewer, selSpec, repKeys, scheme, schemes, customScheme, carbonHex) {
   if (schemes[scheme]) {
     const colorscheme = customScheme || schemes[scheme];
     const styleObj = {};
-    for (const rep of reps) {
-      const key = repKey(rep);
-      if (scheme === 'bfactor') {
-        styleObj[key] = { colorfunc: colorscheme };
-      } else {
-        styleObj[key] = { colorscheme };
-      }
+    for (const key of repKeys) {
+      styleObj[key] = scheme === 'bfactor' ? { colorfunc: colorscheme } : { colorscheme };
     }
     viewer.setStyle(selSpec, styleObj);
 
     if (carbonHex) {
       const carbonSel = Object.assign({}, selSpec, { elem: 'C' });
       const carbonStyle = {};
-      for (const rep of reps) {
-        carbonStyle[repKey(rep)] = { color: carbonHex };
+      for (const key of repKeys) {
+        carbonStyle[key] = { color: carbonHex };
       }
       viewer.setStyle(carbonSel, carbonStyle);
     }
   } else {
     const hex = COLOR_MAP[scheme] || scheme;
     const styleObj = {};
-    for (const rep of reps) {
-      styleObj[repKey(rep)] = { color: hex };
+    for (const key of repKeys) {
+      styleObj[key] = { color: hex };
     }
     viewer.setStyle(selSpec, styleObj);
+  }
+}
+
+/**
+ * Apply a color scheme to atoms matching a selection, preserving per-atom
+ * representation assignments.
+ *
+ * Reads each atom's current style from the viewer so that atoms styled by
+ * presets (e.g. "preset sites" gives some atoms cartoon-only and others
+ * cartoon+stick) retain their individual representations after coloring.
+ *
+ * Falls back to the object-level representation set when atoms have no
+ * per-atom style information (e.g. freshly loaded models before rendering).
+ *
+ * @param {object} viewer - The 3Dmol viewer instance.
+ * @param {object} selSpec - The selection spec.
+ * @param {Set<string>} reps - Fallback representations from the object state.
+ * @param {string} scheme - The parsed scheme name.
+ * @param {object} schemes - The schemes map.
+ * @param {object|null} customScheme - A custom colorscheme override, if any.
+ * @param {string|null} carbonHex - A hex color for carbon atoms, if any.
+ */
+function applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, carbonHex) {
+  const atoms = viewer.selectedAtoms(selSpec);
+  if (atoms.length === 0) return;
+
+  // Check whether any atom carries per-atom style data from the viewer
+  const hasPerAtomStyles = atoms.some(a => a.style && Object.keys(a.style).length > 0);
+
+  if (!hasPerAtomStyles) {
+    // No per-atom styles — use object-level reps (original behavior)
+    const keys = [...reps].map(r => repKey(r));
+    setColorOnReps(viewer, selSpec, keys, scheme, schemes, customScheme, carbonHex);
+    return;
+  }
+
+  // Group atoms by their current representation set so that atoms with
+  // different reps (e.g. cartoon-only vs cartoon+stick) are colored separately
+  const groups = new Map();
+  for (const atom of atoms) {
+    const styleKeys = atom.style ? Object.keys(atom.style) : [];
+    if (styleKeys.length === 0) continue; // skip unstyled (invisible) atoms
+    const tag = styleKeys.sort().join('\0');
+    if (!groups.has(tag)) {
+      groups.set(tag, { keys: [...styleKeys].sort(), serials: [] });
+    }
+    groups.get(tag).serials.push(atom.serial);
+  }
+
+  if (groups.size === 0) return;
+
+  for (const [, group] of groups) {
+    // Use original selSpec when all styled atoms share the same reps (common case)
+    const groupSel = groups.size === 1 ? selSpec : { ...selSpec, serial: group.serials };
+    setColorOnReps(viewer, groupSel, group.keys, scheme, schemes, customScheme, carbonHex);
   }
 }
 
@@ -262,6 +311,173 @@ export function applyShow(selSpec, rep, obj) {
 }
 
 /**
+ * Serialize a style object into a stable string for use as a grouping tag.
+ *
+ * Includes both key names and values so that atoms with different colors
+ * or colorschemes (e.g. element-by-chain coloring) but the same set of
+ * representation keys are placed in separate groups.
+ *
+ * @param {object} styleObj - A style object to serialize.
+ * @returns {string} A JSON string suitable for use as a Map key.
+ */
+function styleTag(styleObj) {
+  return JSON.stringify(styleObj, (_key, value) =>
+    typeof value === 'function' ? '$$fn$$' : value
+  );
+}
+
+/**
+ * Find an active representation that shares the same 3Dmol style key as `rep`.
+ *
+ * Currently only 'line' and 'stick' collide — both map to the 'stick' key
+ * because WebGL's gl.lineWidth() is capped at 1 px on modern browsers, so
+ * lines are rendered as thin sticks.
+ *
+ * @param {string} rep - The representation being hidden.
+ * @param {Set<string>} objReps - The object's active representations.
+ * @returns {string|null} The conflicting rep name, or null if no collision.
+ */
+function findKeyConflict(rep, objReps) {
+  const key = repKey(rep);
+  for (const r of objReps) {
+    if (r !== rep && repKey(r) === key) return r;
+  }
+  return null;
+}
+
+/**
+ * Downgrade a shared-key style entry to a subordinate representation's
+ * parameters while preserving color information.
+ *
+ * Used when hiding the "dominant" rep (e.g. stick, radius 0.25) while the
+ * "subordinate" rep (e.g. line, radius 0.05) should remain visible. Reads
+ * each atom's current style and replaces the shared-key entry's geometry
+ * parameters with the subordinate rep's defaults, keeping color data intact.
+ *
+ * @param {object} viewer - The 3Dmol viewer instance.
+ * @param {object} selSpec - The selection spec.
+ * @param {string} sharedKey - The 3Dmol style key shared by both reps.
+ * @param {string} targetRep - The subordinate rep whose params should remain.
+ */
+function downgradeRepStyle(viewer, selSpec, sharedKey, targetRep) {
+  const targetStyle = repStyle(targetRep);
+  const targetParams = targetStyle[sharedKey] || {};
+  const atoms = viewer.selectedAtoms(selSpec);
+  const hasPerAtomStyles = atoms.some(a => a.style && Object.keys(a.style).length > 0);
+
+  if (!hasPerAtomStyles) {
+    viewer.setStyle(selSpec, {});
+    viewer.addStyle(selSpec, targetStyle);
+    return;
+  }
+
+  const groups = new Map();
+  for (const atom of atoms) {
+    if (!atom.style || Object.keys(atom.style).length === 0) continue;
+    const modified = {};
+    for (const [k, v] of Object.entries(atom.style)) {
+      if (k === sharedKey) {
+        // Replace geometry params with subordinate rep defaults; keep color data
+        modified[k] = { ...v, ...targetParams };
+      } else {
+        modified[k] = v;
+      }
+    }
+    const tag = styleTag(modified);
+    if (!groups.has(tag)) {
+      groups.set(tag, { style: modified, serials: [] });
+    }
+    groups.get(tag).serials.push(atom.serial);
+  }
+
+  viewer.setStyle(selSpec, {});
+
+  for (const [, group] of groups) {
+    if (Object.keys(group.style).length === 0) continue;
+    const groupSel = groups.size === 1 ? selSpec : { ...selSpec, serial: group.serials };
+    viewer.setStyle(groupSel, group.style);
+  }
+}
+
+/**
+ * Remove a representation from atoms while preserving their current styles
+ * (colors, colorschemes, etc.) for remaining representations.
+ *
+ * Handles three cases:
+ *
+ * 1. **Key collision** — two canonical reps share the same 3Dmol key (line and
+ *    stick both map to 'stick'):
+ *    a. Hiding line while stick is active → no visual change (sticks cover lines).
+ *    b. Hiding stick while line is active → downgrade stick entries to thin-stick
+ *       (line) parameters, preserving color data.
+ *
+ * 2. **Per-atom styles present** — reads each atom's style, removes the target
+ *    key, and re-applies the remaining styles grouped by representation set.
+ *
+ * 3. **No per-atom styles** — falls back to the object-level representation
+ *    rebuild using repStyle() defaults.
+ *
+ * @param {object} viewer - The 3Dmol viewer instance.
+ * @param {object} selSpec - The selection spec.
+ * @param {string} rep - The canonical representation name to remove.
+ * @param {Set<string>} objReps - The object's representations set.
+ */
+function hideRepPreservingStyles(viewer, selSpec, rep, objReps) {
+  const keyToRemove = repKey(rep);
+
+  // Case 1: Key collision (line/stick both map to 'stick')
+  const conflictRep = findKeyConflict(rep, objReps);
+  if (conflictRep) {
+    if (rep === 'line') {
+      // Sticks already cover lines visually — no change needed
+      return;
+    }
+    // Hiding the dominant rep (stick) while subordinate (line) remains:
+    // downgrade stick entries to thin-stick parameters, preserving colors
+    downgradeRepStyle(viewer, selSpec, keyToRemove, conflictRep);
+    return;
+  }
+
+  // Cases 2 & 3: No key collision — safe to remove the key from atom.style
+  const atoms = viewer.selectedAtoms(selSpec);
+  const hasPerAtomStyles = atoms.some(a => a.style && Object.keys(a.style).length > 0);
+
+  if (!hasPerAtomStyles) {
+    // Case 3: Fallback — use object-level reps
+    viewer.setStyle(selSpec, {});
+    for (const r of objReps) {
+      if (r === rep) continue;
+      if (r === 'line' && objReps.has('stick') && rep !== 'stick') continue;
+      viewer.addStyle(selSpec, repStyle(r));
+    }
+    return;
+  }
+
+  // Case 2: Per-atom styles — remove key and re-apply
+  const groups = new Map();
+  for (const atom of atoms) {
+    if (!atom.style || Object.keys(atom.style).length === 0) continue;
+    const remaining = {};
+    for (const [k, v] of Object.entries(atom.style)) {
+      if (k !== keyToRemove) remaining[k] = v;
+    }
+    const tag = styleTag(remaining);
+    if (!groups.has(tag)) {
+      groups.set(tag, { style: remaining, serials: [] });
+    }
+    groups.get(tag).serials.push(atom.serial);
+  }
+
+  viewer.setStyle(selSpec, {});
+
+  for (const [, group] of groups) {
+    if (Object.keys(group.style).length === 0) continue;
+    const groupSel = groups.size === 1 ? selSpec : { ...selSpec, serial: group.serials };
+    viewer.setStyle(groupSel, group.style);
+  }
+}
+
+/**
  * Hide a representation on an object.
  *
  * Handles the 'everything' case by clearing all representations. Otherwise,
@@ -279,12 +495,8 @@ export function applyHide(selSpec, rep, obj) {
     viewer.setStyle(selSpec, {});
     obj.representations.clear();
   } else {
-    viewer.setStyle(selSpec, {});
+    hideRepPreservingStyles(viewer, selSpec, rep, obj.representations);
     obj.representations.delete(rep);
-    for (const r of obj.representations) {
-      if (r === 'line' && obj.representations.has('stick')) continue;
-      viewer.addStyle(selSpec, repStyle(r));
-    }
   }
   viewer.render();
   notifyStateChange();
@@ -309,12 +521,7 @@ export function applyHideSelection(selSpec, rep) {
     for (const [, obj] of state.objects) {
       if (!obj.visible) continue;
       const intersect = Object.assign({}, selSpec, { model: obj.model });
-      viewer.setStyle(intersect, {});
-      for (const r of obj.representations) {
-        if (r === rep) continue;
-        if (r === 'line' && obj.representations.has('stick')) continue;
-        viewer.addStyle(intersect, repStyle(r));
-      }
+      hideRepPreservingStyles(viewer, intersect, rep, obj.representations);
     }
   }
   viewer.render();

@@ -2,6 +2,7 @@ import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
 import { getViewer, repStyle } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
+import { applyHide, applyHideSelection } from '../actions.js';
 
 /**
  * Map of plural/alternate representation names to canonical 3Dmol.js style names.
@@ -136,67 +137,24 @@ export function registerDisplayCommands(registry) {
       const selStr = parts.slice(1).join(', ') || null;
       const result = resolveSelection(selStr);
       const selSpec = getSelSpec(result);
-      const viewer = getViewer();
       const state = getState();
 
-      if (repName === 'everything') {
-        viewer.setStyle(selSpec, {});
-        // Only clear representations for model-level or global scope.
-        // Atom-level selections should not affect the object-wide representation set.
-        if (!selStr) {
-          for (const [, obj] of state.objects) {
-            obj.representations.clear();
-          }
-        } else if (result.spec && result.spec.model) {
-          for (const [, obj] of state.objects) {
-            if (obj.model === result.spec.model) {
-              obj.representations.clear();
-            }
+      if (!selStr) {
+        // Global scope: hide rep for all objects
+        for (const [, obj] of state.objects) {
+          applyHide({ model: obj.model }, repName, obj);
+        }
+      } else if (result.spec && result.spec.model) {
+        // Model-scoped: hide rep for matching object
+        for (const [, obj] of state.objects) {
+          if (obj.model === result.spec.model) {
+            applyHide(selSpec, repName, obj);
           }
         }
       } else {
-        // Clear styles on selected atoms, then re-add remaining reps on same scope
-        viewer.setStyle(selSpec, {});
-
-        if (!selStr) {
-          for (const [, obj] of state.objects) {
-            obj.representations.delete(repName);
-            if (obj.visible) {
-              for (const rep of obj.representations) {
-                // Skip line when stick is also active (stick covers line)
-                if (rep === 'line' && obj.representations.has('stick')) continue;
-                viewer.addStyle(selSpec, repStyle(rep));
-              }
-            }
-          }
-        } else if (result.spec && result.spec.model) {
-          for (const [, obj] of state.objects) {
-            if (obj.model === result.spec.model) {
-              obj.representations.delete(repName);
-            }
-            if (obj.visible) {
-              for (const rep of obj.representations) {
-                if (rep === 'line' && obj.representations.has('stick')) continue;
-                viewer.addStyle(selSpec, repStyle(rep));
-              }
-            }
-          }
-        } else {
-          // Atom-level selection: rebuild styles for those atoms from object reps
-          // without modifying the object-wide representation set
-          for (const [, obj] of state.objects) {
-            if (obj.visible) {
-              for (const rep of obj.representations) {
-                if (rep === repName) continue;
-                if (rep === 'line' && obj.representations.has('stick')) continue;
-                viewer.addStyle(selSpec, repStyle(rep));
-              }
-            }
-          }
-        }
+        // Atom-level selection: preserve per-atom styles and handle key collisions
+        applyHideSelection(selSpec, repName);
       }
-      viewer.render();
-      notifyStateChange();
 
       ctx.terminal.print(
         `Hiding ${raw.toLowerCase()}${selStr ? ` for ${selStr}` : ''}`,

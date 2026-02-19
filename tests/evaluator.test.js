@@ -171,5 +171,158 @@ describe('Selection Evaluator', () => {
       const spec = toAtomSelectionSpec(ast);
       expect(spec).toBeNull();
     });
+
+    it('converts resn to spec', () => {
+      const ast = parse('resn ALA');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toEqual({ resn: ['ALA'] });
+    });
+
+    it('converts elem to spec', () => {
+      const ast = parse('elem C');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toEqual({ elem: 'C' });
+    });
+
+    it('converts "all" to empty spec', () => {
+      const ast = parse('all');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toEqual({});
+    });
+
+    it('returns null for resi range (non-== op)', () => {
+      const ast = parse('resi 1-10');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toBeNull();
+    });
+
+    it('returns null for resi with comparison operator', () => {
+      const ast = parse('resi >= 5');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toBeNull();
+    });
+
+    it('converts AND of simple selectors to merged spec', () => {
+      const ast = parse('name CA and chain A');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toEqual({ atom: ['CA'], chain: 'A' });
+    });
+
+    it('converts AND of three simple selectors', () => {
+      const ast = parse('name CA and chain A and elem C');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toEqual({ atom: ['CA'], chain: 'A', elem: 'C' });
+    });
+
+    it('returns null for AND when a child is not convertible', () => {
+      const ast = parse('name CA and around 5.0 ligand');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toBeNull();
+    });
+
+    it('returns null for NOT expressions', () => {
+      const ast = parse('not water');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toBeNull();
+    });
+
+    it('returns null for OR expressions', () => {
+      const ast = parse('chain A or chain B');
+      const spec = toAtomSelectionSpec(ast);
+      expect(spec).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Sidechain selection (evaluator line 190)
+  // -----------------------------------------------------------------------
+  describe('sidechain selection', () => {
+    it('selects sidechain atoms (non-backbone, non-OXT protein atoms)', () => {
+      // CB of ALA (serial 4) is a protein sidechain atom
+      const result = selectAtoms('sidechain');
+      expect(result).toContain(4); // CB of ALA
+    });
+
+    it('excludes backbone atoms from sidechain', () => {
+      const result = selectAtoms('sidechain');
+      // N, CA, C, O are backbone and should NOT appear
+      expect(result).not.toContain(0); // N
+      expect(result).not.toContain(1); // CA
+      expect(result).not.toContain(2); // C
+      expect(result).not.toContain(3); // O
+    });
+
+    it('excludes non-protein residues from sidechain', () => {
+      const result = selectAtoms('sidechain');
+      // HOH (serial 12) is not protein
+      expect(result).not.toContain(12);
+    });
+
+    it('excludes hydrogen from sidechain when it is on backbone', () => {
+      // H (serial 5) in our atom set is part of ALA, which is protein.
+      // H is not in BACKBONE_ATOMS (N, CA, C, O) and not OXT, so it IS sidechain.
+      const result = selectAtoms('sidechain');
+      expect(result).toContain(5); // H of ALA residue 1
+    });
+
+    it('sidechain excludes OXT atoms', () => {
+      // Test with an OXT atom directly via evaluate
+      const atomsWithOXT = [
+        { serial: 0, atom: 'CB', resn: 'ALA', resi: 1, chain: 'A', elem: 'C', ss: '', x: 0, y: 0, z: 0 },
+        { serial: 1, atom: 'OXT', resn: 'ALA', resi: 1, chain: 'A', elem: 'O', ss: '', x: 1, y: 0, z: 0 },
+      ];
+      const ast = { type: 'sidechain' };
+      const result = evaluate(ast, atomsWithOXT);
+      expect(result.map(a => a.serial)).toEqual([0]); // Only CB, not OXT
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Additional evaluate coverage
+  // -----------------------------------------------------------------------
+  describe('additional evaluate coverage', () => {
+    it('protein selects only protein residues', () => {
+      const result = selectAtoms('protein');
+      // All atoms except HOH (serial 12)
+      expect(result).not.toContain(12);
+      expect(result).toContain(0);
+      expect(result).toContain(10);
+    });
+
+    it('solvent selects water and other solvent residues', () => {
+      const result = selectAtoms('solvent');
+      expect(result).toEqual([12]); // Only HOH
+    });
+
+    it('loop selects atoms with empty or "c" secondary structure', () => {
+      // serial 12 (HOH) has ss: ''
+      const result = selectAtoms('loop');
+      expect(result).toContain(12);
+    });
+
+    it('xor selects atoms in exactly one of two sets', () => {
+      // chain A has serials 0-9, resi 1 has serials 0-5
+      // XOR: atoms in chain A but not resi 1, or in resi 1 but not chain A
+      // Since resi 1 atoms are all in chain A, XOR = chain A atoms NOT in resi 1
+      const result = selectAtoms('chain A xor resi 1');
+      expect(result).toEqual([6, 7, 8, 9]);
+    });
+
+    it('beyond selects atoms farther than radius from reference', () => {
+      const result = selectAtoms('beyond 2.0 (name N and resi 1)');
+      // N at resi 1 is at (0,0,0). Atoms beyond 2A from it:
+      // serial 3 O at (3,0,0), serial 6-12 are all far away
+      expect(result).toContain(3);
+      expect(result).toContain(6);
+      expect(result).toContain(12);
+      // CA at (1,0,0) is within 2A
+      expect(result).not.toContain(1);
+    });
+
+    it('throws for unknown AST node type', () => {
+      expect(() => evaluate({ type: 'invalid_node' }, atoms)).toThrow(
+        /Unknown AST node type: invalid_node/
+      );
+    });
   });
 });
