@@ -170,7 +170,8 @@ describe('viewer.js', () => {
       );
       expect(mockViewer.addModel).toHaveBeenCalledWith(
         'ATOM      1  N   ALA A   1',
-        'pdb'
+        'pdb',
+        { keepH: true }
       );
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.zoomTo).toHaveBeenCalled();
@@ -199,7 +200,7 @@ describe('viewer.js', () => {
       const data = 'ATOM      1  N   ALA A   1';
       const model = loadModelData(data, 'pdb');
 
-      expect(mockViewer.addModel).toHaveBeenCalledWith(data, 'pdb');
+      expect(mockViewer.addModel).toHaveBeenCalledWith(data, 'pdb', { keepH: true });
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.zoomTo).toHaveBeenCalled();
       expect(mockViewer.render).toHaveBeenCalled();
@@ -208,7 +209,7 @@ describe('viewer.js', () => {
 
     it('accepts alternate format strings', () => {
       loadModelData('data', 'sdf');
-      expect(mockViewer.addModel).toHaveBeenCalledWith('data', 'sdf');
+      expect(mockViewer.addModel).toHaveBeenCalledWith('data', 'sdf', { keepH: true });
     });
   });
 

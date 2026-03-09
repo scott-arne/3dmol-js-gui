@@ -1,7 +1,7 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
 import { getViewer } from '../viewer.js';
-import { getState, removeObject, removeSelection, renameSelection, renameObject, pruneSelections } from '../state.js';
+import { getState, removeObject, removeSelection, renameSelection, renameObject, renameGroup, pruneSelections, findTreeNode, removeGroup, collectEntryNames } from '../state.js';
 import { clearHighlight, applyHighlight } from '../viewer.js';
 
 /**
@@ -67,22 +67,68 @@ export function registerEditingCommands(registry) {
         return;
       }
 
+      // Check if it's a group
+      const groupFound = findTreeNode(state.entryTree, name, 'group');
+      if (groupFound) {
+        const entries = collectEntryNames(groupFound.node);
+        const viewer = getViewer();
+        const allRemovedIndices = [];
+
+        for (const objName of entries.objects) {
+          const obj = state.objects.get(objName);
+          if (obj) {
+            const modelAtoms = viewer.selectedAtoms({ model: obj.model });
+            allRemovedIndices.push(...modelAtoms.map(a => a.index));
+            viewer.removeModel(obj.model);
+          }
+        }
+
+        viewer.render();
+        removeGroup(name);
+        pruneSelections(allRemovedIndices);
+        clearHighlight();
+        if (getState().activeSelection) {
+          applyHighlight(getState().activeSelection);
+        }
+
+        ctx.terminal.print(`Deleted group "${name}" (${entries.objects.length} objects, ${entries.selections.length} selections)`, 'result');
+        return;
+      }
+
       const obj = state.objects.get(name);
       if (!obj) {
         throw new Error(`"${name}" not found`);
       }
 
       const viewer = getViewer();
-      // Collect atom indices before removing the model
-      const modelAtoms = viewer.selectedAtoms({ model: obj.model });
-      const removedIndices = modelAtoms.map(a => a.index);
 
-      viewer.removeModel(obj.model);
+      // If this object has hierarchy children, collect all their atoms too
+      const treeNode = findTreeNode(state.entryTree, name, 'object');
+      const allRemovedIndices = [];
+
+      if (treeNode && treeNode.node.children && treeNode.node.children.length > 0) {
+        const entries = collectEntryNames(treeNode.node);
+        for (const objName of entries.objects) {
+          const childObj = state.objects.get(objName);
+          if (childObj) {
+            const modelAtoms = viewer.selectedAtoms({ model: childObj.model });
+            allRemovedIndices.push(...modelAtoms.map(a => a.index));
+            viewer.removeModel(childObj.model);
+            state.objects.delete(objName);
+          }
+        }
+      } else {
+        // Simple object deletion
+        const modelAtoms = viewer.selectedAtoms({ model: obj.model });
+        allRemovedIndices.push(...modelAtoms.map(a => a.index));
+        viewer.removeModel(obj.model);
+      }
+
       viewer.render();
       removeObject(name);
 
       // Prune deleted atoms from all stored selections
-      pruneSelections(removedIndices);
+      pruneSelections(allRemovedIndices);
       clearHighlight();
       if (getState().activeSelection) {
         applyHighlight(getState().activeSelection);
@@ -91,7 +137,7 @@ export function registerEditingCommands(registry) {
       ctx.terminal.print(`Deleted object "${name}"`, 'result');
     },
     usage: 'delete <name>',
-    help: 'Delete a molecular object or named selection.',
+    help: 'Delete a molecular object, named selection, or group.',
   });
 
   registry.register('set_name', {
@@ -107,6 +153,9 @@ export function registerEditingCommands(registry) {
       if (state.selections.has(oldName)) {
         renameSelection(oldName, newName);
         ctx.terminal.print(`Renamed selection "(${oldName})" to "(${newName})"`, 'result');
+      } else if (findTreeNode(state.entryTree, oldName, 'group')) {
+        renameGroup(oldName, newName);
+        ctx.terminal.print(`Renamed group "${oldName}" to "${newName}"`, 'result');
       } else if (state.objects.has(oldName)) {
         renameObject(oldName, newName);
         ctx.terminal.print(`Renamed "${oldName}" to "${newName}"`, 'result');

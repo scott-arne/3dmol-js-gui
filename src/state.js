@@ -4,6 +4,14 @@
  * Provides a simple observable state container. UI components and other modules
  * register listeners via onStateChange() and are notified whenever state is
  * mutated through the public API.
+ *
+ * The entryTree array describes the display order and nesting structure of all
+ * objects, selections, and groups in the sidebar. Each node is one of:
+ *
+ *   { type: 'object', name }
+ *   { type: 'selection', name }
+ *   { type: 'group', name, collapsed, children: [...] }
+ *   { type: 'object', name, collapsed, children: [...] }   (hierarchy parent)
  */
 
 const state = {
@@ -12,6 +20,9 @@ const state = {
 
   /** @type {Map<string, {expression: string, spec: object, atomCount: number, visible: boolean}>} name -> selection data */
   selections: new Map(),
+
+  /** @type {Array<object>} Ordered tree of display nodes. */
+  entryTree: [],
 
   /** @type {'atoms'|'residues'|'chains'|'molecules'} */
   selectionMode: 'atoms',
@@ -29,6 +40,143 @@ const state = {
   _listeners: [],
 };
 
+// ---------------------------------------------------------------------------
+// Tree helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Find a node in the tree by name (and optionally type). Returns
+ * { node, parent, index } or null if not found.
+ *
+ * @param {Array} tree - The tree to search.
+ * @param {string} name - The name to find.
+ * @param {string} [type] - Optional type filter ('object', 'selection', 'group').
+ * @param {object} [parent] - Internal recursion param.
+ * @returns {{node: object, parent: Array, index: number}|null}
+ */
+export function findTreeNode(tree, name, type) {
+  for (let i = 0; i < tree.length; i++) {
+    const node = tree[i];
+    if (node.name === name && (!type || node.type === type)) {
+      return { node, parent: tree, index: i };
+    }
+    if (node.children) {
+      const found = findTreeNode(node.children, name, type);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Remove a node from the tree by name. Returns the removed node or null.
+ *
+ * @param {Array} tree - The tree to search.
+ * @param {string} name - The name of the node to remove.
+ * @returns {object|null} The removed node, or null if not found.
+ */
+export function removeTreeNode(tree, name) {
+  const found = findTreeNode(tree, name);
+  if (found) {
+    found.parent.splice(found.index, 1);
+    return found.node;
+  }
+  return null;
+}
+
+/**
+ * Rename a node in the tree.
+ *
+ * @param {Array} tree - The tree to search.
+ * @param {string} oldName - Current name.
+ * @param {string} newName - New name.
+ * @returns {boolean} True if found and renamed.
+ */
+export function renameTreeNode(tree, oldName, newName) {
+  const found = findTreeNode(tree, oldName);
+  if (found) {
+    found.node.name = newName;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Collect all leaf entry names within a subtree (recursively).
+ * Returns object names and selection names separately.
+ *
+ * @param {object} node - A tree node.
+ * @returns {{objects: string[], selections: string[]}}
+ */
+export function collectEntryNames(node) {
+  const result = { objects: [], selections: [] };
+  if (node.type === 'object') {
+    result.objects.push(node.name);
+  } else if (node.type === 'selection') {
+    result.selections.push(node.name);
+  }
+  if (node.children) {
+    for (const child of node.children) {
+      const sub = collectEntryNames(child);
+      result.objects.push(...sub.objects);
+      result.selections.push(...sub.selections);
+    }
+  }
+  return result;
+}
+
+/**
+ * Collect all leaf entry names from multiple tree nodes.
+ *
+ * @param {Array} nodes - Array of tree nodes.
+ * @returns {{objects: string[], selections: string[]}}
+ */
+export function collectAllEntryNames(nodes) {
+  const result = { objects: [], selections: [] };
+  for (const node of nodes) {
+    const sub = collectEntryNames(node);
+    result.objects.push(...sub.objects);
+    result.selections.push(...sub.selections);
+  }
+  return result;
+}
+
+/**
+ * Build a default flat tree from state.objects and state.selections.
+ * Used when entryTree is empty (backward compatibility).
+ *
+ * @param {object} st - The state object.
+ * @returns {Array} A flat tree array.
+ */
+export function buildDefaultTree(st) {
+  const tree = [];
+  for (const name of st.objects.keys()) {
+    tree.push({ type: 'object', name });
+  }
+  for (const name of st.selections.keys()) {
+    tree.push({ type: 'selection', name });
+  }
+  return tree;
+}
+
+/**
+ * Get the display tree for rendering. Returns entryTree if it has entries,
+ * otherwise builds a default flat tree from the maps.
+ *
+ * @param {object} st - The state object.
+ * @returns {Array} The display tree.
+ */
+export function getDisplayTree(st) {
+  if (st.entryTree && st.entryTree.length > 0) {
+    return st.entryTree;
+  }
+  return buildDefaultTree(st);
+}
+
+// ---------------------------------------------------------------------------
+// Notification
+// ---------------------------------------------------------------------------
+
 /**
  * Notify all registered listeners of a state change.
  */
@@ -45,6 +193,10 @@ export function notifyStateChange() {
   _notify();
 }
 
+// ---------------------------------------------------------------------------
+// Getters
+// ---------------------------------------------------------------------------
+
 /**
  * Returns the application state object.
  *
@@ -54,8 +206,12 @@ export function getState() {
   return state;
 }
 
+// ---------------------------------------------------------------------------
+// Object management
+// ---------------------------------------------------------------------------
+
 /**
- * Add a molecular object to state.objects.
+ * Add a molecular object to state.objects and entryTree.
  *
  * If the given name already exists, a numeric suffix is appended to make it
  * unique (e.g. "1UBQ" -> "1UBQ_2" -> "1UBQ_3").
@@ -83,17 +239,26 @@ export function addObject(name, model, modelIndex) {
     representations: new Set(['line']),
   });
 
+  // Append to entryTree (before any selections at top level)
+  const selIdx = state.entryTree.findIndex(n => n.type === 'selection');
+  if (selIdx >= 0) {
+    state.entryTree.splice(selIdx, 0, { type: 'object', name: uniqueName });
+  } else {
+    state.entryTree.push({ type: 'object', name: uniqueName });
+  }
+
   _notify();
   return uniqueName;
 }
 
 /**
- * Remove a molecular object from state.objects.
+ * Remove a molecular object from state.objects and entryTree.
  *
  * @param {string} name - The name of the object to remove.
  */
 export function removeObject(name) {
   state.objects.delete(name);
+  removeTreeNode(state.entryTree, name);
   _notify();
 }
 
@@ -112,6 +277,10 @@ export function toggleObjectVisibility(name) {
   return obj;
 }
 
+// ---------------------------------------------------------------------------
+// Selection mode
+// ---------------------------------------------------------------------------
+
 /**
  * Set the current selection mode.
  *
@@ -122,6 +291,10 @@ export function setSelectionMode(mode) {
   _notify();
 }
 
+// ---------------------------------------------------------------------------
+// Selection management
+// ---------------------------------------------------------------------------
+
 /**
  * Add a named selection with the given expression, spec, and atom count.
  *
@@ -131,7 +304,13 @@ export function setSelectionMode(mode) {
  * @param {number} atomCount - The number of atoms matched.
  */
 export function addSelection(name, expression, spec, atomCount) {
+  const isNew = !state.selections.has(name);
   state.selections.set(name, { expression, spec, atomCount, visible: true });
+
+  if (isNew && !findTreeNode(state.entryTree, name, 'selection')) {
+    state.entryTree.push({ type: 'selection', name });
+  }
+
   _notify();
 }
 
@@ -142,6 +321,7 @@ export function addSelection(name, expression, spec, atomCount) {
  */
 export function removeSelection(name) {
   state.selections.delete(name);
+  removeTreeNode(state.entryTree, name);
   _notify();
 }
 
@@ -160,6 +340,7 @@ export function renameSelection(oldName, newName) {
   }
   state.selections.delete(oldName);
   state.selections.set(newName, entry);
+  renameTreeNode(state.entryTree, oldName, newName);
   _notify();
   return true;
 }
@@ -179,6 +360,7 @@ export function renameObject(oldName, newName) {
   }
   state.objects.delete(oldName);
   state.objects.set(newName, entry);
+  renameTreeNode(state.entryTree, oldName, newName);
   _notify();
   return true;
 }
@@ -197,6 +379,10 @@ export function toggleSelectionVisibility(name) {
   }
   return sel;
 }
+
+// ---------------------------------------------------------------------------
+// Selection pruning
+// ---------------------------------------------------------------------------
 
 /**
  * Remove the given atom indices from all stored selections and activeSelection.
@@ -226,6 +412,7 @@ export function pruneSelections(removedIndices) {
 
   for (const name of toDelete) {
     state.selections.delete(name);
+    removeTreeNode(state.entryTree, name);
   }
 
   if (state.activeSelection && Array.isArray(state.activeSelection.index)) {
@@ -242,6 +429,10 @@ export function pruneSelections(removedIndices) {
   if (changed) _notify();
 }
 
+// ---------------------------------------------------------------------------
+// Active selection
+// ---------------------------------------------------------------------------
+
 /**
  * Set the active visual selection from a viewer click.
  *
@@ -251,6 +442,264 @@ export function setActiveSelection(selSpec) {
   state.activeSelection = selSpec;
   _notify();
 }
+
+// ---------------------------------------------------------------------------
+// Group management
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a named group containing the specified entries.
+ * Entries are moved from their current position in the tree into the group.
+ * The group is inserted at the position of the first moved entry.
+ *
+ * @param {string} name - The group name.
+ * @param {string[]} memberNames - Names of entries to include.
+ * @returns {boolean} True if the group was created.
+ */
+export function addGroup(name, memberNames) {
+  if (findTreeNode(state.entryTree, name)) {
+    throw new Error(`"${name}" already exists`);
+  }
+  if (memberNames.length === 0) {
+    throw new Error('Group must contain at least one entry');
+  }
+
+  // Validate all members exist
+  for (const m of memberNames) {
+    if (!findTreeNode(state.entryTree, m)) {
+      throw new Error(`Entry "${m}" not found`);
+    }
+  }
+
+  // Find insertion point (position of first member)
+  let insertIdx = -1;
+  let insertParent = state.entryTree;
+  const firstFound = findTreeNode(state.entryTree, memberNames[0]);
+  if (firstFound) {
+    insertIdx = firstFound.index;
+    insertParent = firstFound.parent;
+  }
+
+  // Remove members from tree
+  const children = [];
+  for (const m of memberNames) {
+    const node = removeTreeNode(state.entryTree, m);
+    if (node) children.push(node);
+  }
+
+  // Recompute insert index (may have shifted after removals)
+  if (insertIdx > insertParent.length) {
+    insertIdx = insertParent.length;
+  }
+
+  const groupNode = { type: 'group', name, collapsed: false, children };
+  insertParent.splice(insertIdx, 0, groupNode);
+
+  _notify();
+  return true;
+}
+
+/**
+ * Remove a group and all its contents from state.
+ * Also removes all objects and selections contained within from the Maps.
+ *
+ * @param {string} name - The group name to remove.
+ * @returns {{objects: string[], selections: string[]}} Names of removed entries.
+ */
+export function removeGroup(name) {
+  const found = findTreeNode(state.entryTree, name, 'group');
+  if (!found) {
+    throw new Error(`Group "${name}" not found`);
+  }
+
+  const entries = collectEntryNames(found.node);
+
+  // Remove from maps
+  for (const objName of entries.objects) {
+    state.objects.delete(objName);
+  }
+  for (const selName of entries.selections) {
+    state.selections.delete(selName);
+  }
+
+  // Remove group node from tree
+  found.parent.splice(found.index, 1);
+
+  _notify();
+  return entries;
+}
+
+/**
+ * Dissolve a group: move its children to the group's parent level and
+ * remove the group node. The contained entries are NOT deleted.
+ *
+ * @param {string} name - The group name to ungroup.
+ * @returns {boolean} True if ungrouped successfully.
+ */
+export function ungroupGroup(name) {
+  const found = findTreeNode(state.entryTree, name, 'group');
+  if (!found) {
+    throw new Error(`Group "${name}" not found`);
+  }
+
+  const children = found.node.children || [];
+  // Insert children at the group's position, then remove the group
+  found.parent.splice(found.index, 1, ...children);
+
+  _notify();
+  return true;
+}
+
+/**
+ * Rename a group in the tree.
+ *
+ * @param {string} oldName - Current group name.
+ * @param {string} newName - New group name.
+ * @returns {boolean} True if renamed.
+ */
+export function renameGroup(oldName, newName) {
+  if (findTreeNode(state.entryTree, newName)) {
+    throw new Error(`"${newName}" already exists`);
+  }
+  const found = findTreeNode(state.entryTree, oldName, 'group');
+  if (!found) return false;
+  found.node.name = newName;
+  _notify();
+  return true;
+}
+
+/**
+ * Toggle the collapsed state of a group or hierarchy parent.
+ *
+ * @param {string} name - The name of the group or hierarchy parent.
+ * @returns {boolean|undefined} The new collapsed state, or undefined if not found.
+ */
+export function toggleCollapsed(name) {
+  const found = findTreeNode(state.entryTree, name);
+  if (!found || !found.node.children) return undefined;
+  found.node.collapsed = !found.node.collapsed;
+  _notify();
+  return found.node.collapsed;
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchy management
+// ---------------------------------------------------------------------------
+
+/**
+ * Move an entry to become a child of a parent object (hierarchy).
+ * Creates a children array on the parent if it doesn't have one.
+ *
+ * @param {string} childName - Name of the entry to reparent.
+ * @param {string} parentName - Name of the parent object.
+ * @returns {boolean} True if reparented successfully.
+ */
+export function reparentEntry(childName, parentName) {
+  if (childName === parentName) {
+    throw new Error('Cannot reparent an entry to itself');
+  }
+
+  const parentFound = findTreeNode(state.entryTree, parentName, 'object');
+  if (!parentFound) {
+    throw new Error(`Parent object "${parentName}" not found`);
+  }
+
+  // Ensure child isn't an ancestor of parent (prevent cycles)
+  const childFound = findTreeNode(state.entryTree, childName);
+  if (!childFound) {
+    throw new Error(`Entry "${childName}" not found`);
+  }
+  if (childFound.node.children) {
+    const descendant = findTreeNode(childFound.node.children, parentName);
+    if (descendant) {
+      throw new Error('Cannot reparent: would create a cycle');
+    }
+  }
+
+  // Remove child from current position
+  const childNode = removeTreeNode(state.entryTree, childName);
+  if (!childNode) {
+    throw new Error(`Entry "${childName}" not found`);
+  }
+
+  // Add to parent's children
+  if (!parentFound.node.children) {
+    parentFound.node.children = [];
+    parentFound.node.collapsed = false;
+  }
+  parentFound.node.children.push(childNode);
+
+  _notify();
+  return true;
+}
+
+/**
+ * Remove an entry from its parent hierarchy and move it to the top level
+ * (next to the former parent).
+ *
+ * @param {string} childName - Name of the entry to unparent.
+ * @returns {boolean} True if unparented successfully.
+ */
+export function unparentEntry(childName) {
+  // Find the child and its containing parent
+  const found = findTreeNode(state.entryTree, childName);
+  if (!found) {
+    throw new Error(`Entry "${childName}" not found`);
+  }
+
+  // Check if the child is actually inside a parent's children
+  // (not at top level of entryTree or a group's children)
+  // We need to find the actual parent node
+  const parentNode = _findParentNode(state.entryTree, childName);
+  if (!parentNode || parentNode.type !== 'object') {
+    throw new Error(`"${childName}" is not a hierarchy child`);
+  }
+
+  // Remove from parent's children
+  const childNode = removeTreeNode(parentNode.children, childName);
+  if (!childNode) return false;
+
+  // If parent's children are now empty, remove the children array
+  if (parentNode.children.length === 0) {
+    delete parentNode.children;
+    delete parentNode.collapsed;
+  }
+
+  // Insert next to the parent in the tree
+  const parentFound = findTreeNode(state.entryTree, parentNode.name);
+  if (parentFound) {
+    parentFound.parent.splice(parentFound.index + 1, 0, childNode);
+  } else {
+    state.entryTree.push(childNode);
+  }
+
+  _notify();
+  return true;
+}
+
+/**
+ * Find the immediate parent node of a named entry.
+ *
+ * @param {Array} tree - The tree to search.
+ * @param {string} name - The name to find.
+ * @returns {object|null} The parent node, or null if at top level.
+ */
+function _findParentNode(tree, name) {
+  for (const node of tree) {
+    if (node.children) {
+      for (const child of node.children) {
+        if (child.name === name) return node;
+      }
+      const deeper = _findParentNode(node.children, name);
+      if (deeper) return deeper;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Listener management
+// ---------------------------------------------------------------------------
 
 /**
  * Register a callback that is invoked whenever state changes.

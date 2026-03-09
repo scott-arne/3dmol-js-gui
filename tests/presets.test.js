@@ -10,6 +10,7 @@ vi.mock('../src/viewer.js', () => ({
     if (rep === 'stick') return { stick: { radius: 0.25 } };
     return { [rep]: {} };
   },
+  repKey: (rep) => (rep === 'line' ? 'stick' : rep),
 }));
 
 vi.mock('../src/ui/color-swatches.js', () => ({

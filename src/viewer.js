@@ -218,7 +218,7 @@ export async function fetchPDB(pdbId) {
   }
 
   const data = await response.text();
-  const model = viewer.addModel(data, 'pdb');
+  const model = viewer.addModel(data, 'pdb', { keepH: true });
   viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();
@@ -238,7 +238,7 @@ export async function fetchPDB(pdbId) {
  * @returns {object} The 3Dmol model that was added.
  */
 export function loadModelData(data, format) {
-  const model = viewer.addModel(data, format);
+  const model = viewer.addModel(data, format, { keepH: true });
   viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();

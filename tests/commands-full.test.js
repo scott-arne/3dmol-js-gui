@@ -37,6 +37,7 @@ const mockState = {
     userSetBgColor: false,
   },
   _listeners: [],
+  entryTree: [],
 };
 
 vi.mock('../src/viewer.js', () => ({
@@ -63,17 +64,28 @@ vi.mock('../src/viewer.js', () => ({
   applyHighlight: vi.fn(),
 }));
 
-vi.mock('../src/state.js', () => ({
-  getState: () => mockState,
-  addObject: vi.fn((name) => name),
-  removeObject: vi.fn(),
-  addSelection: vi.fn(),
-  removeSelection: vi.fn(),
-  renameSelection: vi.fn(),
-  renameObject: vi.fn(),
-  pruneSelections: vi.fn(),
-  notifyStateChange: vi.fn(),
-}));
+vi.mock('../src/state.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getState: () => mockState,
+    addObject: vi.fn((name) => name),
+    removeObject: vi.fn(),
+    addSelection: vi.fn(),
+    removeSelection: vi.fn(),
+    renameSelection: vi.fn(),
+    renameObject: vi.fn(),
+    renameGroup: vi.fn(),
+    pruneSelections: vi.fn(),
+    notifyStateChange: vi.fn(),
+    addGroup: vi.fn(),
+    removeGroup: vi.fn(() => ({ objects: [], selections: [] })),
+    ungroupGroup: vi.fn(),
+    reparentEntry: vi.fn(),
+    unparentEntry: vi.fn(),
+    toggleCollapsed: vi.fn(),
+  };
+});
 
 vi.mock('../src/commands/resolve-selection.js', () => ({
   resolveSelection: vi.fn((str) => {
@@ -138,10 +150,11 @@ import { registerLabelingCommands } from '../src/commands/labeling.js';
 import { registerLoadingCommands } from '../src/commands/loading.js';
 import { registerStylingCommands } from '../src/commands/styling.js';
 import { registerPresetCommands } from '../src/commands/preset.js';
+import { registerGroupingCommands } from '../src/commands/grouping.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
 import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, clearHighlight, applyHighlight, loadModelData } from '../src/viewer.js';
-import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange } from '../src/state.js';
+import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange, addGroup, ungroupGroup, reparentEntry, unparentEntry } from '../src/state.js';
 import { resolveSelection, getSelSpec } from '../src/commands/resolve-selection.js';
 import { parse } from '../src/parser/selection.pegjs';
 import { toAtomSelectionSpec, evaluate } from '../src/parser/evaluator.js';
@@ -169,6 +182,7 @@ function resetMocks() {
   vi.clearAllMocks();
   mockState.objects.clear();
   mockState.selections.clear();
+  mockState.entryTree.length = 0;
   mockState.activeSelection = null;
   mockState.selectionMode = 'atoms';
   mockState.settings = {
@@ -2420,8 +2434,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 7 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 2 loading + 6 styling + 1 preset = 31
-    expect(commands.length).toBe(31);
+    // 7 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 2 loading + 6 styling + 1 preset + 4 grouping = 35
+    expect(commands.length).toBe(35);
   });
 
   it('all registered commands have help text', () => {
@@ -2434,6 +2448,92 @@ describe('index.js', () => {
       expect(info.usage).toBeTruthy();
       expect(info.help).toBeTruthy();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Grouping Commands
+// ---------------------------------------------------------------------------
+
+describe('grouping.js', () => {
+  let registry, terminal, ctx;
+
+  beforeEach(() => {
+    resetMocks();
+    registry = createCommandRegistry();
+    registerGroupingCommands(registry);
+    terminal = makeTerminal();
+    ctx = makeCtx(terminal);
+  });
+
+  describe('group', () => {
+    it('throws when fewer than 2 args', () => {
+      expect(() => registry.execute('group myGroup', ctx)).toThrow('Usage: group');
+    });
+
+    it('creates a group with given members', () => {
+      registry.execute('group myGroup, mol1, mol2', ctx);
+      expect(addGroup).toHaveBeenCalledWith('myGroup', ['mol1', 'mol2']);
+      expect(terminal.lines[0].msg).toContain('Created group');
+      expect(terminal.lines[0].msg).toContain('myGroup');
+      expect(terminal.lines[0].msg).toContain('2 entries');
+    });
+
+    it('creates a group with a single member', () => {
+      registry.execute('group grp, entry1', ctx);
+      expect(addGroup).toHaveBeenCalledWith('grp', ['entry1']);
+      expect(terminal.lines[0].msg).toContain('1 entries');
+    });
+
+    it('trims whitespace from group name and member names', () => {
+      registry.execute('group  myGroup ,  mol1 ,  mol2 ', ctx);
+      expect(addGroup).toHaveBeenCalledWith('myGroup', ['mol1', 'mol2']);
+    });
+  });
+
+  describe('ungroup', () => {
+    it('throws when no arguments', () => {
+      expect(() => registry.execute('ungroup', ctx)).toThrow('Usage: ungroup');
+    });
+
+    it('ungroups the named group', () => {
+      registry.execute('ungroup myGroup', ctx);
+      expect(ungroupGroup).toHaveBeenCalledWith('myGroup');
+      expect(terminal.lines[0].msg).toContain('Ungrouped');
+      expect(terminal.lines[0].msg).toContain('myGroup');
+    });
+  });
+
+  describe('reparent', () => {
+    it('throws when fewer than 2 args', () => {
+      expect(() => registry.execute('reparent child1', ctx)).toThrow('Usage: reparent');
+    });
+
+    it('reparents a child under a parent', () => {
+      registry.execute('reparent child1, parent1', ctx);
+      expect(reparentEntry).toHaveBeenCalledWith('child1', 'parent1');
+      expect(terminal.lines[0].msg).toContain('Reparented');
+      expect(terminal.lines[0].msg).toContain('child1');
+      expect(terminal.lines[0].msg).toContain('parent1');
+    });
+
+    it('trims whitespace from child and parent names', () => {
+      registry.execute('reparent  child1 ,  parent1 ', ctx);
+      expect(reparentEntry).toHaveBeenCalledWith('child1', 'parent1');
+    });
+  });
+
+  describe('unparent', () => {
+    it('throws when no arguments', () => {
+      expect(() => registry.execute('unparent', ctx)).toThrow('Usage: unparent');
+    });
+
+    it('unparents the named entry', () => {
+      registry.execute('unparent child1', ctx);
+      expect(unparentEntry).toHaveBeenCalledWith('child1');
+      expect(terminal.lines[0].msg).toContain('Unparented');
+      expect(terminal.lines[0].msg).toContain('child1');
+    });
   });
 });
 

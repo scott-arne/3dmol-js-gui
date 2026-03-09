@@ -7,6 +7,7 @@ import { registerLabelingCommands } from './labeling.js';
 import { registerEditingCommands } from './editing.js';
 import { registerExportCommands } from './export.js';
 import { registerPresetCommands } from './preset.js';
+import { registerGroupingCommands } from './grouping.js';
 
 /**
  * Register all available commands into the given command registry.
@@ -23,4 +24,5 @@ export function registerAllCommands(registry) {
   registerEditingCommands(registry);
   registerExportCommands(registry);
   registerPresetCommands(registry);
+  registerGroupingCommands(registry);
 }

@@ -406,6 +406,77 @@ body {
   background: var(--menu-hover);
 }
 
+/* --- Sidebar Groups --- */
+.sidebar-group-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.sidebar-group-header:hover {
+  background: var(--menu-hover);
+}
+
+.sidebar-group-toggle {
+  width: 14px;
+  font-size: 8px;
+  margin-right: 4px;
+  color: var(--inactive);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.sidebar-group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.sidebar-group-children {
+  border-left: 2px solid var(--border);
+  margin-left: 12px;
+}
+
+.sidebar-group-children.collapsed {
+  display: none;
+}
+
+/* --- Sidebar Hierarchy --- */
+.sidebar-hierarchy-toggle {
+  width: 18px;
+  font-size: 10px;
+  margin-right: 4px;
+  color: var(--inactive);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 700;
+}
+
+.sidebar-hierarchy-children {
+  margin-left: 12px;
+  border-left: 1px dotted var(--inactive);
+}
+
+.sidebar-hierarchy-children.collapsed {
+  display: none;
+}
+
+/* Indentation for nested items inside groups or hierarchies */
+.sidebar-group-children .sidebar-object,
+.sidebar-hierarchy-children .sidebar-object {
+  padding-left: 12px;
+}
+
 /* --- Terminal --- */
 .terminal {
   grid-area: terminal;

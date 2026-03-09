@@ -6,7 +6,7 @@
  * base selection spec to scope the effect.
  */
 
-import { repStyle } from './viewer.js';
+import { repStyle, repKey } from './viewer.js';
 import { CHAIN_PALETTES } from './ui/color-swatches.js';
 
 const WATER_RESN = ['HOH', 'WAT', 'H2O'];
@@ -28,7 +28,11 @@ function applyElementByChain(viewer, selSpec, reps) {
   // Non-carbon atoms: Jmol element coloring
   const nonCarbonSel = Object.assign({}, selSpec, { not: { elem: 'C' } });
   const jmolStyle = {};
-  for (const rep of reps) jmolStyle[rep] = { colorscheme: 'Jmol' };
+  for (const rep of reps) {
+    const base = repStyle(rep);
+    const key = repKey(rep);
+    jmolStyle[key] = Object.assign({}, base[key], { colorscheme: 'Jmol' });
+  }
   viewer.addStyle(nonCarbonSel, jmolStyle);
 
   // Carbon atoms: per-chain pastel palette color
@@ -36,7 +40,11 @@ function applyElementByChain(viewer, selSpec, reps) {
     const color = palette[i % palette.length];
     const carbonSel = Object.assign({}, selSpec, { elem: 'C', chain: ch });
     const carbonStyle = {};
-    for (const rep of reps) carbonStyle[rep] = { color };
+    for (const rep of reps) {
+      const base = repStyle(rep);
+      const key = repKey(rep);
+      carbonStyle[key] = Object.assign({}, base[key], { color });
+    }
     viewer.addStyle(carbonSel, carbonStyle);
   });
 }
@@ -53,6 +61,50 @@ function merge(base, extra) {
 }
 
 /**
+ * Hide non-polar hydrogens (H atoms bonded to carbon) by clearing their
+ * styles. Polar hydrogens (bonded to N, O, S, etc.) remain visible.
+ *
+ * Computes non-polar H indices from the atom bond graph since 3Dmol.js
+ * does not support the ``bondedto`` selection spec in all versions.
+ *
+ * @param {object} viewer - The 3Dmol GLViewer instance.
+ * @param {object} base - The base selection spec to scope the effect.
+ */
+function hideNonpolarH(viewer, base) {
+  const atoms = viewer.selectedAtoms(base || {});
+
+  // Group atoms by model — atom.index and atom.bonds are model-local,
+  // so bond lookups must stay within the same model to avoid collisions.
+  const modelGroups = new Map();
+  for (const a of atoms) {
+    const mid = a.model !== undefined ? a.model : 0;
+    if (!modelGroups.has(mid)) modelGroups.set(mid, { elemByIndex: new Map(), hydrogens: [] });
+    const group = modelGroups.get(mid);
+    group.elemByIndex.set(a.index, a.elem);
+    if (a.elem === 'H') group.hydrogens.push(a);
+  }
+
+  // Process each model separately and apply per-model setStyle
+  for (const [mid, group] of modelGroups) {
+    const nonpolarIndices = [];
+    for (const h of group.hydrogens) {
+      for (const bi of (h.bonds || [])) {
+        if (group.elemByIndex.get(bi) === 'C') {
+          nonpolarIndices.push(h.index);
+          break;
+        }
+      }
+    }
+    if (nonpolarIndices.length > 0) {
+      const model = viewer.getModel(mid);
+      if (model) {
+        model.setStyle({ index: nonpolarIndices }, {});
+      }
+    }
+  }
+}
+
+/**
  * Available preset definitions keyed by lowercase name.
  */
 export const PRESETS = {
@@ -66,6 +118,7 @@ export const PRESETS = {
         { stick: { colorscheme: 'Jmol' } }
       );
       applyElementByChain(viewer, merge(base, { hetflag: false }), ['cartoon']);
+      hideNonpolarH(viewer, base);
       viewer.render();
       return new Set(['cartoon', 'stick']);
     },
@@ -103,11 +156,12 @@ export const PRESETS = {
             if (nearResKeys.has(`${a.chain}:${a.resi}`)) nearIndices.push(a.index);
           }
           if (nearIndices.length > 0) {
-            applyElementByChain(viewer, { index: nearIndices }, ['stick']);
+            applyElementByChain(viewer, { index: nearIndices }, ['line']);
           }
         }
       }
 
+      hideNonpolarH(viewer, base);
       viewer.render();
       return new Set(['cartoon', 'stick']);
     },
@@ -121,6 +175,7 @@ export const PRESETS = {
       const hetSpec = merge(base, { hetflag: true, not: { resn: WATER_RESN } });
       viewer.addStyle(hetSpec, repStyle('stick'));
       viewer.addStyle(hetSpec, { sphere: { scale: 0.3 } });
+      hideNonpolarH(viewer, base);
       viewer.render();
       return new Set(['stick', 'sphere']);
     },

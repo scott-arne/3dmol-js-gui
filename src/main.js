@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, refreshLabels, orientView } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, repKey, refreshLabels, orientView } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -25,6 +25,14 @@ import {
   pruneSelections,
   notifyStateChange,
   setActiveSelection,
+  toggleCollapsed,
+  addGroup,
+  removeGroup,
+  ungroupGroup,
+  renameGroup,
+  reparentEntry,
+  findTreeNode,
+  collectEntryNames,
 } from './state.js';
 import { createCommandRegistry, createCommandContext } from './commands/registry.js';
 import { registerAllCommands } from './commands/index.js';
@@ -241,6 +249,144 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     if (!sel) return;
     applyViewPreset(presetName, sel.spec);
     terminal.print(`Applied "${getPresetLabel(presetName)}" preset to "(${name})"`, 'result');
+  },
+
+  // --- Group sidebar callbacks ---
+
+  onToggleCollapsed(name) {
+    toggleCollapsed(name);
+  },
+
+  onToggleGroupVisibility(name) {
+    const state = getState();
+    const found = findTreeNode(state.entryTree, name, 'group');
+    if (!found) return;
+    const entries = collectEntryNames(found.node);
+    // Determine target: if any member is visible, hide all; otherwise show all
+    let anyVisible = false;
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj && obj.visible) { anyVisible = true; break; }
+    }
+    const viewer = getViewer();
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj) {
+        obj.visible = !anyVisible;
+        if (obj.visible) obj.model.show();
+        else obj.model.hide();
+      }
+    }
+    viewer.render();
+    notifyStateChange();
+  },
+
+  onGroupAction(name, action) {
+    const state = getState();
+    switch (action) {
+      case 'delete': {
+        const found = findTreeNode(state.entryTree, name, 'group');
+        if (!found) return;
+        const entries = collectEntryNames(found.node);
+        const viewer = getViewer();
+        const allRemovedIndices = [];
+        for (const objName of entries.objects) {
+          const obj = state.objects.get(objName);
+          if (obj) {
+            const modelAtoms = viewer.selectedAtoms({ model: obj.model });
+            allRemovedIndices.push(...modelAtoms.map(a => a.index));
+            viewer.removeModel(obj.model);
+          }
+        }
+        viewer.render();
+        removeGroup(name);
+        pruneSelections(allRemovedIndices);
+        clearHighlight();
+        if (getState().activeSelection) {
+          applyHighlight(getState().activeSelection);
+        }
+        terminal.print(`Deleted group "${name}"`, 'result');
+        break;
+      }
+      case 'ungroup':
+        ungroupGroup(name);
+        terminal.print(`Ungrouped "${name}"`, 'result');
+        break;
+      case 'rename':
+        showRenameDialog(name, (newName) => {
+          try {
+            renameGroup(name, newName);
+            terminal.print(`Renamed group "${name}" to "${newName}"`, 'result');
+          } catch (e) {
+            terminal.print(e.message, 'error');
+          }
+        });
+        break;
+    }
+  },
+
+  onGroupShow(name, rep) {
+    const state = getState();
+    const found = findTreeNode(state.entryTree, name, 'group');
+    if (!found) return;
+    const entries = collectEntryNames(found.node);
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj) applyShow({ model: obj.model }, rep, obj);
+    }
+    terminal.print(`Showing ${rep} on group "${name}"`, 'result');
+  },
+
+  onGroupHide(name, rep) {
+    const state = getState();
+    const found = findTreeNode(state.entryTree, name, 'group');
+    if (!found) return;
+    const entries = collectEntryNames(found.node);
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj) applyHide({ model: obj.model }, rep, obj);
+    }
+    terminal.print(`Hiding ${rep} on group "${name}"`, 'result');
+  },
+
+  onGroupLabel(name, prop) {
+    const state = getState();
+    const found = findTreeNode(state.entryTree, name, 'group');
+    if (!found) return;
+    const entries = collectEntryNames(found.node);
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj) applyLabel({ model: obj.model }, prop);
+    }
+    terminal.print(prop === 'clear' ? 'Labels cleared' : `Labeled group "${name}" by ${prop}`, 'result');
+  },
+
+  onGroupColor(name, rawScheme) {
+    const state = getState();
+    const found = findTreeNode(state.entryTree, name, 'group');
+    if (!found) return;
+    const entries = collectEntryNames(found.node);
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj) applyColor({ model: obj.model }, obj.representations, rawScheme);
+    }
+    terminal.print(`Colored group "${name}" by ${formatColorDisplay(rawScheme)}`, 'result');
+  },
+
+  onGroupView(name, presetName) {
+    const state = getState();
+    const found = findTreeNode(state.entryTree, name, 'group');
+    if (!found) return;
+    const entries = collectEntryNames(found.node);
+    for (const objName of entries.objects) {
+      const obj = state.objects.get(objName);
+      if (obj) {
+        const reps = applyViewPreset(presetName, { model: obj.model });
+        obj.representations = new Set(reps);
+      }
+    }
+    notifyStateChange();
+    terminal.print(`Applied "${getPresetLabel(presetName)}" preset to group "${name}"`, 'result');
   },
 });
 
@@ -739,10 +885,39 @@ terminal.setCompleter((prefix, isFirstWord) => {
   }
   const state = getState();
   const lower = prefix.toLowerCase();
+
+  // Collect all names: objects, selections, and groups from the tree
   const names = [
     ...state.objects.keys(),
     ...state.selections.keys(),
   ];
+
+  // Add group names from entryTree
+  function collectGroupNames(nodes) {
+    for (const node of nodes) {
+      if (node.type === 'group') {
+        names.push(node.name);
+        if (node.children) collectGroupNames(node.children);
+      }
+    }
+  }
+  if (state.entryTree) collectGroupNames(state.entryTree);
+
+  // Support dot-notation completion for hierarchy parents
+  if (prefix.includes('.')) {
+    const dotIdx = prefix.indexOf('.');
+    const parentName = prefix.slice(0, dotIdx);
+    const childPrefix = prefix.slice(dotIdx + 1).toLowerCase();
+    const parentNode = findTreeNode(state.entryTree, parentName, 'object');
+    if (parentNode && parentNode.node.children) {
+      const dotNames = parentNode.node.children
+        .filter(c => c.name.toLowerCase().startsWith(childPrefix))
+        .map(c => `${parentName}.${c.name}`);
+      dotNames.push(`${parentName}.*`);
+      return dotNames.filter(n => n.toLowerCase().startsWith(lower)).sort();
+    }
+  }
+
   return names.filter(n => n.toLowerCase().startsWith(lower)).sort();
 });
 
@@ -757,54 +932,153 @@ if (init) {
   const v = getViewer();
 
   // Load molecules (addModel only, no per-molecule styling/zoom/render)
+  // Supports: flat entries, { children: [...] } for hierarchies,
+  // and { group: 'name', entries: [...] } for groups.
   const molecules = init.molecules || [];
   for (const mol of molecules) {
     try {
-      const model = v.addModel(mol.data, mol.format);
-      const modelIndex = model.getID ? model.getID() : null;
-      const name = addObject(mol.name || mol.format, model, modelIndex);
-      if (mol.disabled) {
-        const st = getState();
-        const obj = st.objects.get(name);
-        if (obj) {
-          obj.visible = false;
-          model.hide();
+      if (mol.group && Array.isArray(mol.entries)) {
+        // Group entry: { group: 'name', entries: [{name, data, format}, ...] }
+        const memberNames = [];
+        for (const entry of mol.entries) {
+          const model = v.addModel(entry.data, entry.format, { keepH: true });
+          const modelIndex = model.getID ? model.getID() : null;
+          const entryName = addObject(entry.name || entry.format, model, modelIndex);
+          memberNames.push(entryName);
+          if (entry.disabled) {
+            const obj = getState().objects.get(entryName);
+            if (obj) { obj.visible = false; model.hide(); }
+          }
+        }
+        if (memberNames.length > 0) {
+          addGroup(mol.group, memberNames);
+        }
+      } else if (mol.children && Array.isArray(mol.children)) {
+        // Hierarchy entry: { name, data, format, children: [{name, data, format}, ...] }
+        const model = v.addModel(mol.data, mol.format, { keepH: true });
+        const modelIndex = model.getID ? model.getID() : null;
+        const parentName = addObject(mol.name || mol.format, model, modelIndex);
+        if (mol.disabled) {
+          const obj = getState().objects.get(parentName);
+          if (obj) { obj.visible = false; model.hide(); }
+        }
+        for (const child of mol.children) {
+          const childModel = v.addModel(child.data, child.format, { keepH: true });
+          const childModelIndex = childModel.getID ? childModel.getID() : null;
+          const childName = addObject(child.name || child.format, childModel, childModelIndex);
+          if (child.disabled) {
+            const obj = getState().objects.get(childName);
+            if (obj) { obj.visible = false; childModel.hide(); }
+          }
+          reparentEntry(childName, parentName);
+        }
+      } else {
+        // Simple flat entry
+        const model = v.addModel(mol.data, mol.format, { keepH: true });
+        const modelIndex = model.getID ? model.getID() : null;
+        const name = addObject(mol.name || mol.format, model, modelIndex);
+        if (mol.disabled) {
+          const st = getState();
+          const obj = st.objects.get(name);
+          if (obj) {
+            obj.visible = false;
+            model.hide();
+          }
         }
       }
     } catch (e) {
-      terminal.print(`Failed to load "${mol.name || mol.format}": ${e.message}`, 'error');
+      terminal.print(`Failed to load "${mol.name || mol.group || mol.format}": ${e.message}`, 'error');
     }
   }
 
   // Re-register click handler now that all models are loaded
   setupClickHandler(handleViewerClick);
 
-  // Apply styles: preset takes precedence, then custom styles, then default wire
+  // Apply operations in order (styles, presets, colors)
   v.setStyle({}, {});
+  const ops = init.operations || [];
 
-  if (init.preset) {
-    const reps = applyPreset(init.preset, v);
-    const st = getState();
-    for (const [, obj] of st.objects) {
-      obj.representations = new Set(reps);
-    }
-    notifyStateChange();
+  if (ops.length === 0) {
+    // No operations: default to line
+    v.setStyle({}, repStyle('line'));
   } else {
-    const styles = init.styles || [];
-    if (styles.length > 0) {
-      for (const s of styles) {
+    for (const op of ops) {
+      if (op.op === 'preset') {
+        const reps = applyPreset(op.name, v);
+        const st = getState();
+        for (const [, obj] of st.objects) {
+          obj.representations = new Set(reps);
+        }
+        notifyStateChange();
+      } else if (op.op === 'style') {
         let sel;
-        if (typeof s.selection === 'string') {
-          const result = resolveSelection(s.selection);
+        if (typeof op.selection === 'string') {
+          const result = resolveSelection(op.selection);
           sel = getSelSpec(result);
         } else {
-          sel = s.selection || {};
+          sel = op.selection || {};
         }
-        v.addStyle(sel, s.style || {});
+        v.addStyle(sel, op.style || {});
+      } else if (op.op === 'color') {
+        const st = getState();
+        const reps = new Set();
+        for (const [, obj] of st.objects) {
+          for (const rep of obj.representations) reps.add(rep);
+        }
+        if (reps.size === 0) reps.add('line');
+
+        let sel;
+        if (typeof op.selection === 'string') {
+          const result = resolveSelection(op.selection);
+          sel = getSelSpec(result);
+        } else {
+          sel = op.selection || {};
+        }
+
+        // Only restyle atoms that currently have a visible style.
+        // This prevents bringing back atoms hidden by hideNonpolarH.
+        const matchedAtoms = v.selectedAtoms(sel);
+        const visibleByModel = new Map();
+        for (const a of matchedAtoms) {
+          if (!a.style || Object.keys(a.style).length === 0) continue;
+          const mid = a.model !== undefined ? a.model : 0;
+          if (!visibleByModel.has(mid)) visibleByModel.set(mid, []);
+          visibleByModel.get(mid).push(a.index);
+        }
+
+        for (const [mid, indices] of visibleByModel) {
+          const model = v.getModel(mid);
+          if (!model) continue;
+
+          if (op.hets === false) {
+            // Carbon atoms: apply the requested color
+            const carbonIndices = [];
+            const hetIndices = [];
+            for (const a of matchedAtoms) {
+              if (a.model !== mid) continue;
+              if (!a.style || Object.keys(a.style).length === 0) continue;
+              if (a.elem === 'C') carbonIndices.push(a.index);
+              else hetIndices.push(a.index);
+            }
+            if (carbonIndices.length > 0) {
+              const carbonStyle = {};
+              for (const rep of reps) carbonStyle[repKey(rep)] = { color: op.color };
+              model.setStyle({ index: carbonIndices }, carbonStyle);
+            }
+            if (hetIndices.length > 0) {
+              const hetStyle = {};
+              for (const rep of reps) hetStyle[repKey(rep)] = { colorscheme: 'Jmol' };
+              model.setStyle({ index: hetIndices }, hetStyle);
+            }
+          } else {
+            const styleObj = {};
+            for (const rep of reps) styleObj[repKey(rep)] = { color: op.color };
+            model.setStyle({ index: indices }, styleObj);
+          }
+        }
       }
-    } else {
-      v.setStyle({}, repStyle('line'));
     }
+    v.render();
   }
 
   // Configure UI visibility

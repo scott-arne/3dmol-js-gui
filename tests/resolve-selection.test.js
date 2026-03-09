@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockState = {
   selections: new Map(),
   objects: new Map(),
+  entryTree: [],
 };
 
 vi.mock('../src/parser/selection.pegjs', () => ({
@@ -18,9 +19,13 @@ vi.mock('../src/parser/evaluator.js', () => ({
   toAtomSelectionSpec: vi.fn(),
 }));
 
-vi.mock('../src/state.js', () => ({
-  getState: () => mockState,
-}));
+vi.mock('../src/state.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getState: () => mockState,
+  };
+});
 
 vi.mock('../src/viewer.js', () => ({
   getAllAtoms: vi.fn(),
@@ -41,6 +46,7 @@ describe('resolveSelection', () => {
     vi.clearAllMocks();
     mockState.selections.clear();
     mockState.objects.clear();
+    mockState.entryTree.length = 0;
   });
 
   // 1. Empty / null / undefined
@@ -245,5 +251,134 @@ describe('getSelSpec', () => {
   it('returns empty serial array when atoms is empty', () => {
     const result = { atoms: [] };
     expect(getSelSpec(result)).toEqual({ serial: [] });
+  });
+});
+
+describe('resolveSelection - group names', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.selections.clear();
+    mockState.objects.clear();
+    mockState.entryTree.length = 0;
+  });
+
+  it('resolves group name to union of group member models', () => {
+    const modelA = { id: 'A' };
+    const modelB = { id: 'B' };
+    mockState.objects.set('molA', { model: modelA });
+    mockState.objects.set('molB', { model: modelB });
+    mockState.entryTree.push({
+      type: 'group', name: 'myGroup', collapsed: false, children: [
+        { type: 'object', name: 'molA' },
+        { type: 'object', name: 'molB' },
+      ],
+    });
+
+    const result = resolveSelection('myGroup');
+    expect(result.spec.model).toEqual([modelA, modelB]);
+  });
+
+  it('resolves group with single member to single model spec', () => {
+    const modelA = { id: 'A' };
+    mockState.objects.set('molA', { model: modelA });
+    mockState.entryTree.push({
+      type: 'group', name: 'grp', collapsed: false, children: [
+        { type: 'object', name: 'molA' },
+      ],
+    });
+
+    const result = resolveSelection('grp');
+    expect(result.spec.model).toBe(modelA);
+  });
+
+  it('named selections shadow group names', () => {
+    mockState.selections.set('grp', { spec: { chain: 'X' } });
+    mockState.objects.set('mol', { model: 1 });
+    mockState.entryTree.push({
+      type: 'group', name: 'grp', collapsed: false, children: [
+        { type: 'object', name: 'mol' },
+      ],
+    });
+
+    const result = resolveSelection('grp');
+    expect(result.spec).toEqual({ chain: 'X' });
+  });
+});
+
+describe('resolveSelection - hierarchy dot-notation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.selections.clear();
+    mockState.objects.clear();
+    mockState.entryTree.length = 0;
+  });
+
+  it('PARENT.* resolves to parent + all children', () => {
+    const parentModel = { id: 'P' };
+    const childModel1 = { id: 'C1' };
+    const childModel2 = { id: 'C2' };
+    mockState.objects.set('ensemble', { model: parentModel });
+    mockState.objects.set('conf1', { model: childModel1 });
+    mockState.objects.set('conf2', { model: childModel2 });
+    mockState.entryTree.push({
+      type: 'object', name: 'ensemble', collapsed: false, children: [
+        { type: 'object', name: 'conf1' },
+        { type: 'object', name: 'conf2' },
+      ],
+    });
+
+    const result = resolveSelection('ensemble.*');
+    expect(result.spec.model).toEqual([parentModel, childModel1, childModel2]);
+  });
+
+  it('PARENT.CHILD resolves to specific child', () => {
+    const parentModel = { id: 'P' };
+    const childModel = { id: 'C' };
+    mockState.objects.set('ensemble', { model: parentModel });
+    mockState.objects.set('conf1', { model: childModel });
+    mockState.entryTree.push({
+      type: 'object', name: 'ensemble', collapsed: false, children: [
+        { type: 'object', name: 'conf1' },
+      ],
+    });
+
+    const result = resolveSelection('ensemble.conf1');
+    expect(result.spec.model).toBe(childModel);
+  });
+
+  it('PARENT.PREFIX* resolves matching children by prefix', () => {
+    const parentModel = { id: 'P' };
+    const child1 = { id: 'C1' };
+    const child2 = { id: 'C2' };
+    const child3 = { id: 'C3' };
+    mockState.objects.set('mol', { model: parentModel });
+    mockState.objects.set('conf_a', { model: child1 });
+    mockState.objects.set('conf_b', { model: child2 });
+    mockState.objects.set('other', { model: child3 });
+    mockState.entryTree.push({
+      type: 'object', name: 'mol', collapsed: false, children: [
+        { type: 'object', name: 'conf_a' },
+        { type: 'object', name: 'conf_b' },
+        { type: 'object', name: 'other' },
+      ],
+    });
+
+    const result = resolveSelection('mol.conf_*');
+    expect(result.spec.model).toEqual([child1, child2]);
+  });
+
+  it('dot-notation falls through to parse when parent has no children', () => {
+    mockState.objects.set('mol', { model: 1 });
+    mockState.entryTree.push({ type: 'object', name: 'mol' });
+
+    const fakeAst = { type: 'test' };
+    const fakeSpec = { chain: 'A' };
+    parse.mockReturnValue(fakeAst);
+    toAtomSelectionSpec.mockReturnValue(fakeSpec);
+    getAllAtoms.mockReturnValue([{ serial: 1 }]);
+
+    const result = resolveSelection('mol.chain');
+    // Should have fallen through to parser
+    expect(parse).toHaveBeenCalled();
   });
 });
