@@ -27,16 +27,15 @@ export function registerPresetCommands(registry) {
       }
 
       const viewer = getViewer();
-      const reps = applyPreset(presetName, viewer, selSpec);
-
-      // Update object representation tracking
       const state = getState();
-      if (!selStr) {
-        for (const [, obj] of state.objects) {
+
+      // Always apply per-entry to prevent cross-entry contamination
+      for (const [, obj] of state.objects) {
+        const entrySpec = Object.assign({}, selSpec, { model: obj.model });
+        const reps = applyPreset(presetName, viewer, entrySpec);
+        if (!selStr) {
           obj.representations = new Set(reps);
         }
-      } else {
-        // When scoped to a selection, don't modify object-wide representation sets
       }
       notifyStateChange();
 

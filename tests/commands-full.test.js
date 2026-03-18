@@ -1699,20 +1699,32 @@ describe('preset.js', () => {
     });
 
     it('applies the simple preset', () => {
+      const objA = { model: {}, visible: true, representations: new Set() };
+      mockState.objects.set('mol', objA);
+
       registry.execute('preset simple', ctx);
-      expect(applyPreset).toHaveBeenCalledWith('simple', mockViewer, {});
+      expect(applyPreset).toHaveBeenCalledWith('simple', mockViewer, { model: objA.model });
       expect(notifyStateChange).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('Applied preset');
       expect(terminal.lines[0].msg).toContain('Simple');
     });
 
     it('applies preset with selection', () => {
+      const objA = { model: {}, visible: true, representations: new Set() };
+      mockState.objects.set('mol', objA);
+      resolveSelection.mockReturnValueOnce({ spec: { hetflag: false } });
+
       registry.execute('preset simple, protein', ctx);
       expect(resolveSelection).toHaveBeenCalledWith('protein');
-      expect(applyPreset).toHaveBeenCalledWith('simple', mockViewer, { hetflag: false });
+      expect(applyPreset).toHaveBeenCalledWith(
+        'simple', mockViewer,
+        expect.objectContaining({ hetflag: false, model: objA.model })
+      );
     });
 
     it('throws on unknown preset', () => {
+      const objA = { model: {}, visible: true, representations: new Set() };
+      mockState.objects.set('mol', objA);
       expect(() => registry.execute('preset unknown', ctx)).toThrow('Unknown preset');
     });
 
@@ -1745,6 +1757,34 @@ describe('preset.js', () => {
     it('includes selection name in output when provided', () => {
       registry.execute('preset simple, protein', ctx);
       expect(terminal.lines[0].msg).toContain('protein');
+    });
+
+    it('applies preset per-entry when no selection', () => {
+      const modelA = {};
+      const modelB = {};
+      const objA = { model: modelA, visible: true, representations: new Set() };
+      const objB = { model: modelB, visible: true, representations: new Set() };
+      mockState.objects.set('molA', objA);
+      mockState.objects.set('molB', objB);
+
+      registry.execute('preset simple', ctx);
+      expect(applyPreset).toHaveBeenCalledWith('simple', mockViewer, { model: modelA });
+      expect(applyPreset).toHaveBeenCalledWith('simple', mockViewer, { model: modelB });
+      expect(objA.representations).toEqual(new Set(['cartoon', 'stick']));
+      expect(objB.representations).toEqual(new Set(['cartoon', 'stick']));
+    });
+
+    it('applies preset per-entry with selection', () => {
+      const modelA = {};
+      const objA = { model: modelA, visible: true, representations: new Set() };
+      mockState.objects.set('molA', objA);
+      resolveSelection.mockReturnValueOnce({ spec: { hetflag: false } });
+
+      registry.execute('preset simple, protein', ctx);
+      expect(applyPreset).toHaveBeenCalledWith(
+        'simple', mockViewer,
+        expect.objectContaining({ model: modelA, hetflag: false })
+      );
     });
   });
 });
