@@ -107,14 +107,11 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         viewer.render();
         removeObject(name);
         pruneSelections(removedIndices);
-        // Clean up stale highlight and selected indices
-        for (const idx of removedIndices) {
-          selectedAtomIndices.delete(idx);
-        }
-        clearHighlight();
-        if (getState().activeSelection) {
-          applyHighlight(getState().activeSelection);
-        }
+        // Clean up stale highlight and selected atoms
+        const removedModelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+        selectedAtomsByModel.delete(removedModelId);
+        applySelectionHighlight();
+        setActiveSelection(buildActiveSelectionSpec());
         terminal.print(`Deleted "${name}"`, 'result');
         break;
       }
@@ -519,14 +516,23 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
       return;
     }
 
-    selectedAtomIndices.clear();
+    clearSelectedAtoms();
     for (const a of atoms) {
-      selectedAtomIndices.add(a.index);
+      let entry = selectedAtomsByModel.get(a.model);
+      if (!entry) {
+        let modelObj = null;
+        for (const [, obj] of getState().objects) {
+          const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+          if (modelId === a.model) { modelObj = obj.model; break; }
+        }
+        entry = { model: modelObj, indices: new Set() };
+        selectedAtomsByModel.set(a.model, entry);
+      }
+      entry.indices.add(a.index);
     }
-    const combinedSpec = { index: [...selectedAtomIndices] };
 
-    clearHighlight();
-    applyHighlight(combinedSpec);
+    const combinedSpec = buildActiveSelectionSpec();
+    applySelectionHighlight();
     setActiveSelection(combinedSpec);
     addSelection('sele', description, combinedSpec, atoms.length);
     terminal.print(`Selected ${description} [${atoms.length} atoms]`, 'info');
@@ -620,11 +626,25 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
         return;
     }
 
-    selectedAtomIndices = expandedIndices;
-    const combinedSpec = { index: [...selectedAtomIndices] };
+    // Rebuild per-model tracking from expanded indices
+    clearSelectedAtoms();
+    for (const a of allAtoms) {
+      if (!expandedIndices.has(a.index)) continue;
+      let entry = selectedAtomsByModel.get(a.model);
+      if (!entry) {
+        let modelObj = null;
+        for (const [, obj] of getState().objects) {
+          const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+          if (modelId === a.model) { modelObj = obj.model; break; }
+        }
+        entry = { model: modelObj, indices: new Set() };
+        selectedAtomsByModel.set(a.model, entry);
+      }
+      entry.indices.add(a.index);
+    }
 
-    clearHighlight();
-    applyHighlight(combinedSpec);
+    const combinedSpec = buildActiveSelectionSpec();
+    applySelectionHighlight();
     setActiveSelection(combinedSpec);
     addSelection('sele', `expand ${description}`, combinedSpec, expandedIndices.size);
     terminal.print(`Expanded to ${description} [${expandedIndices.size} atoms]`, 'info');
@@ -722,10 +742,43 @@ const ctx = createCommandContext({
 registerAllCommands(registry);
 
 // --- Viewer click handler for visual selection ---
-/** @type {Set<number>} Accumulated atom indices for shift+click multi-selection. */
-let selectedAtomIndices = new Set();
+/** @type {Map<number, {model: object, indices: Set<number>}>} Per-model atom selections. */
+let selectedAtomsByModel = new Map();
 /** @type {boolean} Flag to detect background clicks (no atom hit). */
 let atomClickedThisCycle = false;
+
+function totalSelectedAtoms() {
+  let n = 0;
+  for (const entry of selectedAtomsByModel.values()) n += entry.indices.size;
+  return n;
+}
+
+function clearSelectedAtoms() {
+  selectedAtomsByModel.clear();
+}
+
+function applySelectionHighlight() {
+  clearHighlight();
+  for (const entry of selectedAtomsByModel.values()) {
+    const spec = { index: [...entry.indices], model: entry.model };
+    applyHighlight(spec);
+  }
+}
+
+function buildActiveSelectionSpec() {
+  const entries = [...selectedAtomsByModel.values()];
+  if (entries.length === 0) return null;
+  if (entries.length === 1) {
+    return { index: [...entries[0].indices], model: entries[0].model };
+  }
+  // Multiple models: combine all indices without model scoping.
+  // This is lossy but downstream consumers expect a single spec.
+  const allIndices = [];
+  for (const entry of entries) {
+    for (const idx of entry.indices) allIndices.push(idx);
+  }
+  return { index: allIndices };
+}
 
 /**
  * Build a mode-based selection spec and description from a clicked atom.
@@ -735,17 +788,28 @@ function buildModeSelection(atom, state) {
   let selSpec;
   let description;
 
+  // Find the model object for the clicked atom so selections are scoped
+  // to a single entry rather than matching across all loaded models.
+  let modelScope = {};
+  for (const [, obj] of state.objects) {
+    const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+    if (modelId === atom.model) {
+      modelScope = { model: obj.model };
+      break;
+    }
+  }
+
   switch (mode) {
     case 'atoms':
-      selSpec = { serial: atom.serial };
+      selSpec = { serial: atom.serial, ...modelScope };
       description = `atom ${atom.atom} (${atom.resn} ${atom.chain}:${atom.resi})`;
       break;
     case 'residues':
-      selSpec = { chain: atom.chain, resi: atom.resi };
+      selSpec = { chain: atom.chain, resi: atom.resi, ...modelScope };
       description = `residue ${atom.resn} ${atom.chain}:${atom.resi}`;
       break;
     case 'chains':
-      selSpec = { chain: atom.chain };
+      selSpec = { chain: atom.chain, ...modelScope };
       description = `chain ${atom.chain}`;
       break;
     case 'molecules': {
@@ -789,24 +853,32 @@ function handleViewerClick(atom, viewerInstance, event) {
   const matchedAtoms = viewerInstance.selectedAtoms(clickSpec);
 
   if (!isShift) {
-    // Regular click: replace selection
-    selectedAtomIndices.clear();
+    clearSelectedAtoms();
   }
 
+  // Group matched atoms by model
   for (const a of matchedAtoms) {
-    selectedAtomIndices.add(a.index);
+    let entry = selectedAtomsByModel.get(a.model);
+    if (!entry) {
+      // Find the model object for this atom
+      let modelObj = null;
+      for (const [, obj] of state.objects) {
+        const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+        if (modelId === a.model) { modelObj = obj.model; break; }
+      }
+      entry = { model: modelObj, indices: new Set() };
+      selectedAtomsByModel.set(a.model, entry);
+    }
+    entry.indices.add(a.index);
   }
 
-  // Build combined spec from all accumulated indices
-  const combinedSpec = { index: [...selectedAtomIndices] };
-
-  clearHighlight();
-  applyHighlight(combinedSpec);
+  const combinedSpec = buildActiveSelectionSpec();
+  applySelectionHighlight();
   setActiveSelection(combinedSpec);
-  addSelection('sele', 'click selection', combinedSpec, selectedAtomIndices.size);
+  addSelection('sele', 'click selection', combinedSpec, totalSelectedAtoms());
 
   const verb = isShift ? 'Added' : 'Selected';
-  const count = selectedAtomIndices.size;
+  const count = totalSelectedAtoms();
   terminal.print(`${verb} ${description} [mode: ${mode}, ${count} atom${count !== 1 ? 's' : ''} total]`, 'info');
 }
 
@@ -835,8 +907,8 @@ setupClickHandler(handleViewerClick);
     if (wasDrag) return; // Rotation/pan, not a click
 
     setTimeout(() => {
-      if (!atomClickedThisCycle && selectedAtomIndices.size > 0) {
-        selectedAtomIndices.clear();
+      if (!atomClickedThisCycle && totalSelectedAtoms() > 0) {
+        clearSelectedAtoms();
         clearHighlight();
         setActiveSelection(null);
         removeSelection('sele');
