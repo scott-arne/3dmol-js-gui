@@ -5,7 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-02-16
+## [0.2.0] - 2026-03-17
+
+### Added
+
+- Entry tree system with groups, hierarchies, and dot-notation selection
+  - `group` / `ungroup` commands for organizing entries into collapsible groups
+  - `reparent` / `unparent` commands for creating parent-child hierarchies
+  - Dot-notation tab completion for hierarchy members (e.g. `5fqd-1.CC-885`)
+- `entry` selection keyword to scope selections by loaded object or group name
+- `visible` / `enabled` selection keyword to filter by visibility state
+- `capping` / `caps` selection keyword for terminal capping groups (ACE, NME)
+- `by_entry` flag for `show` and `hide` commands to evaluate selections independently per entry
+- Per-entry preset evaluation — presets now apply independently to each loaded entry
+- `sele` command for quick unnamed selections
+- `get_view` / `set_view` commands for saving and restoring camera positions
+- PCA-based `orient` command for automatic view alignment
+- `__C3D_INIT__` payload system for embedded initialization (molecules, operations, view, theme, UI)
+- Auto theme detection resolving `"auto"` to dark/light based on VSCode parent iframe or OS `prefers-color-scheme`
+- Draggable sidebar resize handle (160px–600px range)
+- Split-zone sidebar interactions for groups and hierarchy parents: left zone collapses/expands, right zone toggles visibility
+- "Enable All" / "Disable All" in group action menu
+- Multi-molecule SDF splitting in demo (individual named children)
+- Demo assets: 5hxb-receptor.pdb, CC-885_docked.sdf with 5 docked poses as hierarchy children
+- Test suite expansion: 928 tests across 18 files
+
+### Changed
+
+- Default sidebar width increased from 240px to 300px (CSS variable `--sidebar-width`)
+- Default theme changed from `"light"` to `"auto"` (resolves at render time)
+- Clicking hidden/invisible atoms no longer triggers selection
+- Group and hierarchy row heights match regular object rows
+- Sidebar group name click area expanded — full left zone triggers collapse instead of tiny toggle icon
+
+### Fixed
+
+- Per-atom colors being lost during hide operations
+- Context menu appearing during right-click zoom
+- Sites preset applying near-residue indices globally instead of per-model
+- `stick` style rendering issues with PCA orient
+- CSS class-based menubar hiding instead of inline style
+- Line representation default in tests
+
+## [0.1.1] - 2026-02-16
 
 ### Added
 
