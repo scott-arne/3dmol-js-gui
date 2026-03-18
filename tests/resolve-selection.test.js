@@ -32,7 +32,7 @@ vi.mock('../src/viewer.js', () => ({
 }));
 
 // Import after mocks are declared
-import { resolveSelection, getSelSpec } from '../src/commands/resolve-selection.js';
+import { resolveSelection, getSelSpec, resolveSelectionByEntry } from '../src/commands/resolve-selection.js';
 import { parse } from '../src/parser/selection.pegjs';
 import { evaluate, toAtomSelectionSpec } from '../src/parser/evaluator.js';
 import { getAllAtoms } from '../src/viewer.js';
@@ -179,7 +179,7 @@ describe('resolveSelection', () => {
 
     const result = resolveSelection('complex_expr');
     expect(getAllAtoms).toHaveBeenCalledWith({});
-    expect(evaluate).toHaveBeenCalledWith(fakeAst, atoms);
+    expect(evaluate).toHaveBeenCalledWith(fakeAst, atoms, expect.objectContaining({ entries: expect.any(Map) }));
     expect(result).toEqual({ atoms: selected });
   });
 
@@ -380,5 +380,79 @@ describe('resolveSelection - hierarchy dot-notation', () => {
     const result = resolveSelection('mol.chain');
     // Should have fallen through to parser
     expect(parse).toHaveBeenCalled();
+  });
+});
+
+describe('resolveSelectionByEntry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.selections.clear();
+    mockState.objects.clear();
+    mockState.entryTree.length = 0;
+  });
+
+  it('returns all entries with model-scoped specs when selStr is null', () => {
+    const modelA = { id: 'A' };
+    const modelB = { id: 'B' };
+    mockState.objects.set('molA', { model: modelA, modelIndex: 0, visible: true });
+    mockState.objects.set('molB', { model: modelB, modelIndex: 1, visible: true });
+
+    const result = resolveSelectionByEntry(null);
+    expect(result.size).toBe(2);
+    expect(result.get('molA')).toEqual({ spec: { model: modelA } });
+    expect(result.get('molB')).toEqual({ spec: { model: modelB } });
+  });
+
+  it('evaluates expression independently per model', () => {
+    const modelA = { id: 'A' };
+    mockState.objects.set('molA', { model: modelA, modelIndex: 0, visible: true });
+
+    const fakeAst = { type: 'complex' };
+    parse.mockReturnValue(fakeAst);
+    getAllAtoms.mockImplementation((spec) => {
+      if (spec.model === modelA) return [{ serial: 1, model: 0 }, { serial: 2, model: 0 }];
+      return [];
+    });
+    evaluate.mockReturnValue([{ serial: 1, model: 0 }]);
+
+    const result = resolveSelectionByEntry('ligand around 5.0');
+    expect(result.size).toBe(1);
+    expect(result.get('molA').spec).toEqual({ serial: [1] });
+  });
+
+  it('omits entries with zero matched atoms', () => {
+    const modelA = { id: 'A' };
+    const modelB = { id: 'B' };
+    mockState.objects.set('molA', { model: modelA, modelIndex: 0, visible: true });
+    mockState.objects.set('molB', { model: modelB, modelIndex: 1, visible: true });
+
+    const fakeAst = { type: 'complex' };
+    parse.mockReturnValue(fakeAst);
+    getAllAtoms.mockImplementation((spec) => {
+      if (spec.model === modelA) return [{ serial: 1, model: 0 }];
+      if (spec.model === modelB) return [{ serial: 10, model: 1 }];
+      return [];
+    });
+    evaluate.mockImplementation((ast, atoms, ctx) => {
+      if (atoms[0]?.model === 0) return [{ serial: 1, model: 0 }];
+      return [];
+    });
+
+    const result = resolveSelectionByEntry('ligand');
+    expect(result.size).toBe(1);
+    expect(result.has('molA')).toBe(true);
+    expect(result.has('molB')).toBe(false);
+  });
+
+  it('returns empty map when no atoms match in any entry', () => {
+    const modelA = { id: 'A' };
+    mockState.objects.set('molA', { model: modelA, modelIndex: 0, visible: true });
+
+    parse.mockReturnValue({ type: 'complex' });
+    getAllAtoms.mockReturnValue([{ serial: 1 }]);
+    evaluate.mockReturnValue([]);
+
+    const result = resolveSelectionByEntry('nothing');
+    expect(result.size).toBe(0);
   });
 });

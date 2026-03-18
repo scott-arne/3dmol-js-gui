@@ -156,34 +156,186 @@ export function resolveSelection(selStr) {
     throw new Error(`Ambiguous name "${trimmed}": ${allNameMatches.join(', ')}`);
   }
 
+  // Preprocess: replace bare object/group names with `entry "name"` so the
+  // parser can handle compound expressions like "5fqd-1 and ligand".
+  const preprocessed = preprocessEntryNames(trimmed, state);
+
   // Parse as selection expression
   let ast;
   try {
-    ast = parse(trimmed);
+    ast = parse(preprocessed);
   } catch (err) {
     throw new Error(`Invalid selection "${trimmed}": ${err.message}`);
   }
 
-  // Try simple conversion to AtomSelectionSpec
-  const spec = toAtomSelectionSpec(ast);
-  if (spec) {
-    const matched = getAllAtoms(spec);
-    if (!matched || matched.length === 0) {
-      throw new Error(`No atoms match the selection "${trimmed}"`);
+  // Try simple conversion to AtomSelectionSpec (only when no entry_ref nodes)
+  if (!astContainsEntryRef(ast)) {
+    const spec = toAtomSelectionSpec(ast);
+    if (spec) {
+      const matched = getAllAtoms(spec);
+      if (!matched || matched.length === 0) {
+        throw new Error(`No atoms match the selection "${trimmed}"`);
+      }
+      return { spec };
     }
-    return { spec };
   }
 
-  // Fall back to atom-by-atom evaluation
+  // Fall back to atom-by-atom evaluation with entry context
   const allAtoms = getAllAtoms({});
   if (!allAtoms || allAtoms.length === 0) {
     throw new Error(`Selection "${trimmed}" requires atom-level evaluation but no atoms are loaded`);
   }
-  const selected = evaluate(ast, allAtoms);
+  const context = buildEntryContext(state);
+  const selected = evaluate(ast, allAtoms, context);
   if (selected.length === 0) {
     throw new Error(`No atoms match the selection "${trimmed}"`);
   }
   return { atoms: selected };
+}
+
+/**
+ * Build entry context mapping names to model IDs for the evaluator.
+ *
+ * @param {object} state - Application state.
+ * @returns {{ entries: Map<string, number[]>, visibleModels: Set<number> }}
+ */
+function buildEntryContext(state) {
+  const entries = new Map();
+  const visibleModels = new Set();
+
+  // Objects: name -> [modelIndex], track visibility
+  for (const [name, obj] of state.objects) {
+    if (obj.modelIndex !== null && obj.modelIndex !== undefined) {
+      entries.set(name, [obj.modelIndex]);
+      if (obj.visible) visibleModels.add(obj.modelIndex);
+    }
+  }
+
+  // Groups: name -> [modelIndex, ...] for all member objects
+  if (state.entryTree) {
+    (function walkTree(nodes) {
+      for (const node of nodes) {
+        if (node.type === 'group') {
+          const memberEntries = collectEntryNames(node);
+          const ids = [];
+          for (const objName of memberEntries.objects) {
+            const obj = state.objects.get(objName);
+            if (obj && obj.modelIndex !== null && obj.modelIndex !== undefined) {
+              ids.push(obj.modelIndex);
+            }
+          }
+          if (ids.length > 0) entries.set(node.name, ids);
+          if (node.children) walkTree(node.children);
+        }
+      }
+    })(state.entryTree);
+  }
+
+  return { entries, visibleModels };
+}
+
+/**
+ * Replace bare object/group names in an expression with ``entry "name"`` so
+ * the PEG parser can handle them in compound expressions.
+ *
+ * @param {string} expr - The raw expression string.
+ * @param {object} state - Application state.
+ * @returns {string} The preprocessed expression.
+ */
+function preprocessEntryNames(expr, state) {
+  // Collect all known names (objects + groups), sorted longest-first to avoid
+  // partial matches.
+  const names = [...state.objects.keys()];
+  if (state.entryTree) {
+    (function walkTree(nodes) {
+      for (const node of nodes) {
+        if (node.type === 'group') {
+          names.push(node.name);
+          if (node.children) walkTree(node.children);
+        }
+      }
+    })(state.entryTree);
+  }
+  names.sort((a, b) => b.length - a.length);
+
+  let result = expr;
+  for (const name of names) {
+    // Match the name as a standalone token (not preceded/followed by word chars
+    // or hyphens, which are valid in entry names).
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(?<![a-zA-Z0-9_"'\\-])(?<!entry\\s)${escaped}(?![a-zA-Z0-9_"'\\-])`, 'g');
+    result = result.replace(re, `entry "${name}"`);
+  }
+  return result;
+}
+
+/**
+ * Check if an AST contains any entry_ref nodes.
+ *
+ * @param {object} ast - The AST node.
+ * @returns {boolean}
+ */
+function astContainsEntryRef(ast) {
+  if (!ast) return false;
+  if (ast.type === 'entry_ref') return true;
+  if (ast.children) return ast.children.some(astContainsEntryRef);
+  if (ast.child) return astContainsEntryRef(ast.child);
+  return false;
+}
+
+/**
+ * Resolve a selection string independently per loaded entry.
+ *
+ * For each entry, evaluates the selection expression against only that
+ * entry's atoms, preventing cross-entry contamination from spatial operators.
+ *
+ * @param {string|null} selStr - The selection expression.
+ * @returns {Map<string, { spec: object }>} Map of entry name to scoped spec.
+ */
+export function resolveSelectionByEntry(selStr) {
+  const state = getState();
+  const result = new Map();
+
+  // No selection: return all entries with model-scoped specs
+  if (!selStr || !selStr.trim()) {
+    for (const [name, obj] of state.objects) {
+      result.set(name, { spec: { model: obj.model } });
+    }
+    return result;
+  }
+
+  // Preprocess and parse once
+  const preprocessed = preprocessEntryNames(selStr.trim(), state);
+  let ast;
+  try {
+    ast = parse(preprocessed);
+  } catch (err) {
+    throw new Error(`Invalid selection "${selStr}": ${err.message}`);
+  }
+
+  // Evaluate per entry
+  for (const [name, obj] of state.objects) {
+    const atoms = getAllAtoms({ model: obj.model });
+    if (!atoms || atoms.length === 0) continue;
+
+    // Build per-entry context with only this entry
+    const entries = new Map();
+    if (obj.modelIndex !== null && obj.modelIndex !== undefined) {
+      entries.set(name, [obj.modelIndex]);
+    }
+    const visibleModels = new Set();
+    if (obj.visible && obj.modelIndex !== null && obj.modelIndex !== undefined) {
+      visibleModels.add(obj.modelIndex);
+    }
+    const context = { entries, visibleModels };
+
+    const matched = evaluate(ast, atoms, context);
+    if (matched.length > 0) {
+      result.set(name, { spec: { serial: matched.map(a => a.serial) } });
+    }
+  }
+
+  return result;
 }
 
 /**
