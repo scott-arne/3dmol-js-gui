@@ -11,6 +11,7 @@ import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
 import { resolveTheme } from './theme-detect.js';
+import { SpatialGrid } from './spatial-grid.js';
 import {
   getState,
   onStateChange,
@@ -582,35 +583,27 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
         break;
       }
       case 'nearAtoms': {
-        const DIST_SQ = 25; // 5Å squared
+        const DIST = 5;
+        const grid = new SpatialGrid(currentAtoms, DIST);
         for (const a of allAtoms) {
           if (expandedIndices.has(a.index)) continue;
-          for (const sel of currentAtoms) {
-            const dx = a.x - sel.x;
-            const dy = a.y - sel.y;
-            const dz = a.z - sel.z;
-            if (dx * dx + dy * dy + dz * dz <= DIST_SQ) {
-              expandedIndices.add(a.index);
-              break;
-            }
+          const nearby = grid.neighborsWithin(a.x, a.y, a.z, DIST);
+          if (nearby.length > 0) {
+            expandedIndices.add(a.index);
           }
         }
         description = 'near atoms (5\u00C5)';
         break;
       }
       case 'nearResidues': {
-        const DIST_SQ = 25;
+        const DIST = 5;
+        const grid = new SpatialGrid(currentAtoms, DIST);
         const nearIndices = new Set([...expandedIndices]);
         for (const a of allAtoms) {
           if (nearIndices.has(a.index)) continue;
-          for (const sel of currentAtoms) {
-            const dx = a.x - sel.x;
-            const dy = a.y - sel.y;
-            const dz = a.z - sel.z;
-            if (dx * dx + dy * dy + dz * dz <= DIST_SQ) {
-              nearIndices.add(a.index);
-              break;
-            }
+          const nearby = grid.neighborsWithin(a.x, a.y, a.z, DIST);
+          if (nearby.length > 0) {
+            nearIndices.add(a.index);
           }
         }
         // Expand near atoms to full residues
