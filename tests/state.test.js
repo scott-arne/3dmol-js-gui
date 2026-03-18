@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   getState, addObject, removeObject, addSelection, removeSelection,
   renameObject, renameSelection, toggleObjectVisibility,
-  toggleSelectionVisibility, pruneSelections, setActiveSelection,
+  toggleSelectionVisibility, pruneSelections,
   setSelectionMode, onStateChange, notifyStateChange,
 } from '../src/state.js';
 
@@ -11,7 +11,6 @@ function resetState() {
   state.objects.clear();
   state.selections.clear();
   state._listeners.length = 0;
-  state.activeSelection = null;
   state.selectionMode = 'atoms';
 }
 
@@ -174,37 +173,10 @@ describe('pruneSelections', () => {
     expect(getState().selections.has('sele')).toBe(false);
   });
 
-  it('prunes activeSelection', () => {
-    setActiveSelection({ index: [1, 2, 3] });
-    pruneSelections([2]);
-    expect(getState().activeSelection.index).toEqual([1, 3]);
-  });
-
-  it('clears activeSelection when all atoms pruned', () => {
-    setActiveSelection({ index: [1] });
-    pruneSelections([1]);
-    expect(getState().activeSelection).toBeNull();
-  });
-
   it('does not affect selections without index spec', () => {
     addSelection('sele', 'test', { chain: 'A' }, 100);
     pruneSelections([1, 2]);
     expect(getState().selections.get('sele').spec).toEqual({ chain: 'A' });
-  });
-});
-
-describe('setActiveSelection', () => {
-  beforeEach(resetState);
-
-  it('sets the active selection', () => {
-    setActiveSelection({ chain: 'A' });
-    expect(getState().activeSelection).toEqual({ chain: 'A' });
-  });
-
-  it('clears the active selection with null', () => {
-    setActiveSelection({ chain: 'A' });
-    setActiveSelection(null);
-    expect(getState().activeSelection).toBeNull();
   });
 });
 

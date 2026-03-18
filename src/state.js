@@ -27,9 +27,6 @@ const state = {
   /** @type {'atoms'|'residues'|'chains'|'molecules'} */
   selectionMode: 'atoms',
 
-  /** @type {object|null} The current visual selection spec from clicking in the viewer. */
-  activeSelection: null,
-
   settings: {
     bgColor: '#000000',
     theme: 'dark',
@@ -392,7 +389,7 @@ export function toggleSelectionVisibility(name) {
 // ---------------------------------------------------------------------------
 
 /**
- * Remove the given atom indices from all stored selections and activeSelection.
+ * Remove the given atom indices from all stored selections.
  * Deletes any selection whose atom count drops to zero.
  *
  * @param {Array<number>} removedIndices - Atom indices that were removed.
@@ -422,32 +419,7 @@ export function pruneSelections(removedIndices) {
     removeTreeNode(state.entryTree, name);
   }
 
-  if (state.activeSelection && Array.isArray(state.activeSelection.index)) {
-    const filtered = state.activeSelection.index.filter(i => !removed.has(i));
-    if (filtered.length === 0) {
-      state.activeSelection = null;
-      changed = true;
-    } else if (filtered.length !== state.activeSelection.index.length) {
-      state.activeSelection = { index: filtered };
-      changed = true;
-    }
-  }
-
   if (changed) _notify();
-}
-
-// ---------------------------------------------------------------------------
-// Active selection
-// ---------------------------------------------------------------------------
-
-/**
- * Set the active visual selection from a viewer click.
- *
- * @param {object|null} selSpec - The 3Dmol selection spec, or null to clear.
- */
-export function setActiveSelection(selSpec) {
-  state.activeSelection = selSpec;
-  _notify();
 }
 
 // ---------------------------------------------------------------------------
