@@ -98,13 +98,18 @@ function createPopupMenu(anchor, items, onClick) {
         cell.className = 'swatch-cell';
         cell.style.backgroundColor = swatch.hex;
         cell.title = `${swatch.label} (${swatch.hex})`;
-        cell.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeActivePopup();
-          onClick(item.value + ':' + swatch.hex);
-        });
+        cell.dataset.color = swatch.hex;
         grid.appendChild(cell);
       }
+      const itemValue = item.value;
+      grid.addEventListener('click', (e) => {
+        const color = e.target.dataset.color;
+        if (color) {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick(itemValue + ':' + color);
+        }
+      });
       submenu.appendChild(grid);
 
       menuItem.appendChild(submenu);
@@ -132,13 +137,17 @@ function createPopupMenu(anchor, items, onClick) {
         cell.className = 'swatch-cell';
         cell.style.backgroundColor = swatch.hex;
         cell.title = `${swatch.label} (${swatch.hex})`;
-        cell.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeActivePopup();
-          onClick(swatch.hex);
-        });
+        cell.dataset.color = swatch.hex;
         grid.appendChild(cell);
       }
+      grid.addEventListener('click', (e) => {
+        const color = e.target.dataset.color;
+        if (color) {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick(color);
+        }
+      });
       submenu.appendChild(grid);
 
       menuItem.appendChild(submenu);
@@ -163,13 +172,17 @@ function createPopupMenu(anchor, items, onClick) {
         const palItem = document.createElement('div');
         palItem.className = 'popup-menu-submenu-item';
         palItem.textContent = palette.label;
-        palItem.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeActivePopup();
-          onClick('chain:' + key);
-        });
+        palItem.dataset.color = 'chain:' + key;
         submenu.appendChild(palItem);
       }
+      submenu.addEventListener('click', (e) => {
+        const target = e.target.closest('[data-color]');
+        if (target) {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick(target.dataset.color);
+        }
+      });
 
       menuItem.appendChild(submenu);
       menu.appendChild(menuItem);
@@ -208,13 +221,17 @@ function createPopupMenu(anchor, items, onClick) {
         l.style.color = pal.loop;
         palItem.appendChild(l);
 
-        palItem.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closeActivePopup();
-          onClick('ss:' + pal.key);
-        });
+        palItem.dataset.color = 'ss:' + pal.key;
         submenu.appendChild(palItem);
       }
+      submenu.addEventListener('click', (e) => {
+        const target = e.target.closest('[data-color]');
+        if (target) {
+          e.stopPropagation();
+          closeActivePopup();
+          onClick(target.dataset.color);
+        }
+      });
 
       menuItem.appendChild(submenu);
       menu.appendChild(menuItem);
@@ -429,6 +446,67 @@ export function createSidebar(container, callbacks) {
     document.addEventListener('mouseup', onMouseUp);
   });
 
+  // --- Delegated click listener for sidebar buttons ---
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sidebar-btn[data-btn]');
+    if (!btn) return;
+    e.stopPropagation();
+
+    // Find the row this button belongs to
+    const row = btn.closest('[data-kind][data-name]');
+    if (!row) return;
+
+    const name = row.dataset.name;
+    const kind = row.dataset.kind; // 'object', 'selection', or 'group'
+    const label = btn.dataset.btn;
+
+    // Route to the appropriate popup menu and callback
+    if (kind === 'object') {
+      const menuDef = BUTTON_MENUS[label];
+      createPopupMenu(btn, menuDef.items, (value) => {
+        if (value.startsWith('view:') && callbacks.onView) {
+          callbacks.onView(name, value.slice(5));
+        } else {
+          callbacks[menuDef.callbackKey](name, value);
+        }
+      });
+    } else if (kind === 'selection') {
+      if (label === 'A') {
+        createPopupMenu(btn, SELECTION_ACTION_MENU, (value) => {
+          callbacks.onSelectionAction(name, value);
+        });
+      } else {
+        const menuDef = BUTTON_MENUS[label];
+        const selCallback = SELECTION_CALLBACK_MAP[label];
+        createPopupMenu(btn, menuDef.items, (value) => {
+          if (value.startsWith('view:') && callbacks.onSelectionView) {
+            callbacks.onSelectionView(name, value.slice(5));
+          } else {
+            callbacks[selCallback](name, value);
+          }
+        });
+      }
+    } else if (kind === 'group') {
+      if (label === 'A') {
+        createPopupMenu(btn, GROUP_ACTION_MENU, (value) => {
+          if (callbacks.onGroupAction) {
+            callbacks.onGroupAction(name, value);
+          }
+        });
+      } else {
+        const menuDef = BUTTON_MENUS[label];
+        createPopupMenu(btn, menuDef.items, (value) => {
+          const cbKey = 'onGroup' + menuDef.callbackKey.slice(2);
+          if (value.startsWith('view:') && callbacks.onGroupView) {
+            callbacks.onGroupView(name, value.slice(5));
+          } else if (callbacks[cbKey]) {
+            callbacks[cbKey](name, value);
+          }
+        });
+      }
+    }
+  });
+
   /**
    * Attach A,S,H,L,C buttons for an object row.
    */
@@ -437,19 +515,7 @@ export function createSidebar(container, callbacks) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
-
-      const menuDef = BUTTON_MENUS[label];
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        createPopupMenu(btn, menuDef.items, (value) => {
-          if (value.startsWith('view:') && callbacks.onView) {
-            callbacks.onView(name, value.slice(5));
-          } else {
-            callbacks[menuDef.callbackKey](name, value);
-          }
-        });
-      });
-
+      btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
   }
@@ -458,37 +524,11 @@ export function createSidebar(container, callbacks) {
    * Attach A,S,H,L,C buttons for a selection row.
    */
   function attachSelectionButtons(btnGroup, name) {
-    // A button — uses selection-specific action menu
-    const aBtn = document.createElement('button');
-    aBtn.className = 'sidebar-btn';
-    aBtn.textContent = 'A';
-    aBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      createPopupMenu(aBtn, SELECTION_ACTION_MENU, (value) => {
-        callbacks.onSelectionAction(name, value);
-      });
-    });
-    btnGroup.appendChild(aBtn);
-
-    // S, H, L, C buttons — reuse BUTTON_MENUS items but route to selection callbacks
-    for (const label of ['S', 'H', 'L', 'C']) {
+    for (const label of ['A', 'S', 'H', 'L', 'C']) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
-
-      const menuDef = BUTTON_MENUS[label];
-      const selCallback = SELECTION_CALLBACK_MAP[label];
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        createPopupMenu(btn, menuDef.items, (value) => {
-          if (value.startsWith('view:') && callbacks.onSelectionView) {
-            callbacks.onSelectionView(name, value.slice(5));
-          } else {
-            callbacks[selCallback](name, value);
-          }
-        });
-      });
-
+      btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
   }
@@ -498,38 +538,11 @@ export function createSidebar(container, callbacks) {
    * A opens the group action menu; S,H,L,C propagate to group callbacks.
    */
   function attachGroupButtons(btnGroup, name) {
-    // A button — group-specific action menu
-    const aBtn = document.createElement('button');
-    aBtn.className = 'sidebar-btn';
-    aBtn.textContent = 'A';
-    aBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      createPopupMenu(aBtn, GROUP_ACTION_MENU, (value) => {
-        if (callbacks.onGroupAction) {
-          callbacks.onGroupAction(name, value);
-        }
-      });
-    });
-    btnGroup.appendChild(aBtn);
-
-    for (const label of ['S', 'H', 'L', 'C']) {
+    for (const label of ['A', 'S', 'H', 'L', 'C']) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
-
-      const menuDef = BUTTON_MENUS[label];
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        createPopupMenu(btn, menuDef.items, (value) => {
-          const cbKey = 'onGroup' + menuDef.callbackKey.slice(2);
-          if (value.startsWith('view:') && callbacks.onGroupView) {
-            callbacks.onGroupView(name, value.slice(5));
-          } else if (callbacks[cbKey]) {
-            callbacks[cbKey](name, value);
-          }
-        });
-      });
-
+      btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
   }
