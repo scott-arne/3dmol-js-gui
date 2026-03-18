@@ -6,7 +6,8 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
+import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -26,7 +27,6 @@ import {
   toggleSelectionVisibility,
   pruneSelections,
   notifyStateChange,
-  setActiveSelection,
   toggleCollapsed,
   addGroup,
   removeGroup,
@@ -61,6 +61,12 @@ const app = document.getElementById('app');
 
 // --- Initialize the 3Dmol viewer ---
 const viewer = initViewer(document.getElementById('viewer-container'));
+initHighlight(viewer);
+
+function getActiveSeleSpec() {
+  const sele = getState().selections.get('sele');
+  return (sele && sele.visible) ? sele.spec : null;
+}
 
 // --- Create the terminal ---
 const terminal = createTerminal(document.getElementById('terminal-container'));
@@ -108,11 +114,13 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         scheduleRender();
         removeObject(name);
         pruneSelections(removedIndices);
-        // Clean up stale highlight and selected atoms
-        const removedModelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
-        selectedAtomsByModel.delete(removedModelId);
-        applySelectionHighlight();
-        setActiveSelection(buildActiveSelectionSpec());
+        const sele = getState().selections.get('sele');
+        if (sele && sele.visible) {
+          const atoms = viewer.selectedAtoms(sele.spec);
+          renderHighlight(atoms);
+        } else {
+          clearHighlight();
+        }
         terminal.print(`Deleted "${name}"`, 'result');
         break;
       }
@@ -178,7 +186,16 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   // --- Selection sidebar callbacks ---
 
   onToggleSelectionVisibility(name) {
-    toggleSelectionVisibility(name);
+    const sel = toggleSelectionVisibility(name);
+    if (name === 'sele' && sel) {
+      if (sel.visible) {
+        const atoms = getViewer().selectedAtoms(sel.spec);
+        renderHighlight(atoms);
+      } else {
+        clearHighlight();
+      }
+      scheduleRender();
+    }
   },
 
   onSelectionAction(name, action) {
@@ -319,9 +336,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         scheduleRender();
         removeGroup(name);
         pruneSelections(allRemovedIndices);
-        clearHighlight();
-        if (getState().activeSelection) {
-          applyHighlight(getState().activeSelection);
+        const sele = getState().selections.get('sele');
+        if (sele && sele.visible) {
+          const atoms = viewer.selectedAtoms(sele.spec);
+          renderHighlight(atoms);
+        } else {
+          clearHighlight();
         }
         terminal.print(`Deleted group "${name}"`, 'result');
         break;
@@ -516,38 +536,22 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
       terminal.print(`No atoms matched for ${description}`, 'info');
       return;
     }
-
-    clearSelectedAtoms();
-    for (const a of atoms) {
-      let entry = selectedAtomsByModel.get(a.model);
-      if (!entry) {
-        let modelObj = null;
-        for (const [, obj] of getState().objects) {
-          const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
-          if (modelId === a.model) { modelObj = obj.model; break; }
-        }
-        entry = { model: modelObj, indices: new Set() };
-        selectedAtomsByModel.set(a.model, entry);
-      }
-      entry.indices.add(a.index);
-    }
-
-    const combinedSpec = buildActiveSelectionSpec();
-    applySelectionHighlight();
-    setActiveSelection(combinedSpec);
-    addSelection('sele', description, combinedSpec, atoms.length);
+    const spec = { index: atoms.map(a => a.index) };
+    addSelection('sele', description, spec, atoms.length);
+    renderHighlight(atoms);
     terminal.print(`Selected ${description} [${atoms.length} atoms]`, 'info');
   },
 
   onExpand(type) {
     const state = getState();
-    if (!state.activeSelection) {
+    const sele = state.selections.get('sele');
+    if (!sele || !sele.visible) {
       terminal.print('No active selection to expand', 'info');
       return;
     }
 
     const v = getViewer();
-    const currentAtoms = v.selectedAtoms(state.activeSelection);
+    const currentAtoms = v.selectedAtoms(sele.spec);
     if (currentAtoms.length === 0) {
       terminal.print('Current selection contains no atoms', 'info');
       return;
@@ -619,45 +623,28 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
         return;
     }
 
-    // Rebuild per-model tracking from expanded indices
-    clearSelectedAtoms();
-    for (const a of allAtoms) {
-      if (!expandedIndices.has(a.index)) continue;
-      let entry = selectedAtomsByModel.get(a.model);
-      if (!entry) {
-        let modelObj = null;
-        for (const [, obj] of getState().objects) {
-          const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
-          if (modelId === a.model) { modelObj = obj.model; break; }
-        }
-        entry = { model: modelObj, indices: new Set() };
-        selectedAtomsByModel.set(a.model, entry);
-      }
-      entry.indices.add(a.index);
-    }
-
-    const combinedSpec = buildActiveSelectionSpec();
-    applySelectionHighlight();
-    setActiveSelection(combinedSpec);
-    addSelection('sele', `expand ${description}`, combinedSpec, expandedIndices.size);
+    const expandedSpec = { index: [...expandedIndices] };
+    addSelection('sele', `expand ${description}`, expandedSpec, expandedIndices.size);
+    const expandedAtoms = v.selectedAtoms(expandedSpec);
+    renderHighlight(expandedAtoms);
     terminal.print(`Expanded to ${description} [${expandedIndices.size} atoms]`, 'info');
   },
 
   onSelectionAction(action) {
-    const state = getState();
-    if (!state.activeSelection) {
+    const selSpec = getActiveSeleSpec();
+    if (!selSpec) {
       terminal.print('No active selection', 'info');
       return;
     }
     const v = getViewer();
     switch (action) {
       case 'center':
-        v.center(state.activeSelection);
+        v.center(selSpec);
         scheduleRender();
         terminal.print('Centered on selection', 'result');
         break;
       case 'zoom':
-        v.zoomTo(state.activeSelection);
+        v.zoomTo(selSpec);
         scheduleRender();
         terminal.print('Zoomed to selection', 'result');
         break;
@@ -735,43 +722,8 @@ const ctx = createCommandContext({
 registerAllCommands(registry);
 
 // --- Viewer click handler for visual selection ---
-/** @type {Map<number, {model: object, indices: Set<number>}>} Per-model atom selections. */
-let selectedAtomsByModel = new Map();
 /** @type {boolean} Flag to detect background clicks (no atom hit). */
 let atomClickedThisCycle = false;
-
-function totalSelectedAtoms() {
-  let n = 0;
-  for (const entry of selectedAtomsByModel.values()) n += entry.indices.size;
-  return n;
-}
-
-function clearSelectedAtoms() {
-  selectedAtomsByModel.clear();
-}
-
-function applySelectionHighlight() {
-  clearHighlight();
-  for (const entry of selectedAtomsByModel.values()) {
-    const spec = { index: [...entry.indices], model: entry.model };
-    applyHighlight(spec);
-  }
-}
-
-function buildActiveSelectionSpec() {
-  const entries = [...selectedAtomsByModel.values()];
-  if (entries.length === 0) return null;
-  if (entries.length === 1) {
-    return { index: [...entries[0].indices], model: entries[0].model };
-  }
-  // Multiple models: combine all indices without model scoping.
-  // This is lossy but downstream consumers expect a single spec.
-  const allIndices = [];
-  for (const entry of entries) {
-    for (const idx of entry.indices) allIndices.push(idx);
-  }
-  return { index: allIndices };
-}
 
 /**
  * Build a mode-based selection spec and description from a clicked atom.
@@ -841,38 +793,34 @@ function handleViewerClick(atom, viewerInstance, event) {
   const isShift = event && event.shiftKey;
 
   const { selSpec: clickSpec, description } = buildModeSelection(atom, state);
-
-  // Get atoms matching the clicked selection to collect their indices
   const matchedAtoms = viewerInstance.selectedAtoms(clickSpec);
+  const newIndices = new Set(matchedAtoms.map(a => a.index));
 
-  if (!isShift) {
-    clearSelectedAtoms();
-  }
+  let combinedIndices;
 
-  // Group matched atoms by model
-  for (const a of matchedAtoms) {
-    let entry = selectedAtomsByModel.get(a.model);
-    if (!entry) {
-      // Find the model object for this atom
-      let modelObj = null;
-      for (const [, obj] of state.objects) {
-        const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
-        if (modelId === a.model) { modelObj = obj.model; break; }
-      }
-      entry = { model: modelObj, indices: new Set() };
-      selectedAtomsByModel.set(a.model, entry);
+  if (isShift) {
+    const existingSele = state.selections.get('sele');
+    if (existingSele && existingSele.visible) {
+      const existingAtoms = viewerInstance.selectedAtoms(existingSele.spec);
+      combinedIndices = new Set(existingAtoms.map(a => a.index));
+      for (const idx of newIndices) combinedIndices.add(idx);
+    } else {
+      combinedIndices = newIndices;
     }
-    entry.indices.add(a.index);
+  } else {
+    combinedIndices = newIndices;
   }
 
-  const combinedSpec = buildActiveSelectionSpec();
-  applySelectionHighlight();
-  setActiveSelection(combinedSpec);
-  addSelection('sele', 'click selection', combinedSpec, totalSelectedAtoms());
+  const combinedSpec = { index: [...combinedIndices] };
+  const atomCount = combinedIndices.size;
+
+  addSelection('sele', 'click selection', combinedSpec, atomCount);
+
+  const allAtoms = viewerInstance.selectedAtoms(combinedSpec);
+  renderHighlight(allAtoms);
 
   const verb = isShift ? 'Added' : 'Selected';
-  const count = totalSelectedAtoms();
-  terminal.print(`${verb} ${description} [mode: ${mode}, ${count} atom${count !== 1 ? 's' : ''} total]`, 'info');
+  terminal.print(`${verb} ${description} [mode: ${mode}, ${atomCount} atom${atomCount !== 1 ? 's' : ''} total]`, 'info');
 }
 
 // Register the click callback — viewer.js stores it and automatically
@@ -900,11 +848,13 @@ setupClickHandler(handleViewerClick);
     if (wasDrag) return; // Rotation/pan, not a click
 
     setTimeout(() => {
-      if (!atomClickedThisCycle && totalSelectedAtoms() > 0) {
-        clearSelectedAtoms();
-        clearHighlight();
-        setActiveSelection(null);
-        removeSelection('sele');
+      if (!atomClickedThisCycle) {
+        const sele = getState().selections.get('sele');
+        if (sele && sele.visible) {
+          toggleSelectionVisibility('sele');
+          clearHighlight();
+          scheduleRender();
+        }
       }
       atomClickedThisCycle = false;
     }, 0);
@@ -914,12 +864,12 @@ setupClickHandler(handleViewerClick);
 // --- Right-click context menu on the viewer ---
 createContextMenu(document.getElementById('viewer-container'), {
   hasSelection() {
-    return getState().activeSelection !== null;
+    return getActiveSeleSpec() !== null;
   },
 
   onAction(action) {
     const v = getViewer();
-    const selSpec = getState().activeSelection;
+    const selSpec = getActiveSeleSpec();
     if (!selSpec) return;
     switch (action) {
       case 'center':
@@ -936,7 +886,7 @@ createContextMenu(document.getElementById('viewer-container'), {
   },
 
   onView(presetName) {
-    const selSpec = getState().activeSelection;
+    const selSpec = getActiveSeleSpec();
     if (!selSpec) return;
     applyViewPreset(presetName, selSpec);
     terminal.print(`Applied "${getPresetLabel(presetName)}" preset to selection`, 'result');
@@ -944,7 +894,7 @@ createContextMenu(document.getElementById('viewer-container'), {
 
   onShow(rep) {
     const v = getViewer();
-    const selSpec = getState().activeSelection;
+    const selSpec = getActiveSeleSpec();
     if (!selSpec) return;
     v.addStyle(selSpec, repStyle(rep));
     scheduleRender();
@@ -952,21 +902,21 @@ createContextMenu(document.getElementById('viewer-container'), {
   },
 
   onHide(rep) {
-    const selSpec = getState().activeSelection;
+    const selSpec = getActiveSeleSpec();
     if (!selSpec) return;
     applyHideSelection(selSpec, rep);
     terminal.print(`Hiding ${rep} on selection`, 'result');
   },
 
   onLabel(prop) {
-    const selSpec = getState().activeSelection;
+    const selSpec = getActiveSeleSpec();
     if (!selSpec) return;
     applyLabel(selSpec, prop);
     terminal.print(prop === 'clear' ? 'Labels cleared' : `Labeled selection by ${prop}`, 'result');
   },
 
   onColor(rawScheme) {
-    const selSpec = getState().activeSelection;
+    const selSpec = getActiveSeleSpec();
     if (!selSpec) return;
     applyColorToSelection(selSpec, rawScheme);
     terminal.print(`Colored selection by ${formatColorDisplay(rawScheme)}`, 'result');
