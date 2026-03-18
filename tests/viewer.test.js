@@ -549,4 +549,30 @@ describe('viewer.js', () => {
       expect(mockViewer.render).toHaveBeenCalledTimes(1);
     });
   });
+
+  // -----------------------------------------------------------------------
+  // wheel zoom throttling
+  // -----------------------------------------------------------------------
+  describe('wheel zoom throttling', () => {
+    let rafCallback;
+
+    beforeEach(() => {
+      mockViewer.render.mockClear();
+      mockViewer.zoom.mockClear();
+      mockViewer.getView.mockReturnValue([0, 0, 0, 1, 0, 0, 0, 1]);
+      globalThis.requestAnimationFrame = vi.fn((cb) => {
+        rafCallback = cb;
+        return 1;
+      });
+    });
+
+    it('accumulates wheel events and renders once per frame', () => {
+      const container = getViewerElement();
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }));
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }));
+      expect(mockViewer.zoom).not.toHaveBeenCalled();
+      rafCallback();
+      expect(mockViewer.zoom).toHaveBeenCalledTimes(1);
+    });
+  });
 });

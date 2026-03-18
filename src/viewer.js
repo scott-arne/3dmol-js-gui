@@ -167,21 +167,29 @@ export function initViewer(container) {
   // handler fires before 3Dmol's own handler on the child canvas.
   const ZOOM_SCALE = 0.001;
   const MAX_ZOOM = 250;
+  let wheelRAF = null;
+  let accumulatedFactor = 1.0;
 
   viewerElement.addEventListener('wheel', (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const factor = 1 - e.deltaY * ZOOM_SCALE;
-    viewer.zoom(factor);
+    const delta = -e.deltaY * ZOOM_SCALE;
+    accumulatedFactor *= (1 + delta);
 
-    const view = viewer.getView();
-    if (view[3] > MAX_ZOOM) {
-      view[3] = MAX_ZOOM;
-      viewer.setView(view);
+    if (!wheelRAF) {
+      wheelRAF = requestAnimationFrame(() => {
+        viewer.zoom(accumulatedFactor);
+        const view = viewer.getView();
+        if (view[3] > MAX_ZOOM) {
+          view[3] = MAX_ZOOM;
+          viewer.setView(view);
+        }
+        accumulatedFactor = 1.0;
+        scheduleRender();
+        wheelRAF = null;
+      });
     }
-
-    scheduleRender();
   }, { capture: true, passive: false });
 
   let resizeRAF = null;
