@@ -54,6 +54,8 @@ import {
   addTrackedLabel,
   clearAllLabels,
   refreshLabels,
+  scheduleRender,
+  renderNow,
 } from '../src/viewer.js';
 
 // ---------------------------------------------------------------------------
@@ -499,6 +501,38 @@ describe('viewer.js', () => {
       expect(mockViewer.removeAllLabels).not.toHaveBeenCalled();
       expect(mockViewer.addLabel).not.toHaveBeenCalled();
       expect(mockViewer.render).not.toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // scheduleRender / renderNow
+  // -----------------------------------------------------------------------
+  describe('scheduleRender / renderNow', () => {
+    beforeEach(() => {
+      mockViewer.render.mockClear();
+    });
+
+    it('scheduleRender coalesces multiple calls into one render', async () => {
+      scheduleRender();
+      scheduleRender();
+      scheduleRender();
+      expect(mockViewer.render).not.toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
+      expect(mockViewer.render).toHaveBeenCalledTimes(1);
+    });
+
+    it('renderNow renders immediately without waiting', () => {
+      renderNow();
+      expect(mockViewer.render).toHaveBeenCalledTimes(1);
+    });
+
+    it('renderNow clears pending scheduled render', async () => {
+      scheduleRender();
+      renderNow();
+      expect(mockViewer.render).toHaveBeenCalledTimes(1);
+      await new Promise(r => queueMicrotask(r));
+      // Should not render again — the scheduled one was cleared
+      expect(mockViewer.render).toHaveBeenCalledTimes(1);
     });
   });
 });

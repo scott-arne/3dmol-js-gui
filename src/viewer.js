@@ -119,6 +119,26 @@ let viewer = null;
 /** @type {HTMLDivElement|null} The viewer canvas container element. */
 let viewerElement = null;
 
+let renderQueued = false;
+
+export function scheduleRender() {
+  if (!viewer) return;
+  if (renderQueued) return;
+  renderQueued = true;
+  queueMicrotask(() => {
+    if (renderQueued) {
+      renderQueued = false;
+      viewer.render();
+    }
+  });
+}
+
+export function renderNow() {
+  if (!viewer) return;
+  renderQueued = false;
+  viewer.render();
+}
+
 /**
  * Initialize the 3Dmol.js viewer inside the given container element.
  *
