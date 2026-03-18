@@ -105,7 +105,7 @@ describe('viewer.js', () => {
     it('returns thin-stick spec for "line"', () => {
       const style = repStyle('line');
       expect(style).toEqual({
-        stick: { radius: 0.05 },
+        stick: { radius: 0.05, doubleBondScaling: 1.5, tripleBondScaling: 1.0 },
       });
       // _useStick flag should be stripped
       expect(style.stick._useStick).toBeUndefined();

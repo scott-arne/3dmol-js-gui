@@ -19,7 +19,7 @@
  * due to vanishing browser support."
  */
 const REP_DEFAULTS = {
-  line: { _useStick: true, radius: 0.05 },
+  line: { _useStick: true, radius: 0.05, doubleBondScaling: 1.5, tripleBondScaling: 1.0 },
   stick: { radius: 0.25 },
 };
 
