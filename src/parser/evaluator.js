@@ -281,11 +281,17 @@ export function evaluate(ast, atoms, context = {}) {
       const hydrogens = atoms.filter(a => a.elem === 'H');
       const heavyAtoms = atoms.filter(a => a.elem !== 'H');
       const polarElements = new Set(['N', 'O', 'S']);
+      const grid = new SpatialGrid(heavyAtoms, 1.6);
       return hydrogens.filter(h => {
+        const nearby = grid.neighborsWithin(h.x, h.y, h.z, 1.6);
+        if (nearby.length === 0) return false;
         let nearestDist = Infinity;
         let nearestElem = null;
-        for (const heavy of heavyAtoms) {
-          const d = distance(h, heavy);
+        for (const heavy of nearby) {
+          const dx = h.x - heavy.x;
+          const dy = h.y - heavy.y;
+          const dz = h.z - heavy.z;
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
           if (d < nearestDist) {
             nearestDist = d;
             nearestElem = heavy.elem;
@@ -298,11 +304,17 @@ export function evaluate(ast, atoms, context = {}) {
     case 'nonpolar_hydrogen': {
       const hydrogens = atoms.filter(a => a.elem === 'H');
       const heavyAtoms = atoms.filter(a => a.elem !== 'H');
+      const grid = new SpatialGrid(heavyAtoms, 1.6);
       return hydrogens.filter(h => {
+        const nearby = grid.neighborsWithin(h.x, h.y, h.z, 1.6);
+        if (nearby.length === 0) return false;
         let nearestDist = Infinity;
         let nearestElem = null;
-        for (const heavy of heavyAtoms) {
-          const d = distance(h, heavy);
+        for (const heavy of nearby) {
+          const dx = h.x - heavy.x;
+          const dy = h.y - heavy.y;
+          const dz = h.z - heavy.z;
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
           if (d < nearestDist) {
             nearestDist = d;
             nearestElem = heavy.elem;
