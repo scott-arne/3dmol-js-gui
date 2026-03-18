@@ -180,10 +180,17 @@ export function getDisplayTree(st) {
 /**
  * Notify all registered listeners of a state change.
  */
+let notifyQueued = false;
+
 function _notify() {
-  for (const listener of state._listeners) {
-    listener(state);
-  }
+  if (notifyQueued) return;
+  notifyQueued = true;
+  queueMicrotask(() => {
+    notifyQueued = false;
+    for (const listener of state._listeners) {
+      listener(state);
+    }
+  });
 }
 
 /**

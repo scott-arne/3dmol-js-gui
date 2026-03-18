@@ -220,28 +220,43 @@ describe('setSelectionMode', () => {
 describe('onStateChange / notifyStateChange', () => {
   beforeEach(resetState);
 
-  it('listener is called on state mutations', () => {
+  it('listener is called on state mutations', async () => {
     const listener = vi.fn();
     onStateChange(listener);
     addObject('test', {}, 0);
+    await new Promise(r => queueMicrotask(r));
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith(getState());
   });
 
-  it('notifyStateChange triggers listeners manually', () => {
+  it('notifyStateChange triggers listeners manually', async () => {
     const listener = vi.fn();
     onStateChange(listener);
     notifyStateChange();
+    await new Promise(r => queueMicrotask(r));
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('multiple listeners all receive notifications', () => {
+  it('multiple listeners all receive notifications', async () => {
     const l1 = vi.fn();
     const l2 = vi.fn();
     onStateChange(l1);
     onStateChange(l2);
     addObject('test', {}, 0);
+    await new Promise(r => queueMicrotask(r));
     expect(l1).toHaveBeenCalledTimes(1);
     expect(l2).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces multiple mutations into one notification', async () => {
+    const listener = vi.fn();
+    onStateChange(listener);
+    addObject('a', {}, 0);
+    addObject('b', {}, 1);
+    addObject('c', {}, 2);
+    // Listener should not have been called synchronously
+    expect(listener).toHaveBeenCalledTimes(0);
+    await new Promise(r => queueMicrotask(r));
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
