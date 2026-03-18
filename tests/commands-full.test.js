@@ -95,6 +95,7 @@ vi.mock('../src/commands/resolve-selection.js', () => ({
     return { spec: { resn: [str] } };
   }),
   getSelSpec: vi.fn((result) => result.spec || {}),
+  resolveSelectionByEntry: vi.fn(() => new Map()),
 }));
 
 vi.mock('../src/parser/selection.pegjs', () => ({
@@ -155,7 +156,7 @@ import { registerAllCommands } from '../src/commands/index.js';
 
 import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, clearHighlight, applyHighlight, loadModelData } from '../src/viewer.js';
 import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange, addGroup, ungroupGroup, reparentEntry, unparentEntry } from '../src/state.js';
-import { resolveSelection, getSelSpec } from '../src/commands/resolve-selection.js';
+import { resolveSelection, getSelSpec, resolveSelectionByEntry } from '../src/commands/resolve-selection.js';
 import { parse } from '../src/parser/selection.pegjs';
 import { toAtomSelectionSpec, evaluate } from '../src/parser/evaluator.js';
 import { applyPreset } from '../src/presets.js';
@@ -526,6 +527,35 @@ describe('display.js', () => {
       registry.execute('show cartoon, mol', ctx);
       expect(mockObj.representations.has('cartoon')).toBe(true);
     });
+
+    it('parses by_entry flag and passes to resolveSelectionByEntry', () => {
+      registry.execute('show sticks, resn ALA, by_entry', ctx);
+      expect(resolveSelectionByEntry).toHaveBeenCalledWith('resn ALA');
+      expect(resolveSelection).not.toHaveBeenCalled();
+      expect(terminal.lines[0].msg).toContain('stick');
+    });
+
+    it('parses by_entry=True flag (case insensitive)', () => {
+      registry.execute('show sticks, resn ALA, by_entry=True', ctx);
+      expect(resolveSelectionByEntry).toHaveBeenCalledWith('resn ALA');
+    });
+
+    it('by_entry=False uses normal resolveSelection path', () => {
+      registry.execute('show sticks, resn ALA, by_entry=False', ctx);
+      expect(resolveSelection).toHaveBeenCalledWith('resn ALA');
+      expect(resolveSelectionByEntry).not.toHaveBeenCalled();
+    });
+
+    it('without by_entry uses resolveSelection (not resolveSelectionByEntry)', () => {
+      registry.execute('show sticks, resn ALA', ctx);
+      expect(resolveSelection).toHaveBeenCalledWith('resn ALA');
+      expect(resolveSelectionByEntry).not.toHaveBeenCalled();
+    });
+
+    it('unknown flags are left in the selection string', () => {
+      registry.execute('show sticks, resn ALA foo_flag', ctx);
+      expect(resolveSelection).toHaveBeenCalledWith('resn ALA foo_flag');
+    });
   });
 
   describe('hide', () => {
@@ -642,6 +672,17 @@ describe('display.js', () => {
       registry.execute('hide cartoon, protein', ctx);
       expect(terminal.lines[0].msg).toContain('protein');
     });
+
+    it('parses by_entry flag in hide command', () => {
+      registry.execute('hide sticks, resn ALA, by_entry', ctx);
+      expect(resolveSelectionByEntry).toHaveBeenCalledWith('resn ALA');
+    });
+
+    it('without by_entry uses resolveSelection in hide', () => {
+      registry.execute('hide sticks, resn ALA', ctx);
+      expect(resolveSelection).toHaveBeenCalledWith('resn ALA');
+      expect(resolveSelectionByEntry).not.toHaveBeenCalled();
+    });
   });
 
   describe('enable', () => {
@@ -743,23 +784,18 @@ describe('selection.js', () => {
   });
 
   describe('sele', () => {
-    it('creates a sele selection with simple spec', () => {
+    it('creates a sele selection via resolveSelection', () => {
       mockViewer.selectedAtoms.mockReturnValueOnce([{ serial: 1 }, { serial: 2 }]);
-      toAtomSelectionSpec.mockReturnValueOnce({ resn: ['ALA'] });
 
       registry.execute('sele resn ALA', ctx);
-      expect(parse).toHaveBeenCalledWith('resn ALA');
+      expect(resolveSelection).toHaveBeenCalledWith('resn ALA');
       expect(addSelection).toHaveBeenCalledWith('sele', 'resn ALA', { resn: ['ALA'] }, 2);
       expect(terminal.lines[0].msg).toBe('(sele): 2 atoms');
     });
 
-    it('falls back to index-based spec when toAtomSelectionSpec returns null', () => {
-      toAtomSelectionSpec.mockReturnValueOnce(null);
-      mockViewer.selectedAtoms.mockReturnValueOnce([
-        { serial: 10, atom: 'CA' },
-        { serial: 20, atom: 'CB' },
-      ]);
-      evaluate.mockReturnValueOnce([{ serial: 10 }, { serial: 20 }]);
+    it('handles atom-based results from resolveSelection', () => {
+      resolveSelection.mockReturnValueOnce({ atoms: [{ serial: 10 }, { serial: 20 }] });
+      getSelSpec.mockReturnValueOnce({ serial: [10, 20] });
 
       registry.execute('sele complex_expr', ctx);
       expect(addSelection).toHaveBeenCalledWith(
@@ -773,33 +809,22 @@ describe('selection.js', () => {
     it('throws when no expression provided', () => {
       expect(() => registry.execute('sele', ctx)).toThrow('Usage: sele');
     });
-
-    it('throws on invalid expression (parse error)', () => {
-      expect(() => registry.execute('sele __INVALID__', ctx)).toThrow(
-        'Invalid selection expression'
-      );
-    });
   });
 
   describe('select', () => {
-    it('defines a named selection with simple spec', () => {
+    it('defines a named selection via resolveSelection', () => {
       mockViewer.selectedAtoms.mockReturnValueOnce([{ serial: 5 }]);
-      toAtomSelectionSpec.mockReturnValueOnce({ resn: ['GLY'] });
 
       registry.execute('select mysel, resn GLY', ctx);
+      expect(resolveSelection).toHaveBeenCalledWith('resn GLY');
       expect(addSelection).toHaveBeenCalledWith('mysel', 'resn GLY', { resn: ['GLY'] }, 1);
       expect(terminal.lines[0].msg).toContain('mysel');
       expect(terminal.lines[0].msg).toContain('1 atoms');
     });
 
-    it('falls back to index-based spec when toAtomSelectionSpec returns null', () => {
-      toAtomSelectionSpec.mockReturnValueOnce(null);
-      mockViewer.selectedAtoms.mockReturnValueOnce([
-        { serial: 1 },
-        { serial: 2 },
-        { serial: 3 },
-      ]);
-      evaluate.mockReturnValueOnce([{ serial: 1 }, { serial: 3 }]);
+    it('handles atom-based results from resolveSelection', () => {
+      resolveSelection.mockReturnValueOnce({ atoms: [{ serial: 1 }, { serial: 3 }] });
+      getSelSpec.mockReturnValueOnce({ serial: [1, 3] });
 
       registry.execute('select pick, complex_expr', ctx);
       expect(addSelection).toHaveBeenCalledWith(
@@ -818,19 +843,11 @@ describe('selection.js', () => {
       expect(() => registry.execute('select mysel', ctx)).toThrow('Usage: select');
     });
 
-    it('throws on invalid expression', () => {
-      expect(() => registry.execute('select mysel, __INVALID__', ctx)).toThrow(
-        'Invalid selection expression'
-      );
-    });
-
     it('joins multi-part expressions correctly', () => {
       mockViewer.selectedAtoms.mockReturnValueOnce([]);
-      toAtomSelectionSpec.mockReturnValueOnce({ resn: ['ALA'] });
 
       registry.execute('select mysel, resn ALA, chain A', ctx);
-      // The expression should be "resn ALA, chain A"
-      expect(parse).toHaveBeenCalledWith('resn ALA, chain A');
+      expect(resolveSelection).toHaveBeenCalledWith('resn ALA, chain A');
     });
   });
 
@@ -2434,8 +2451,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 7 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 2 loading + 6 styling + 1 preset + 4 grouping = 35
-    expect(commands.length).toBe(35);
+    // 9 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 2 loading + 6 styling + 1 preset + 4 grouping = 37
+    expect(commands.length).toBe(37);
   });
 
   it('all registered commands have help text', () => {

@@ -422,7 +422,7 @@ function downgradeRepStyle(viewer, selSpec, sharedKey, targetRep) {
  * @param {string} rep - The canonical representation name to remove.
  * @param {Set<string>} objReps - The object's representations set.
  */
-function hideRepPreservingStyles(viewer, selSpec, rep, objReps) {
+export function hideRepPreservingStyles(viewer, selSpec, rep, objReps) {
   const keyToRemove = repKey(rep);
 
   // Case 1: Key collision (line/stick both map to 'stick')

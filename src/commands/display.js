@@ -1,8 +1,8 @@
 import { parseArgs } from './registry.js';
-import { resolveSelection, getSelSpec } from './resolve-selection.js';
+import { resolveSelection, getSelSpec, resolveSelectionByEntry } from './resolve-selection.js';
 import { getViewer, repStyle } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
-import { applyHide, applyHideSelection } from '../actions.js';
+import { applyHide, applyHideSelection, hideRepPreservingStyles } from '../actions.js';
 
 /**
  * Map of plural/alternate representation names to canonical 3Dmol.js style names.
@@ -56,6 +56,35 @@ function normalizeRep(name) {
 }
 
 /**
+ * Parse command options from argument parts.
+ *
+ * Scans parts for keyword arguments matching known flag names.
+ * Recognized flags are extracted; remaining parts are joined as the selection string.
+ *
+ * @param {string[]} parts - Argument parts (rep name already removed).
+ * @param {Set<string>} knownFlags - Recognized flag names.
+ * @returns {{ selStr: string|null, options: { byEntry: boolean } }}
+ */
+function parseCommandOptions(parts, knownFlags) {
+  const options = { byEntry: false };
+  const remaining = [];
+
+  for (const part of parts) {
+    const match = part.trim().match(/^(\w+)(?:=(true|false))?$/i);
+    if (match && knownFlags.has(match[1].toLowerCase())) {
+      const flag = match[1].toLowerCase();
+      const value = match[2] ? match[2].toLowerCase() === 'true' : true;
+      if (flag === 'by_entry') options.byEntry = value;
+    } else {
+      remaining.push(part);
+    }
+  }
+
+  const selStr = remaining.join(', ') || null;
+  return { selStr, options };
+}
+
+/**
  * Register the display commands (show, hide, enable, disable) into the given
  * command registry.
  *
@@ -69,7 +98,28 @@ export function registerDisplayCommands(registry) {
         throw new Error('Usage: show <representation> [, selection]');
       }
       const repName = normalizeRep(parts[0]);
-      const selStr = parts.slice(1).join(', ') || null;
+      const { selStr, options } = parseCommandOptions(parts.slice(1), new Set(['by_entry']));
+
+      if (options.byEntry) {
+        const perEntry = resolveSelectionByEntry(selStr);
+        const viewer = getViewer();
+        const state = getState();
+        for (const [objName, entryResult] of perEntry) {
+          const obj = state.objects.get(objName);
+          if (obj) {
+            viewer.addStyle(entryResult.spec, repStyle(repName));
+            obj.representations.add(repName);
+          }
+        }
+        viewer.render();
+        notifyStateChange();
+        ctx.terminal.print(
+          `Showing ${repName}${selStr ? ` for ${selStr}` : ''} (per-entry)`,
+          'result'
+        );
+        return;
+      }
+
       const result = resolveSelection(selStr);
       const selSpec = getSelSpec(result);
       const viewer = getViewer();
@@ -134,7 +184,33 @@ export function registerDisplayCommands(registry) {
       }
       const raw = parts[0].trim();
       const repName = normalizeRep(raw);
-      const selStr = parts.slice(1).join(', ') || null;
+      const { selStr, options } = parseCommandOptions(parts.slice(1), new Set(['by_entry']));
+
+      if (options.byEntry) {
+        const perEntry = resolveSelectionByEntry(selStr);
+        const viewer = getViewer();
+        const state = getState();
+        for (const [objName, entryResult] of perEntry) {
+          const obj = state.objects.get(objName);
+          if (obj) {
+            if (repName === 'everything') {
+              viewer.setStyle(entryResult.spec, {});
+              obj.representations.clear();
+            } else {
+              hideRepPreservingStyles(viewer, entryResult.spec, repName, obj.representations);
+              obj.representations.delete(repName);
+            }
+          }
+        }
+        viewer.render();
+        notifyStateChange();
+        ctx.terminal.print(
+          `Hiding ${raw.toLowerCase()}${selStr ? ` for ${selStr}` : ''} (per-entry)`,
+          'result'
+        );
+        return;
+      }
+
       const result = resolveSelection(selStr);
       const selSpec = getSelSpec(result);
       const state = getState();
