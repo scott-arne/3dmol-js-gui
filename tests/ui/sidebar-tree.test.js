@@ -200,7 +200,7 @@ describe('Sidebar tree-based rendering', () => {
       expect(callbacks.onToggleCollapsed).toHaveBeenCalledWith('grp');
     });
 
-    it('clicking group name fires onToggleCollapsed', () => {
+    it('clicking group name zone fires onToggleGroupVisibility', () => {
       const objects = new Map([['mol1', makeObject()]]);
       const entryTree = [
         { type: 'group', name: 'grp', collapsed: false, children: [
@@ -209,9 +209,9 @@ describe('Sidebar tree-based rendering', () => {
       ];
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
-      const name = container.querySelector('.sidebar-group-name');
-      name.click();
-      expect(callbacks.onToggleCollapsed).toHaveBeenCalledWith('grp');
+      const toggleZone = container.querySelector('.sidebar-group-header .sidebar-zone-toggle');
+      toggleZone.click();
+      expect(callbacks.onToggleGroupVisibility).toHaveBeenCalledWith('grp');
     });
 
     it('group header has A,S,H,L,C buttons', () => {

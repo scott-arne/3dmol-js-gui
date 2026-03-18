@@ -544,38 +544,65 @@ export function createSidebar(container, callbacks) {
       row.classList.add('dimmed');
     }
 
-    // Clicking anywhere on the row (outside buttons) toggles visibility
-    row.addEventListener('click', () => {
-      callbacks.onToggleVisibility(name);
-    });
-
-    // Hierarchy toggle icon (only if this object has children)
     if (hasChildren) {
-      const toggle = document.createElement('span');
-      toggle.className = 'sidebar-hierarchy-toggle';
-      toggle.textContent = '[\u2212]'; // [−]
-      toggle.addEventListener('click', (e) => {
+      row.classList.add('has-children');
+
+      // Left zone: collapse/expand
+      const collapseZone = document.createElement('div');
+      collapseZone.className = 'sidebar-zone-collapse';
+      collapseZone.addEventListener('click', (e) => {
         e.stopPropagation();
         if (callbacks.onToggleCollapsed) {
           callbacks.onToggleCollapsed(name);
         }
       });
-      row.appendChild(toggle);
-    }
 
-    // Status circle
-    const status = document.createElement('div');
-    status.className = 'sidebar-object-status';
-    if (obj.visible) {
-      status.classList.add('active');
-    }
-    row.appendChild(status);
+      const toggle = document.createElement('span');
+      toggle.className = 'sidebar-hierarchy-toggle';
+      toggle.textContent = '[\u2212]'; // [−]
+      collapseZone.appendChild(toggle);
+      row.appendChild(collapseZone);
 
-    // Object name
-    const nameEl = document.createElement('span');
-    nameEl.className = 'sidebar-object-name';
-    nameEl.textContent = name;
-    row.appendChild(nameEl);
+      // Right zone: enable/disable
+      const toggleZone = document.createElement('div');
+      toggleZone.className = 'sidebar-zone-toggle';
+      toggleZone.addEventListener('click', (e) => {
+        e.stopPropagation();
+        callbacks.onToggleVisibility(name);
+      });
+
+      const status = document.createElement('div');
+      status.className = 'sidebar-object-status';
+      if (obj.visible) {
+        status.classList.add('active');
+      }
+      toggleZone.appendChild(status);
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'sidebar-object-name';
+      nameEl.textContent = name;
+      toggleZone.appendChild(nameEl);
+      row.appendChild(toggleZone);
+    } else {
+      // Regular object: clicking anywhere on row toggles visibility
+      row.addEventListener('click', () => {
+        callbacks.onToggleVisibility(name);
+      });
+
+      // Status circle
+      const status = document.createElement('div');
+      status.className = 'sidebar-object-status';
+      if (obj.visible) {
+        status.classList.add('active');
+      }
+      row.appendChild(status);
+
+      // Object name
+      const nameEl = document.createElement('span');
+      nameEl.className = 'sidebar-object-name';
+      nameEl.textContent = name;
+      row.appendChild(nameEl);
+    }
 
     // Button group
     const btnGroup = document.createElement('div');
@@ -637,33 +664,43 @@ export function createSidebar(container, callbacks) {
     header.dataset.kind = 'group';
     header.dataset.name = node.name;
 
-    // Toggle icon
+    // Left zone: collapse/expand
+    const collapseZone = document.createElement('div');
+    collapseZone.className = 'sidebar-zone-collapse';
+    collapseZone.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (callbacks.onToggleCollapsed) {
+        callbacks.onToggleCollapsed(node.name);
+      }
+    });
+
     const toggle = document.createElement('span');
     toggle.className = 'sidebar-group-toggle';
     toggle.textContent = node.collapsed ? '\u25B6' : '\u25BC'; // ▶ or ▼
-    header.appendChild(toggle);
+    collapseZone.appendChild(toggle);
+    header.appendChild(collapseZone);
 
-    // Group name
+    // Right zone: enable/disable all
+    const toggleZone = document.createElement('div');
+    toggleZone.className = 'sidebar-zone-toggle';
+    toggleZone.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (callbacks.onToggleGroupVisibility) {
+        callbacks.onToggleGroupVisibility(node.name);
+      }
+    });
+
     const nameEl = document.createElement('span');
     nameEl.className = 'sidebar-group-name';
     nameEl.textContent = node.name;
-    header.appendChild(nameEl);
+    toggleZone.appendChild(nameEl);
+    header.appendChild(toggleZone);
 
     // Group A,S,H,L,C buttons
     const btnGroup = document.createElement('div');
     btnGroup.className = 'sidebar-buttons';
     attachGroupButtons(btnGroup, node.name);
     header.appendChild(btnGroup);
-
-    // Clicking toggle or name expands/collapses the group
-    function handleCollapse(e) {
-      e.stopPropagation();
-      if (callbacks.onToggleCollapsed) {
-        callbacks.onToggleCollapsed(node.name);
-      }
-    }
-    toggle.addEventListener('click', handleCollapse);
-    nameEl.addEventListener('click', handleCollapse);
 
     frag.appendChild(header);
 

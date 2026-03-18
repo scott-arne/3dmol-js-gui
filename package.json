@@ -1,6 +1,6 @@
 {
   "name": "3dmol-js-gui",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "A GUI for 3Dmol.js with a command terminal, interactive sidebar, and selection language.",
   "license": "MIT",

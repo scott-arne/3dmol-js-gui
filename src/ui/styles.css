@@ -16,7 +16,7 @@
   --terminal-text: #a0d0a0;
   --dropdown-bg: #3a3a3a;
   --error: #ff6b6b;
-  --sidebar-width: 240px;
+  --sidebar-width: 300px;
 }
 
 /* --- Light Theme Overrides --- */
@@ -367,12 +367,26 @@ body {
   flex-direction: row;
   align-items: center;
   padding: 6px 8px;
+  min-height: 34px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
 
 .sidebar-object:hover {
   background: var(--menu-hover);
+}
+
+.sidebar-object.has-children {
+  cursor: default;
+  align-items: stretch;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+}
+
+.sidebar-object.has-children:hover {
+  background: none;
 }
 
 .sidebar-object-name {
@@ -419,6 +433,8 @@ body {
 .sidebar-buttons {
   display: flex;
   flex-direction: row;
+  align-items: center;
+  align-self: center;
   gap: 2px;
 }
 
@@ -438,19 +454,41 @@ body {
   background: var(--menu-hover);
 }
 
+/* --- Split-zone rows (groups and hierarchy parents) --- */
+.sidebar-zone-collapse,
+.sidebar-zone-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.sidebar-zone-collapse {
+  padding: 6px 2px 6px 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-zone-toggle {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px 6px 0;
+}
+
+.sidebar-zone-collapse:hover,
+.sidebar-zone-toggle:hover {
+  background: var(--menu-hover);
+}
+
 /* --- Sidebar Groups --- */
 .sidebar-group-header {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  padding: 6px 8px;
+  align-items: stretch;
+  padding: 0 8px 0 0;
+  min-height: 34px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
-  cursor: pointer;
+  cursor: default;
   font-weight: 600;
-}
-
-.sidebar-group-header:hover {
-  background: var(--menu-hover);
 }
 
 .sidebar-group-toggle {
