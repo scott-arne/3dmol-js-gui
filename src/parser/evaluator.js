@@ -76,6 +76,17 @@ function globToRegex(pattern) {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
+const regexCache = new Map();
+
+function getCachedRegex(pattern) {
+  let re = regexCache.get(pattern);
+  if (!re) {
+    re = globToRegex(pattern);
+    regexCache.set(pattern, re);
+  }
+  return re;
+}
+
 /**
  * Test whether a value matches any entry in a values array, supporting glob patterns.
  *
@@ -86,7 +97,7 @@ function globToRegex(pattern) {
 function matchesAny(value, patterns) {
   for (const pattern of patterns) {
     if (pattern.includes('*') || pattern.includes('?')) {
-      if (globToRegex(pattern).test(value)) return true;
+      if (getCachedRegex(pattern).test(value)) return true;
     } else {
       if (value.toUpperCase() === pattern.toUpperCase()) return true;
     }
