@@ -444,9 +444,9 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
   },
 
   onView(presetName) {
-    const reps = applyViewPreset(presetName);
     const state = getState();
     for (const [, obj] of state.objects) {
+      const reps = applyViewPreset(presetName, { model: obj.model });
       obj.representations = new Set(reps);
     }
     notifyStateChange();
@@ -463,7 +463,10 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     const AMINO = [
       'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
       'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL',
-      'HSD','HSE','HSP','HIE','HID','HIP','CYX','MSE',
+      'MSE','SEC','PYL','ASX','GLX',
+      'HID','HIE','HIP','HSD','HSE','HSP',
+      'CYX','CYM',
+      'GLH','ASH','LYN',
     ];
 
     let selSpec;
@@ -475,7 +478,7 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
         description = 'protein';
         break;
       case 'ligand':
-        selSpec = { hetflag: true, not: { resn: ['HOH', 'WAT', 'H2O'] } };
+        selSpec = { hetflag: true, not: { resn: ['HOH', 'WAT', 'H2O', 'ACE', 'NME', ...AMINO] } };
         description = 'ligand';
         break;
       case 'backbone':
@@ -1004,9 +1007,9 @@ if (init) {
   } else {
     for (const op of ops) {
       if (op.op === 'preset') {
-        const reps = applyPreset(op.name, v);
         const st = getState();
         for (const [, obj] of st.objects) {
+          const reps = applyPreset(op.name, v, { model: obj.model });
           obj.representations = new Set(reps);
         }
         notifyStateChange();
@@ -1118,9 +1121,11 @@ if (init) {
     notifyStateChange();
   }
 
-  // Apply orient or zoom (wrapped in try-catch so failures don't prevent render)
+  // Apply view, orient, or zoom (wrapped in try-catch so failures don't prevent render)
   try {
-    if (init.orient !== undefined && init.orient !== null && init.orient !== false) {
+    if (Array.isArray(init.view)) {
+      v.setView(init.view);
+    } else if (init.orient !== undefined && init.orient !== null && init.orient !== false) {
       if (init.orient === true) {
         orientView();
       } else if (typeof init.orient === 'string') {
