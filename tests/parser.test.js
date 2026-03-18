@@ -87,10 +87,32 @@ describe('Selection Parser', () => {
     it.each([
       'protein', 'ligand', 'water', 'solvent', 'organic',
       'backbone', 'bb', 'sidechain', 'sc', 'metal', 'metals',
+      'capping', 'caps',
+      'visible', 'enabled',
     ])('parses "%s"', (kw) => {
       const ast = parse(kw);
-      const normalized = { bb: 'backbone', sc: 'sidechain', metals: 'metal' }[kw] || kw;
+      const normalized = { bb: 'backbone', sc: 'sidechain', metals: 'metal', caps: 'capping', enabled: 'visible' }[kw] || kw;
       expect(ast).toEqual({ type: normalized });
+    });
+  });
+
+  describe('entry reference', () => {
+    it('parses "entry 5fqd-1"', () => {
+      expect(parse('entry 5fqd-1')).toEqual({ type: 'entry_ref', name: '5fqd-1' });
+    });
+
+    it('parses "entry" with quoted name', () => {
+      expect(parse('entry "my object"')).toEqual({ type: 'entry_ref', name: 'my object' });
+    });
+
+    it('parses "entry 5fqd-1 and ligand"', () => {
+      expect(parse('entry 5fqd-1 and ligand')).toEqual({
+        type: 'and',
+        children: [
+          { type: 'entry_ref', name: '5fqd-1' },
+          { type: 'ligand' },
+        ],
+      });
     });
   });
 

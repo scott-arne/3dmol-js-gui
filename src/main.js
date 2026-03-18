@@ -285,6 +285,25 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   onGroupAction(name, action) {
     const state = getState();
     switch (action) {
+      case 'enable_all':
+      case 'disable_all': {
+        const show = action === 'enable_all';
+        const found = findTreeNode(state.entryTree, name, 'group');
+        if (!found) return;
+        const entries = collectEntryNames(found.node);
+        const viewer = getViewer();
+        for (const objName of entries.objects) {
+          const obj = state.objects.get(objName);
+          if (obj) {
+            obj.visible = show;
+            if (show) obj.model.show();
+            else obj.model.hide();
+          }
+        }
+        viewer.render();
+        notifyStateChange();
+        break;
+      }
       case 'delete': {
         const found = findTreeNode(state.entryTree, name, 'group');
         if (!found) return;
@@ -752,6 +771,13 @@ function buildModeSelection(atom, state) {
 }
 
 function handleViewerClick(atom, viewerInstance, event) {
+  // Ignore clicks on atoms belonging to hidden objects
+  const preState = getState();
+  for (const [, obj] of preState.objects) {
+    const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+    if (modelId === atom.model && !obj.visible) return;
+  }
+
   atomClickedThisCycle = true;
   const state = getState();
   const mode = state.selectionMode;

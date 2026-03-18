@@ -306,6 +306,9 @@ const SELECTION_ACTION_MENU = [
  * Action menu items for groups.
  */
 const GROUP_ACTION_MENU = [
+  { label: 'Enable All', value: 'enable_all' },
+  { label: 'Disable All', value: 'disable_all' },
+  { separator: true },
   { label: 'Rename...', value: 'rename' },
   { label: 'Delete', value: 'delete' },
   { label: 'Ungroup', value: 'ungroup' },
@@ -638,12 +641,6 @@ export function createSidebar(container, callbacks) {
     const toggle = document.createElement('span');
     toggle.className = 'sidebar-group-toggle';
     toggle.textContent = node.collapsed ? '\u25B6' : '\u25BC'; // ▶ or ▼
-    toggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (callbacks.onToggleCollapsed) {
-        callbacks.onToggleCollapsed(node.name);
-      }
-    });
     header.appendChild(toggle);
 
     // Group name
@@ -658,12 +655,15 @@ export function createSidebar(container, callbacks) {
     attachGroupButtons(btnGroup, node.name);
     header.appendChild(btnGroup);
 
-    // Clicking header toggles all group member visibility
-    header.addEventListener('click', () => {
-      if (callbacks.onToggleGroupVisibility) {
-        callbacks.onToggleGroupVisibility(node.name);
+    // Clicking toggle or name expands/collapses the group
+    function handleCollapse(e) {
+      e.stopPropagation();
+      if (callbacks.onToggleCollapsed) {
+        callbacks.onToggleCollapsed(node.name);
       }
-    });
+    }
+    toggle.addEventListener('click', handleCollapse);
+    nameEl.addEventListener('click', handleCollapse);
 
     frag.appendChild(header);
 

@@ -92,6 +92,7 @@ Selections can be typed in the command terminal or used as arguments to commands
 | `backbone` / `bb` | Backbone atoms |
 | `sidechain` / `sc` | Side chain atoms |
 | `metal` / `metals` | Metal atoms |
+| `capping` / `caps` | Terminal capping groups (ACE, NME) |
 | `helix` | Alpha helices |
 | `sheet` | Beta sheets |
 | `turn` | Turn regions |
@@ -100,6 +101,24 @@ Selections can be typed in the command terminal or used as arguments to commands
 | `heavy` | Non-hydrogen atoms |
 | `polar_hydrogen` / `polarh` | Hydrogen atoms bonded to N, O, or S |
 | `nonpolar_hydrogen` / `apolarh` | Hydrogen atoms bonded to C |
+
+### Entry Reference
+
+Use `entry` to scope a selection to a loaded object or group by name:
+
+| Selector | Example | Description |
+|----------|---------|-------------|
+| `entry <name>` | `entry 5fqd-1` | All atoms in a loaded object |
+| `entry <group>` | `entry LDDs` | All atoms in a group's members |
+| `entry "name"` | `entry "my object"` | Quoted name (for names with spaces) |
+
+Entry references can be combined with other keywords using `and`, `or`, `not`:
+
+- `entry 5fqd-1 and ligand` -- ligand atoms from 5fqd-1 only
+- `entry LDDs and protein` -- protein atoms from all objects in the LDDs group
+
+Object and group names are also recognized without the `entry` keyword in
+compound expressions (e.g., `5fqd-1 and ligand`).
 
 ### Property Selectors
 

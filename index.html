@@ -20,6 +20,9 @@
     <div id="sidebar-container" class="sidebar"></div>
     <div id="terminal-container" class="terminal"></div>
   </div>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module">
+    await import('/demo/init.js');
+    await import('/src/main.js');
+  </script>
 </body>
 </html>

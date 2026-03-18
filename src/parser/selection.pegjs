@@ -79,6 +79,9 @@ Primary
   / BackboneSpec
   / SidechainSpec
   / MetalSpec
+  / CappingSpec
+  / EntrySpec
+  / VisibleSpec
   / HelixSpec
   / SheetSpec
   / TurnSpec
@@ -194,6 +197,19 @@ SidechainSpec
 MetalSpec
   = ("metals"i / "metal"i) !IdentChar { return { type: 'metal' }; }
 
+CappingSpec
+  = ("capping"i / "caps"i) !IdentChar { return { type: 'capping' }; }
+
+// ---------------------------------------------------------------------------
+// Entry reference (object or group name)
+// ---------------------------------------------------------------------------
+
+EntrySpec
+  = "entry"i !IdentChar __ name:(QuotedString / EntryName) { return { type: 'entry_ref', name }; }
+
+EntryName
+  = chars:[a-zA-Z0-9_\-.]+ { return chars.join(''); }
+
 // ---------------------------------------------------------------------------
 // Atom type keywords
 // ---------------------------------------------------------------------------
@@ -225,6 +241,9 @@ TurnSpec
 
 LoopSpec
   = "loop"i !IdentChar { return { type: 'loop' }; }
+
+VisibleSpec
+  = ("visible"i / "enabled"i) !IdentChar { return { type: 'visible' }; }
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -131,4 +131,39 @@ export function registerCameraCommands(registry) {
     usage: 'reset',
     help: 'Reset the view to show all atoms.',
   });
+
+  registry.register('get_view', {
+    handler: (args, ctx) => {
+      const viewer = getViewer();
+      const view = viewer.getView();
+      const json = JSON.stringify(view);
+      ctx.terminal.print(json, 'result');
+    },
+    usage: 'get_view',
+    help: 'Print the current camera view as a JSON array (for use with set_view).',
+  });
+
+  registry.register('set_view', {
+    handler: (args, ctx) => {
+      const input = args.trim();
+      if (!input) {
+        throw new Error('Usage: set_view <json_array>');
+      }
+      let view;
+      try {
+        view = JSON.parse(input);
+      } catch (e) {
+        throw new Error(`Invalid JSON: ${e.message}`);
+      }
+      if (!Array.isArray(view)) {
+        throw new Error('View must be a JSON array (from get_view)');
+      }
+      const viewer = getViewer();
+      viewer.setView(view);
+      viewer.render();
+      ctx.terminal.print('View restored', 'result');
+    },
+    usage: 'set_view <json_array>',
+    help: 'Restore a camera view from a JSON array obtained via get_view.',
+  });
 }

@@ -1,9 +1,22 @@
 import { parseArgs } from './registry.js';
-import { resolveSelection } from './resolve-selection.js';
+import { resolveSelection, getSelSpec } from './resolve-selection.js';
 import { getViewer } from '../viewer.js';
 import { getState, addSelection } from '../state.js';
-import { parse } from '../parser/selection.pegjs';
-import { evaluate, toAtomSelectionSpec } from '../parser/evaluator.js';
+
+/**
+ * Resolve a selection expression and return the spec and atom count.
+ *
+ * @param {string} expression - The selection expression.
+ * @returns {{ spec: object, atomCount: number }}
+ */
+function resolveAndCount(expression) {
+  const result = resolveSelection(expression);
+  const spec = getSelSpec(result);
+  const atomCount = result.atoms
+    ? result.atoms.length
+    : getViewer().selectedAtoms(spec).length;
+  return { spec, atomCount };
+}
 
 /**
  * Register the selection commands (select, count_atoms, get_model) into the
@@ -19,28 +32,7 @@ export function registerSelectionCommands(registry) {
         throw new Error('Usage: sele <expression>');
       }
 
-      let ast;
-      try {
-        ast = parse(expression);
-      } catch (err) {
-        throw new Error(`Invalid selection expression: ${err.message}`);
-      }
-
-      // Prefer a native 3Dmol spec (e.g. { resn: ['TA1'] }) so addStyle/setStyle
-      // work reliably; fall back to index-based spec for complex expressions.
-      const simpleSpec = toAtomSelectionSpec(ast);
-      let spec, atomCount;
-      if (simpleSpec) {
-        const matched = getViewer().selectedAtoms(simpleSpec);
-        spec = simpleSpec;
-        atomCount = matched.length;
-      } else {
-        const allAtoms = getViewer().selectedAtoms({});
-        const matched = evaluate(ast, allAtoms);
-        spec = { serial: matched.map(a => a.serial) };
-        atomCount = matched.length;
-      }
-
+      const { spec, atomCount } = resolveAndCount(expression);
       addSelection('sele', expression, spec, atomCount);
       ctx.terminal.print(`(sele): ${atomCount} atoms`, 'result');
     },
@@ -57,27 +49,7 @@ export function registerSelectionCommands(registry) {
       const name = parts[0].trim();
       const expression = parts.slice(1).join(', ').trim();
 
-      let ast;
-      try {
-        ast = parse(expression);
-      } catch (err) {
-        throw new Error(`Invalid selection expression: ${err.message}`);
-      }
-
-      // Prefer a native 3Dmol spec; fall back to index-based for complex expressions.
-      const simpleSpec = toAtomSelectionSpec(ast);
-      let spec, atomCount;
-      if (simpleSpec) {
-        const matched = getViewer().selectedAtoms(simpleSpec);
-        spec = simpleSpec;
-        atomCount = matched.length;
-      } else {
-        const allAtoms = getViewer().selectedAtoms({});
-        const matched = evaluate(ast, allAtoms);
-        spec = { serial: matched.map(a => a.serial) };
-        atomCount = matched.length;
-      }
-
+      const { spec, atomCount } = resolveAndCount(expression);
       addSelection(name, expression, spec, atomCount);
       ctx.terminal.print(`Selection "${name}" defined: ${atomCount} atoms`, 'result');
     },

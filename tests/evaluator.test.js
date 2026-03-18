@@ -325,4 +325,120 @@ describe('Selection Evaluator', () => {
       );
     });
   });
+
+  // -----------------------------------------------------------------------
+  // Capping group selection
+  // -----------------------------------------------------------------------
+  describe('capping selection', () => {
+    const cappedAtoms = [
+      { serial: 0, atom: 'C',  resn: 'ACE', resi: 0, chain: 'A', elem: 'C', ss: '', x: 0, y: 0, z: 0 },
+      { serial: 1, atom: 'O',  resn: 'ACE', resi: 0, chain: 'A', elem: 'O', ss: '', x: 1, y: 0, z: 0 },
+      { serial: 2, atom: 'N',  resn: 'ALA', resi: 1, chain: 'A', elem: 'N', ss: '', x: 2, y: 0, z: 0 },
+      { serial: 3, atom: 'N',  resn: 'NME', resi: 2, chain: 'A', elem: 'N', ss: '', x: 3, y: 0, z: 0 },
+    ];
+
+    it('selects only ACE and NME residues', () => {
+      const ast = parse('capping');
+      const result = evaluate(ast, cappedAtoms).map(a => a.serial);
+      expect(result).toEqual([0, 1, 3]);
+    });
+
+    it('excludes capping groups from ligand', () => {
+      const ast = parse('ligand');
+      const result = evaluate(ast, cappedAtoms).map(a => a.serial);
+      expect(result).toEqual([]);
+    });
+
+    it('excludes capping groups from organic', () => {
+      const ast = parse('organic');
+      const result = evaluate(ast, cappedAtoms).map(a => a.serial);
+      expect(result).toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Entry reference selection
+  // -----------------------------------------------------------------------
+  describe('entry_ref selection', () => {
+    const multiModelAtoms = [
+      { serial: 0, atom: 'N',  resn: 'ALA', resi: 1, chain: 'A', elem: 'N', ss: '', x: 0, y: 0, z: 0, model: 0 },
+      { serial: 1, atom: 'CA', resn: 'ALA', resi: 1, chain: 'A', elem: 'C', ss: '', x: 1, y: 0, z: 0, model: 0 },
+      { serial: 2, atom: 'C1', resn: 'LIG', resi: 1, chain: 'A', elem: 'C', ss: '', x: 2, y: 0, z: 0, model: 0 },
+      { serial: 3, atom: 'N',  resn: 'GLY', resi: 1, chain: 'A', elem: 'N', ss: '', x: 3, y: 0, z: 0, model: 1 },
+      { serial: 4, atom: 'CA', resn: 'GLY', resi: 1, chain: 'A', elem: 'C', ss: '', x: 4, y: 0, z: 0, model: 1 },
+    ];
+
+    const context = {
+      entries: new Map([
+        ['obj-A', [0]],
+        ['obj-B', [1]],
+        ['group-AB', [0, 1]],
+      ]),
+    };
+
+    it('selects atoms from a single entry', () => {
+      const ast = parse('entry obj-A');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([0, 1, 2]);
+    });
+
+    it('selects atoms from a group entry (multiple models)', () => {
+      const ast = parse('entry group-AB');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('combines entry with other keywords via and', () => {
+      const ast = parse('entry obj-A and ligand');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([2]);
+    });
+
+    it('returns empty for unknown entry name', () => {
+      const ast = parse('entry unknown');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Visible / enabled selection
+  // -----------------------------------------------------------------------
+  describe('visible selection', () => {
+    const multiModelAtoms = [
+      { serial: 0, atom: 'N', resn: 'ALA', resi: 1, chain: 'A', elem: 'N', ss: '', x: 0, y: 0, z: 0, model: 0 },
+      { serial: 1, atom: 'C', resn: 'LIG', resi: 1, chain: 'A', elem: 'C', ss: '', x: 1, y: 0, z: 0, model: 0 },
+      { serial: 2, atom: 'N', resn: 'GLY', resi: 1, chain: 'A', elem: 'N', ss: '', x: 2, y: 0, z: 0, model: 1 },
+      { serial: 3, atom: 'C', resn: 'LIG', resi: 2, chain: 'A', elem: 'C', ss: '', x: 3, y: 0, z: 0, model: 1 },
+    ];
+
+    const context = {
+      entries: new Map(),
+      visibleModels: new Set([0]),
+    };
+
+    it('selects only atoms from visible models', () => {
+      const ast = parse('visible');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([0, 1]);
+    });
+
+    it('"enabled" is a synonym for "visible"', () => {
+      const ast = parse('enabled');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([0, 1]);
+    });
+
+    it('combines with other keywords via and', () => {
+      const ast = parse('visible and ligand');
+      const result = evaluate(ast, multiModelAtoms, context).map(a => a.serial);
+      expect(result).toEqual([1]);
+    });
+
+    it('returns all atoms when no visibleModels context is provided', () => {
+      const ast = parse('visible');
+      const result = evaluate(ast, multiModelAtoms, {}).map(a => a.serial);
+      expect(result).toEqual([0, 1, 2, 3]);
+    });
+  });
 });

@@ -10,9 +10,17 @@
 // ---------------------------------------------------------------------------
 
 const PROTEIN_RESIDUES = new Set([
+  // Standard 20
   'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE',
   'LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL',
+  // Common non-standard / modified
   'MSE','SEC','PYL','ASX','GLX',
+  // Histidine protonation states
+  'HID','HIE','HIP','HSD','HSE','HSP',
+  // Cysteine variants
+  'CYX','CYM',
+  // Other force-field / prep variants
+  'GLH','ASH','LYN',
 ]);
 
 const WATER_RESIDUES = new Set(['HOH','WAT','H2O','DOD','TIP','TIP3','SPC']);
@@ -21,6 +29,8 @@ const SOLVENT_RESIDUES = new Set([
   ...WATER_RESIDUES,
   'DMSO','DMF','ACN','MeOH','EtOH','IPA','GOL','PEG',
 ]);
+
+const CAPPING_RESIDUES = new Set(['ACE','NME']);
 
 const BACKBONE_ATOMS = new Set(['N','CA','C','O']);
 
@@ -119,7 +129,7 @@ function numericMatch(node, actual) {
  * :param atoms: Array of atom objects.
  * :returns: Filtered array of atoms matching the selection (original order preserved).
  */
-export function evaluate(ast, atoms) {
+export function evaluate(ast, atoms, context = {}) {
   switch (ast.type) {
     // --- Constants ---
     case 'all':
@@ -151,7 +161,7 @@ export function evaluate(ast, atoms) {
     case 'and': {
       let result = [...atoms];
       for (const child of ast.children) {
-        const childSet = new Set(evaluate(child, atoms));
+        const childSet = new Set(evaluate(child, atoms, context));
         result = result.filter(a => childSet.has(a));
       }
       return result;
@@ -161,7 +171,7 @@ export function evaluate(ast, atoms) {
       const seen = new Set();
       const result = [];
       for (const child of ast.children) {
-        for (const a of evaluate(child, atoms)) {
+        for (const a of evaluate(child, atoms, context)) {
           if (!seen.has(a)) {
             seen.add(a);
             result.push(a);
@@ -173,12 +183,12 @@ export function evaluate(ast, atoms) {
     }
 
     case 'not': {
-      const excluded = new Set(evaluate(ast.child, atoms));
+      const excluded = new Set(evaluate(ast.child, atoms, context));
       return atoms.filter(a => !excluded.has(a));
     }
 
     case 'xor': {
-      const sets = ast.children.map(child => new Set(evaluate(child, atoms)));
+      const sets = ast.children.map(child => new Set(evaluate(child, atoms, context)));
       return atoms.filter(a => {
         const count = sets.reduce((n, s) => n + (s.has(a) ? 1 : 0), 0);
         return count === 1;
@@ -208,11 +218,29 @@ export function evaluate(ast, atoms) {
     case 'metal':
       return atoms.filter(a => METAL_ELEMENTS.has(a.elem.toUpperCase()));
 
+    case 'capping':
+      return atoms.filter(a => CAPPING_RESIDUES.has(a.resn));
+
+    case 'entry_ref': {
+      const ids = context.entries?.get(ast.name);
+      if (!ids || ids.length === 0) return [];
+      if (ids.length === 1) return atoms.filter(a => a.model === ids[0]);
+      const idSet = new Set(ids);
+      return atoms.filter(a => idSet.has(a.model));
+    }
+
+    case 'visible': {
+      const vis = context.visibleModels;
+      if (!vis) return [...atoms];
+      return atoms.filter(a => vis.has(a.model));
+    }
+
     case 'ligand':
       return atoms.filter(a =>
         !PROTEIN_RESIDUES.has(a.resn) &&
         !WATER_RESIDUES.has(a.resn) &&
         !SOLVENT_RESIDUES.has(a.resn) &&
+        !CAPPING_RESIDUES.has(a.resn) &&
         !METAL_ELEMENTS.has(a.elem.toUpperCase())
       );
 
@@ -225,6 +253,7 @@ export function evaluate(ast, atoms) {
           !PROTEIN_RESIDUES.has(a.resn) &&
           !WATER_RESIDUES.has(a.resn) &&
           !SOLVENT_RESIDUES.has(a.resn) &&
+          !CAPPING_RESIDUES.has(a.resn) &&
           a.elem.toUpperCase() === 'C'
         ) {
           carbonResidues.add(`${a.chain}:${a.resi}`);
@@ -234,6 +263,7 @@ export function evaluate(ast, atoms) {
         !PROTEIN_RESIDUES.has(a.resn) &&
         !WATER_RESIDUES.has(a.resn) &&
         !SOLVENT_RESIDUES.has(a.resn) &&
+        !CAPPING_RESIDUES.has(a.resn) &&
         carbonResidues.has(`${a.chain}:${a.resi}`)
       );
     }
@@ -295,7 +325,7 @@ export function evaluate(ast, atoms) {
 
     // --- Distance operators ---
     case 'around': {
-      const refAtoms = evaluate(ast.child, atoms);
+      const refAtoms = evaluate(ast.child, atoms, context);
       const refSet = new Set(refAtoms);
       const radius = ast.radius;
       return atoms.filter(a => {
@@ -308,7 +338,7 @@ export function evaluate(ast, atoms) {
     }
 
     case 'xaround': {
-      const refAtoms = evaluate(ast.child, atoms);
+      const refAtoms = evaluate(ast.child, atoms, context);
       const refSet = new Set(refAtoms);
       const radius = ast.radius;
       return atoms.filter(a => {
@@ -321,7 +351,7 @@ export function evaluate(ast, atoms) {
     }
 
     case 'beyond': {
-      const refAtoms = evaluate(ast.child, atoms);
+      const refAtoms = evaluate(ast.child, atoms, context);
       const radius = ast.radius;
       return atoms.filter(a => {
         for (const ref of refAtoms) {
@@ -333,7 +363,7 @@ export function evaluate(ast, atoms) {
 
     // --- Expansion operators ---
     case 'byres': {
-      const matched = evaluate(ast.child, atoms);
+      const matched = evaluate(ast.child, atoms, context);
       const residueKeys = new Set();
       for (const a of matched) {
         residueKeys.add(`${a.chain}:${a.resi}`);
@@ -342,7 +372,7 @@ export function evaluate(ast, atoms) {
     }
 
     case 'bychain': {
-      const matched = evaluate(ast.child, atoms);
+      const matched = evaluate(ast.child, atoms, context);
       const chains = new Set();
       for (const a of matched) {
         chains.add(a.chain);
