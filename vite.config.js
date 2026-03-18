@@ -6,6 +6,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     rollupOptions: {
+      input: 'src/main.js',
       output: {
         inlineDynamicImports: true,
       },
