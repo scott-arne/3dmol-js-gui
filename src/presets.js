@@ -8,6 +8,7 @@
 
 import { repStyle, repKey } from './viewer.js';
 import { CHAIN_PALETTES } from './ui/color-swatches.js';
+import { SpatialGrid } from './spatial-grid.js';
 
 const WATER_RESN = ['HOH', 'WAT', 'H2O'];
 
@@ -137,17 +138,15 @@ export const PRESETS = {
       // Find residues within 5 angstroms of HETATM and show as sticks
       const hetAtoms = viewer.selectedAtoms(hetSpec);
       if (hetAtoms.length > 0) {
-        const DIST_SQ = 25; // 5A squared
+        const DIST = 5;
         const allAtoms = viewer.selectedAtoms(base || {});
+        const grid = new SpatialGrid(hetAtoms, DIST);
         const nearResKeys = new Set();
         for (const a of allAtoms) {
           if (a.hetflag) continue;
-          for (const h of hetAtoms) {
-            const dx = a.x - h.x, dy = a.y - h.y, dz = a.z - h.z;
-            if (dx * dx + dy * dy + dz * dz <= DIST_SQ) {
-              nearResKeys.add(`${a.chain}:${a.resi}`);
-              break;
-            }
+          const nearby = grid.neighborsWithin(a.x, a.y, a.z, DIST);
+          if (nearby.length > 0) {
+            nearResKeys.add(`${a.chain}:${a.resi}`);
           }
         }
         if (nearResKeys.size > 0) {
