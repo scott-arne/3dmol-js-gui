@@ -666,6 +666,27 @@ describe('Sidebar', () => {
       const separators = popup.querySelectorAll('.popup-menu-separator');
       expect(separators.length).toBeGreaterThan(0);
     });
+
+    it('reuses popup menu DOM on second open', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      sidebar.refresh(makeState({ objects }));
+
+      const aBtn = container.querySelector('.sidebar-btn');
+      aBtn.click();
+      const menu1 = document.querySelector('.popup-menu');
+      expect(menu1).toBeTruthy();
+
+      // Close menu by clicking the same button (toggle)
+      aBtn.click();
+      expect(document.querySelector('.popup-menu')).toBeNull();
+
+      // Open same type of menu again
+      aBtn.click();
+      const menu2 = document.querySelector('.popup-menu');
+
+      // Should be the same DOM element (cached and reused)
+      expect(menu2).toBe(menu1);
+    });
   });
 
   describe('color popup submenus', () => {

@@ -18,6 +18,12 @@ let activePopupAnchor = null;
 /** @type {function|null} */
 let activePopupCleanup = null;
 
+/** @type {Map<Array, HTMLElement>} Cache of popup menu DOM elements keyed by items array reference. */
+const menuCache = new Map();
+
+/** @type {function|null} Mutable callback reference used by cached menu listeners. */
+let currentMenuOnClick = null;
+
 /**
  * Close any currently open popup menu and remove its outside-click listener.
  */
@@ -51,201 +57,216 @@ function createPopupMenu(anchor, items, onClick) {
   }
   closeActivePopup();
 
-  const menu = document.createElement('div');
-  menu.className = 'popup-menu';
+  // Update the mutable callback reference so cached listeners use the new onClick
+  currentMenuOnClick = onClick;
 
-  for (const item of items) {
-    if (item.separator) {
-      const sep = document.createElement('div');
-      sep.className = 'popup-menu-separator';
-      menu.appendChild(sep);
-    } else if (item.submenu === 'element-swatches') {
-      const menuItem = document.createElement('div');
-      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+  let menu = menuCache.get(items);
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.className = 'popup-menu';
 
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = item.label;
-      menuItem.appendChild(labelSpan);
+    for (const item of items) {
+      if (item.separator) {
+        const sep = document.createElement('div');
+        sep.className = 'popup-menu-separator';
+        menu.appendChild(sep);
+      } else if (item.submenu === 'element-swatches') {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'popup-menu-item popup-menu-has-submenu';
 
-      const arrow = document.createElement('span');
-      arrow.className = 'popup-menu-arrow';
-      arrow.textContent = '\u25B6';
-      menuItem.appendChild(arrow);
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        menuItem.appendChild(labelSpan);
 
-      const submenu = document.createElement('div');
-      submenu.className = 'popup-menu-submenu';
+        const arrow = document.createElement('span');
+        arrow.className = 'popup-menu-arrow';
+        arrow.textContent = '\u25B6';
+        menuItem.appendChild(arrow);
 
-      // "Standard" option — plain Jmol with no carbon override
-      const stdItem = document.createElement('div');
-      stdItem.className = 'popup-menu-submenu-item';
-      stdItem.textContent = 'Standard';
-      stdItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeActivePopup();
-        onClick(item.value);
-      });
-      submenu.appendChild(stdItem);
+        const submenu = document.createElement('div');
+        submenu.className = 'popup-menu-submenu';
 
-      const sep = document.createElement('div');
-      sep.className = 'popup-menu-separator';
-      submenu.appendChild(sep);
-
-      // Swatch grid
-      const grid = document.createElement('div');
-      grid.className = 'swatch-grid';
-      for (const swatch of CARBON_SWATCHES) {
-        const cell = document.createElement('div');
-        cell.className = 'swatch-cell';
-        cell.style.backgroundColor = swatch.hex;
-        cell.title = `${swatch.label} (${swatch.hex})`;
-        cell.dataset.color = swatch.hex;
-        grid.appendChild(cell);
-      }
-      const itemValue = item.value;
-      grid.addEventListener('click', (e) => {
-        const color = e.target.dataset.color;
-        if (color) {
+        // "Standard" option — plain Jmol with no carbon override
+        const stdItem = document.createElement('div');
+        stdItem.className = 'popup-menu-submenu-item';
+        stdItem.textContent = 'Standard';
+        const stdValue = item.value;
+        stdItem.addEventListener('click', (e) => {
           e.stopPropagation();
           closeActivePopup();
-          onClick(itemValue + ':' + color);
+          currentMenuOnClick(stdValue);
+        });
+        submenu.appendChild(stdItem);
+
+        const sep = document.createElement('div');
+        sep.className = 'popup-menu-separator';
+        submenu.appendChild(sep);
+
+        // Swatch grid
+        const grid = document.createElement('div');
+        grid.className = 'swatch-grid';
+        for (const swatch of CARBON_SWATCHES) {
+          const cell = document.createElement('div');
+          cell.className = 'swatch-cell';
+          cell.style.backgroundColor = swatch.hex;
+          cell.title = `${swatch.label} (${swatch.hex})`;
+          cell.dataset.color = swatch.hex;
+          grid.appendChild(cell);
         }
-      });
-      submenu.appendChild(grid);
+        const itemValue = item.value;
+        grid.addEventListener('click', (e) => {
+          const color = e.target.dataset.color;
+          if (color) {
+            e.stopPropagation();
+            closeActivePopup();
+            currentMenuOnClick(itemValue + ':' + color);
+          }
+        });
+        submenu.appendChild(grid);
 
-      menuItem.appendChild(submenu);
-      menu.appendChild(menuItem);
-    } else if (item.submenu === 'solid-swatches') {
-      const menuItem = document.createElement('div');
-      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+        menuItem.appendChild(submenu);
+        menu.appendChild(menuItem);
+      } else if (item.submenu === 'solid-swatches') {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'popup-menu-item popup-menu-has-submenu';
 
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = item.label;
-      menuItem.appendChild(labelSpan);
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        menuItem.appendChild(labelSpan);
 
-      const arrow = document.createElement('span');
-      arrow.className = 'popup-menu-arrow';
-      arrow.textContent = '\u25B6';
-      menuItem.appendChild(arrow);
+        const arrow = document.createElement('span');
+        arrow.className = 'popup-menu-arrow';
+        arrow.textContent = '\u25B6';
+        menuItem.appendChild(arrow);
 
-      const submenu = document.createElement('div');
-      submenu.className = 'popup-menu-submenu';
+        const submenu = document.createElement('div');
+        submenu.className = 'popup-menu-submenu';
 
-      const grid = document.createElement('div');
-      grid.className = 'swatch-grid';
-      for (const swatch of SOLID_SWATCHES) {
-        const cell = document.createElement('div');
-        cell.className = 'swatch-cell';
-        cell.style.backgroundColor = swatch.hex;
-        cell.title = `${swatch.label} (${swatch.hex})`;
-        cell.dataset.color = swatch.hex;
-        grid.appendChild(cell);
-      }
-      grid.addEventListener('click', (e) => {
-        const color = e.target.dataset.color;
-        if (color) {
+        const grid = document.createElement('div');
+        grid.className = 'swatch-grid';
+        for (const swatch of SOLID_SWATCHES) {
+          const cell = document.createElement('div');
+          cell.className = 'swatch-cell';
+          cell.style.backgroundColor = swatch.hex;
+          cell.title = `${swatch.label} (${swatch.hex})`;
+          cell.dataset.color = swatch.hex;
+          grid.appendChild(cell);
+        }
+        grid.addEventListener('click', (e) => {
+          const color = e.target.dataset.color;
+          if (color) {
+            e.stopPropagation();
+            closeActivePopup();
+            currentMenuOnClick(color);
+          }
+        });
+        submenu.appendChild(grid);
+
+        menuItem.appendChild(submenu);
+        menu.appendChild(menuItem);
+      } else if (item.submenu === 'chain-palettes') {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        menuItem.appendChild(labelSpan);
+
+        const arrow = document.createElement('span');
+        arrow.className = 'popup-menu-arrow';
+        arrow.textContent = '\u25B6';
+        menuItem.appendChild(arrow);
+
+        const submenu = document.createElement('div');
+        submenu.className = 'popup-menu-submenu';
+
+        for (const [key, palette] of Object.entries(CHAIN_PALETTES)) {
+          const palItem = document.createElement('div');
+          palItem.className = 'popup-menu-submenu-item';
+          palItem.textContent = palette.label;
+          palItem.dataset.color = 'chain:' + key;
+          submenu.appendChild(palItem);
+        }
+        submenu.addEventListener('click', (e) => {
+          const target = e.target.closest('[data-color]');
+          if (target) {
+            e.stopPropagation();
+            closeActivePopup();
+            currentMenuOnClick(target.dataset.color);
+          }
+        });
+
+        menuItem.appendChild(submenu);
+        menu.appendChild(menuItem);
+      } else if (item.submenu === 'ss-palettes') {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        menuItem.appendChild(labelSpan);
+
+        const arrow = document.createElement('span');
+        arrow.className = 'popup-menu-arrow';
+        arrow.textContent = '\u25B6';
+        menuItem.appendChild(arrow);
+
+        const submenu = document.createElement('div');
+        submenu.className = 'popup-menu-submenu';
+
+        for (const pal of SS_PALETTES) {
+          const palItem = document.createElement('div');
+          palItem.className = 'popup-menu-submenu-item ss-palette-item';
+
+          const h = document.createElement('span');
+          h.textContent = 'Helix';
+          h.style.color = pal.helix;
+          palItem.appendChild(h);
+          palItem.appendChild(document.createTextNode(' \u2013 '));
+          const s = document.createElement('span');
+          s.textContent = 'Sheet';
+          s.style.color = pal.sheet;
+          palItem.appendChild(s);
+          palItem.appendChild(document.createTextNode(' \u2013 '));
+          const l = document.createElement('span');
+          l.textContent = 'Loop';
+          l.style.color = pal.loop;
+          palItem.appendChild(l);
+
+          palItem.dataset.color = 'ss:' + pal.key;
+          submenu.appendChild(palItem);
+        }
+        submenu.addEventListener('click', (e) => {
+          const target = e.target.closest('[data-color]');
+          if (target) {
+            e.stopPropagation();
+            closeActivePopup();
+            currentMenuOnClick(target.dataset.color);
+          }
+        });
+
+        menuItem.appendChild(submenu);
+        menu.appendChild(menuItem);
+      } else {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'popup-menu-item';
+        menuItem.textContent = item.label;
+        const plainValue = item.value;
+        menuItem.addEventListener('click', (e) => {
           e.stopPropagation();
           closeActivePopup();
-          onClick(color);
-        }
-      });
-      submenu.appendChild(grid);
-
-      menuItem.appendChild(submenu);
-      menu.appendChild(menuItem);
-    } else if (item.submenu === 'chain-palettes') {
-      const menuItem = document.createElement('div');
-      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
-
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = item.label;
-      menuItem.appendChild(labelSpan);
-
-      const arrow = document.createElement('span');
-      arrow.className = 'popup-menu-arrow';
-      arrow.textContent = '\u25B6';
-      menuItem.appendChild(arrow);
-
-      const submenu = document.createElement('div');
-      submenu.className = 'popup-menu-submenu';
-
-      for (const [key, palette] of Object.entries(CHAIN_PALETTES)) {
-        const palItem = document.createElement('div');
-        palItem.className = 'popup-menu-submenu-item';
-        palItem.textContent = palette.label;
-        palItem.dataset.color = 'chain:' + key;
-        submenu.appendChild(palItem);
+          currentMenuOnClick(plainValue);
+        });
+        menu.appendChild(menuItem);
       }
-      submenu.addEventListener('click', (e) => {
-        const target = e.target.closest('[data-color]');
-        if (target) {
-          e.stopPropagation();
-          closeActivePopup();
-          onClick(target.dataset.color);
-        }
-      });
-
-      menuItem.appendChild(submenu);
-      menu.appendChild(menuItem);
-    } else if (item.submenu === 'ss-palettes') {
-      const menuItem = document.createElement('div');
-      menuItem.className = 'popup-menu-item popup-menu-has-submenu';
-
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = item.label;
-      menuItem.appendChild(labelSpan);
-
-      const arrow = document.createElement('span');
-      arrow.className = 'popup-menu-arrow';
-      arrow.textContent = '\u25B6';
-      menuItem.appendChild(arrow);
-
-      const submenu = document.createElement('div');
-      submenu.className = 'popup-menu-submenu';
-
-      for (const pal of SS_PALETTES) {
-        const palItem = document.createElement('div');
-        palItem.className = 'popup-menu-submenu-item ss-palette-item';
-
-        const h = document.createElement('span');
-        h.textContent = 'Helix';
-        h.style.color = pal.helix;
-        palItem.appendChild(h);
-        palItem.appendChild(document.createTextNode(' \u2013 '));
-        const s = document.createElement('span');
-        s.textContent = 'Sheet';
-        s.style.color = pal.sheet;
-        palItem.appendChild(s);
-        palItem.appendChild(document.createTextNode(' \u2013 '));
-        const l = document.createElement('span');
-        l.textContent = 'Loop';
-        l.style.color = pal.loop;
-        palItem.appendChild(l);
-
-        palItem.dataset.color = 'ss:' + pal.key;
-        submenu.appendChild(palItem);
-      }
-      submenu.addEventListener('click', (e) => {
-        const target = e.target.closest('[data-color]');
-        if (target) {
-          e.stopPropagation();
-          closeActivePopup();
-          onClick(target.dataset.color);
-        }
-      });
-
-      menuItem.appendChild(submenu);
-      menu.appendChild(menuItem);
-    } else {
-      const menuItem = document.createElement('div');
-      menuItem.className = 'popup-menu-item';
-      menuItem.textContent = item.label;
-      menuItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeActivePopup();
-        onClick(item.value);
-      });
-      menu.appendChild(menuItem);
     }
+
+    menuCache.set(items, menu);
+  }
+
+  // Clear stale submenu positioning from previous use
+  for (const sub of menu.querySelectorAll('.popup-menu-submenu-left')) {
+    sub.classList.remove('popup-menu-submenu-left');
   }
 
   // Append to body so absolute positioning works relative to viewport
