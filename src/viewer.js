@@ -23,8 +23,6 @@ const REP_DEFAULTS = {
   stick: { radius: 0.25 },
 };
 
-/** Atom count threshold above which highlights use addStyle instead of per-atom spheres. */
-const HIGHLIGHT_THRESHOLD = 500;
 
 /**
  * Return the 3Dmol.js style key for a representation name.
@@ -468,15 +466,6 @@ export function orientView(selSpec) {
   scheduleRender();
 }
 
-/** @type {Array<object>} Shape objects for the current highlight overlay. */
-let highlightShapes = [];
-
-/** @type {boolean} Whether the current highlight uses addStyle (large selection path). */
-let highlightUsesStyle = false;
-
-/** @type {object|null} The selection spec used for the style-based highlight. */
-let highlightStyleSpec = null;
-
 /** @type {function|null} Stored click callback for re-registration after model loads. */
 let clickCallback = null;
 
@@ -502,62 +491,5 @@ function registerClickable() {
 export function setupClickHandler(callback) {
   clickCallback = callback;
   registerClickable();
-  scheduleRender();
-}
-
-/**
- * Clear the current visual selection highlight.
- *
- * Removes the sphere shapes that were added as the highlight overlay.
- * Does not modify atom styles, so per-atom representations (e.g. from
- * "show sticks, sele") are preserved.
- */
-export function clearHighlight() {
-  if (highlightUsesStyle && highlightStyleSpec) {
-    // Remove style-based highlight by rebuilding without it
-    viewer.removeAllShapes();
-    highlightUsesStyle = false;
-    highlightStyleSpec = null;
-    scheduleRender();
-    return;
-  }
-  if (highlightShapes.length === 0) return;
-  for (const shape of highlightShapes) {
-    viewer.removeShape(shape);
-  }
-  highlightShapes = [];
-  scheduleRender();
-}
-
-/**
- * Apply a translucent yellow sphere highlight to atoms matching a selection.
- *
- * Uses 3Dmol shape objects (not atom styles) so the highlight can be removed
- * without affecting any atom representations.
- *
- * @param {object} selSpec - The 3Dmol selection spec to highlight.
- */
-export function applyHighlight(selSpec) {
-  const atoms = viewer.selectedAtoms(selSpec);
-
-  if (atoms.length >= HIGHLIGHT_THRESHOLD) {
-    // Large selection: use addStyle for performance
-    viewer.addStyle(selSpec, { sphere: { radius: 0.4, color: 'yellow', opacity: 0.35 } });
-    highlightUsesStyle = true;
-    highlightStyleSpec = selSpec;
-    scheduleRender();
-    return;
-  }
-
-  // Small selection: per-atom sphere shapes (better visual quality)
-  for (const atom of atoms) {
-    const shape = viewer.addSphere({
-      center: { x: atom.x, y: atom.y, z: atom.z },
-      radius: 0.5,
-      color: '#FFFF00',
-      alpha: 0.5,
-    });
-    highlightShapes.push(shape);
-  }
   scheduleRender();
 }

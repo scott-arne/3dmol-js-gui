@@ -48,8 +48,6 @@ import {
   getAllAtoms,
   orientView,
   setupClickHandler,
-  clearHighlight,
-  applyHighlight,
   labelStyle,
   addTrackedLabel,
   clearAllLabels,
@@ -332,98 +330,6 @@ describe('viewer.js', () => {
       );
       await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // clearHighlight / applyHighlight
-  // -----------------------------------------------------------------------
-  describe('highlight', () => {
-    beforeEach(() => {
-      // Reset internal module state by clearing any active highlight,
-      // then reset all mock call counters.
-      clearHighlight();
-      vi.clearAllMocks();
-    });
-
-    it('applyHighlight adds sphere shapes for small atom counts', async () => {
-      const atoms = [
-        { x: 0, y: 0, z: 0 },
-        { x: 1, y: 1, z: 1 },
-      ];
-      mockViewer.selectedAtoms.mockReturnValueOnce(atoms);
-
-      applyHighlight({ chain: 'A' });
-
-      expect(mockViewer.addSphere).toHaveBeenCalledTimes(2);
-      expect(mockViewer.addSphere).toHaveBeenCalledWith({
-        center: { x: 0, y: 0, z: 0 },
-        radius: 0.5,
-        color: '#FFFF00',
-        alpha: 0.5,
-      });
-      await new Promise(r => queueMicrotask(r));
-      expect(mockViewer.render).toHaveBeenCalled();
-    });
-
-    it('applyHighlight uses addStyle for large atom counts (>= 500)', async () => {
-      const bigAtomList = Array.from({ length: 500 }, (_, i) => ({
-        x: i, y: 0, z: 0,
-      }));
-      mockViewer.selectedAtoms.mockReturnValueOnce(bigAtomList);
-
-      applyHighlight({ chain: 'A' });
-
-      expect(mockViewer.addStyle).toHaveBeenCalledWith(
-        { chain: 'A' },
-        { sphere: { radius: 0.4, color: 'yellow', opacity: 0.35 } }
-      );
-      expect(mockViewer.addSphere).not.toHaveBeenCalled();
-      await new Promise(r => queueMicrotask(r));
-      expect(mockViewer.render).toHaveBeenCalled();
-    });
-
-    it('clearHighlight removes sphere shapes when small selection was used', async () => {
-      // Apply a small highlight (single atom)
-      const atoms = [{ x: 0, y: 0, z: 0 }];
-      mockViewer.selectedAtoms.mockReturnValueOnce(atoms);
-      const shape = { id: 42 };
-      mockViewer.addSphere.mockReturnValueOnce(shape);
-      applyHighlight({});
-
-      vi.clearAllMocks();
-
-      // Clear should remove the tracked shape
-      clearHighlight();
-      expect(mockViewer.removeShape).toHaveBeenCalledTimes(1);
-      expect(mockViewer.removeShape).toHaveBeenCalledWith(shape);
-      await new Promise(r => queueMicrotask(r));
-      expect(mockViewer.render).toHaveBeenCalled();
-    });
-
-    it('clearHighlight removes style-based highlight for large selections', async () => {
-      const bigAtomList = Array.from({ length: 600 }, (_, i) => ({
-        x: i, y: 0, z: 0,
-      }));
-      mockViewer.selectedAtoms.mockReturnValueOnce(bigAtomList);
-      applyHighlight({ chain: 'B' });
-
-      vi.clearAllMocks();
-
-      clearHighlight();
-      expect(mockViewer.removeAllShapes).toHaveBeenCalled();
-      await new Promise(r => queueMicrotask(r));
-      expect(mockViewer.render).toHaveBeenCalled();
-    });
-
-    it('clearHighlight is a no-op when no highlight is active', async () => {
-      // No highlight has been applied (beforeEach cleared any previous),
-      // so calling clearHighlight should do nothing.
-      clearHighlight();
-      await new Promise(r => queueMicrotask(r));
-      expect(mockViewer.removeShape).not.toHaveBeenCalled();
-      expect(mockViewer.removeAllShapes).not.toHaveBeenCalled();
-      expect(mockViewer.render).not.toHaveBeenCalled();
     });
   });
 
