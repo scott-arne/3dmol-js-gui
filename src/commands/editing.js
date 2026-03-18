@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer } from '../viewer.js';
+import { getViewer, scheduleRender } from '../viewer.js';
 import { getState, removeObject, removeSelection, renameSelection, renameObject, renameGroup, pruneSelections, findTreeNode, removeGroup, collectEntryNames } from '../state.js';
 import { clearHighlight, applyHighlight } from '../viewer.js';
 
@@ -36,7 +36,7 @@ export function registerEditingCommands(registry) {
       // 3Dmol.js does not support removing individual atoms from a model.
       // Hide them by setting their style to empty so they are no longer visible.
       viewer.setStyle(selSpec, {});
-      viewer.render();
+      scheduleRender();
 
       // Prune removed atoms from all stored selections
       const removedIndices = atoms.map(a => a.index);
@@ -83,7 +83,7 @@ export function registerEditingCommands(registry) {
           }
         }
 
-        viewer.render();
+        scheduleRender();
         removeGroup(name);
         pruneSelections(allRemovedIndices);
         clearHighlight();
@@ -124,7 +124,7 @@ export function registerEditingCommands(registry) {
         viewer.removeModel(obj.model);
       }
 
-      viewer.render();
+      scheduleRender();
       removeObject(name);
 
       // Prune deleted atoms from all stored selections

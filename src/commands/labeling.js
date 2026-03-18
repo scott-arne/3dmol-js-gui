@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection } from './resolve-selection.js';
-import { getViewer, addTrackedLabel, clearAllLabels } from '../viewer.js';
+import { getViewer, addTrackedLabel, clearAllLabels, scheduleRender } from '../viewer.js';
 
 /**
  * Valid label property names that can be used with the label command.
@@ -62,7 +62,7 @@ export function registerLabelingCommands(registry) {
       for (const atom of atoms) {
         addTrackedLabel(String(atom[atomProp]), { x: atom.x, y: atom.y, z: atom.z });
       }
-      viewer.render();
+      scheduleRender();
 
       ctx.terminal.print(`Added ${atoms.length} labels (${property})`, 'result');
     },
@@ -73,7 +73,7 @@ export function registerLabelingCommands(registry) {
   registry.register('unlabel', {
     handler: (args, ctx) => {
       clearAllLabels();
-      getViewer().render();
+      scheduleRender();
       ctx.terminal.print('All labels removed', 'result');
     },
     usage: 'unlabel',

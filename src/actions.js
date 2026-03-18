@@ -6,7 +6,7 @@
  * representations.
  */
 
-import { getViewer, repStyle, repKey, addTrackedLabel, clearAllLabels } from './viewer.js';
+import { getViewer, repStyle, repKey, addTrackedLabel, clearAllLabels, scheduleRender } from './viewer.js';
 import { getState, notifyStateChange } from './state.js';
 import { CHAIN_PALETTES, SS_PALETTES, BFACTOR_DEFAULTS, buildBfactorScheme } from './ui/color-swatches.js';
 import { applyPreset, PRESETS } from './presets.js';
@@ -216,7 +216,7 @@ export function applyColor(selSpec, representations, rawScheme) {
   const reps = representations.size > 0 ? representations : new Set(['line']);
 
   applyColorStyle(viewer, selSpec, reps, scheme, schemes, customScheme, carbonHex);
-  viewer.render();
+  scheduleRender();
 }
 
 /**
@@ -241,7 +241,7 @@ export function applyColorToSelection(selSpec, rawScheme) {
 
     applyColorStyle(viewer, intersect, reps, scheme, schemes, customScheme, carbonHex);
   }
-  viewer.render();
+  scheduleRender();
 }
 
 /**
@@ -259,7 +259,7 @@ export function applyLabel(selSpec, prop) {
 
   if (prop === 'clear') {
     clearAllLabels();
-    viewer.render();
+    scheduleRender();
     return;
   }
 
@@ -272,7 +272,7 @@ export function applyLabel(selSpec, prop) {
   for (const atom of atoms) {
     addTrackedLabel(String(atom[atomProp]), { x: atom.x, y: atom.y, z: atom.z });
   }
-  viewer.render();
+  scheduleRender();
 }
 
 /**
@@ -306,7 +306,7 @@ export function applyShow(selSpec, rep, obj) {
     viewer.addStyle(selSpec, repStyle(rep));
   }
 
-  viewer.render();
+  scheduleRender();
   notifyStateChange();
 }
 
@@ -498,7 +498,7 @@ export function applyHide(selSpec, rep, obj) {
     hideRepPreservingStyles(viewer, selSpec, rep, obj.representations);
     obj.representations.delete(rep);
   }
-  viewer.render();
+  scheduleRender();
   notifyStateChange();
 }
 
@@ -524,7 +524,7 @@ export function applyHideSelection(selSpec, rep) {
       hideRepPreservingStyles(viewer, intersect, rep, obj.representations);
     }
   }
-  viewer.render();
+  scheduleRender();
 }
 
 /**

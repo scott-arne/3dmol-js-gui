@@ -177,6 +177,7 @@ describe('viewer.js', () => {
       );
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.zoomTo).toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
       expect(model).toBe(mockModel);
     });
@@ -198,13 +199,14 @@ describe('viewer.js', () => {
   // loadModelData
   // -----------------------------------------------------------------------
   describe('loadModelData', () => {
-    it('adds model data, styles, zooms, and renders', () => {
+    it('adds model data, styles, zooms, and renders', async () => {
       const data = 'ATOM      1  N   ALA A   1';
       const model = loadModelData(data, 'pdb');
 
       expect(mockViewer.addModel).toHaveBeenCalledWith(data, 'pdb', { keepH: true, assignBonds: true });
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.zoomTo).toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
       expect(model).toBe(mockModel);
     });
@@ -219,9 +221,10 @@ describe('viewer.js', () => {
   // removeModel
   // -----------------------------------------------------------------------
   describe('removeModel', () => {
-    it('calls viewer.removeModel and render', () => {
+    it('calls viewer.removeModel and render', async () => {
       removeModel(mockModel);
       expect(mockViewer.removeModel).toHaveBeenCalledWith(mockModel);
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
   });
@@ -251,25 +254,27 @@ describe('viewer.js', () => {
   // orientView
   // -----------------------------------------------------------------------
   describe('orientView', () => {
-    it('falls back to simple zoomTo when fewer than 2 atoms', () => {
+    it('falls back to simple zoomTo when fewer than 2 atoms', async () => {
       mockViewer.selectedAtoms.mockReturnValueOnce([{ x: 0, y: 0, z: 0 }]);
       orientView();
 
       expect(mockViewer.zoomTo).toHaveBeenCalledWith({});
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
       // setView should NOT be called in the fallback path
       expect(mockViewer.setView).not.toHaveBeenCalled();
     });
 
-    it('falls back to zoomTo when zero atoms are returned', () => {
+    it('falls back to zoomTo when zero atoms are returned', async () => {
       mockViewer.selectedAtoms.mockReturnValueOnce([]);
       orientView({ chain: 'Z' });
 
       expect(mockViewer.zoomTo).toHaveBeenCalledWith({ chain: 'Z' });
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
 
-    it('performs PCA orientation when multiple atoms are provided', () => {
+    it('performs PCA orientation when multiple atoms are provided', async () => {
       const atoms = [
         { x: 0, y: 0, z: 0 },
         { x: 10, y: 0, z: 0 },
@@ -284,6 +289,7 @@ describe('viewer.js', () => {
       expect(mockViewer.zoomTo).toHaveBeenCalledWith({});
       expect(mockViewer.getView).toHaveBeenCalled();
       expect(mockViewer.setView).toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
 
       // The quaternion values should have been written into the view
@@ -315,7 +321,7 @@ describe('viewer.js', () => {
   // setupClickHandler
   // -----------------------------------------------------------------------
   describe('setupClickHandler', () => {
-    it('registers a click callback via setClickable and renders', () => {
+    it('registers a click callback via setClickable and renders', async () => {
       const callback = vi.fn();
       setupClickHandler(callback);
 
@@ -324,6 +330,7 @@ describe('viewer.js', () => {
         true,
         expect.any(Function)
       );
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
   });
@@ -339,7 +346,7 @@ describe('viewer.js', () => {
       vi.clearAllMocks();
     });
 
-    it('applyHighlight adds sphere shapes for small atom counts', () => {
+    it('applyHighlight adds sphere shapes for small atom counts', async () => {
       const atoms = [
         { x: 0, y: 0, z: 0 },
         { x: 1, y: 1, z: 1 },
@@ -355,10 +362,11 @@ describe('viewer.js', () => {
         color: '#FFFF00',
         alpha: 0.5,
       });
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
 
-    it('applyHighlight uses addStyle for large atom counts (>= 500)', () => {
+    it('applyHighlight uses addStyle for large atom counts (>= 500)', async () => {
       const bigAtomList = Array.from({ length: 500 }, (_, i) => ({
         x: i, y: 0, z: 0,
       }));
@@ -371,10 +379,11 @@ describe('viewer.js', () => {
         { sphere: { radius: 0.4, color: 'yellow', opacity: 0.35 } }
       );
       expect(mockViewer.addSphere).not.toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
 
-    it('clearHighlight removes sphere shapes when small selection was used', () => {
+    it('clearHighlight removes sphere shapes when small selection was used', async () => {
       // Apply a small highlight (single atom)
       const atoms = [{ x: 0, y: 0, z: 0 }];
       mockViewer.selectedAtoms.mockReturnValueOnce(atoms);
@@ -388,10 +397,11 @@ describe('viewer.js', () => {
       clearHighlight();
       expect(mockViewer.removeShape).toHaveBeenCalledTimes(1);
       expect(mockViewer.removeShape).toHaveBeenCalledWith(shape);
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
 
-    it('clearHighlight removes style-based highlight for large selections', () => {
+    it('clearHighlight removes style-based highlight for large selections', async () => {
       const bigAtomList = Array.from({ length: 600 }, (_, i) => ({
         x: i, y: 0, z: 0,
       }));
@@ -402,13 +412,15 @@ describe('viewer.js', () => {
 
       clearHighlight();
       expect(mockViewer.removeAllShapes).toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
 
-    it('clearHighlight is a no-op when no highlight is active', () => {
+    it('clearHighlight is a no-op when no highlight is active', async () => {
       // No highlight has been applied (beforeEach cleared any previous),
       // so calling clearHighlight should do nothing.
       clearHighlight();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.removeShape).not.toHaveBeenCalled();
       expect(mockViewer.removeAllShapes).not.toHaveBeenCalled();
       expect(mockViewer.render).not.toHaveBeenCalled();
@@ -476,7 +488,7 @@ describe('viewer.js', () => {
       expect(mockViewer.addLabel).not.toHaveBeenCalled();
     });
 
-    it('refreshLabels rebuilds all tracked labels with current style', () => {
+    it('refreshLabels rebuilds all tracked labels with current style', async () => {
       document.body.dataset.theme = 'light';
       addTrackedLabel('L1', { x: 0, y: 0, z: 0 });
       addTrackedLabel('L2', { x: 1, y: 1, z: 1 });
@@ -493,11 +505,13 @@ describe('viewer.js', () => {
       for (const call of mockViewer.addLabel.mock.calls) {
         expect(call[1].fontColor).toBe('#FFFFFF');
       }
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.render).toHaveBeenCalled();
     });
 
-    it('refreshLabels is a no-op when there are no tracked labels', () => {
+    it('refreshLabels is a no-op when there are no tracked labels', async () => {
       refreshLabels();
+      await new Promise(r => queueMicrotask(r));
       expect(mockViewer.removeAllLabels).not.toHaveBeenCalled();
       expect(mockViewer.addLabel).not.toHaveBeenCalled();
       expect(mockViewer.render).not.toHaveBeenCalled();

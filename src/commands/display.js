@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec, resolveSelectionByEntry } from './resolve-selection.js';
-import { getViewer, repStyle } from '../viewer.js';
+import { getViewer, repStyle, scheduleRender } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
 import { applyHide, applyHideSelection, hideRepPreservingStyles } from '../actions.js';
 
@@ -111,7 +111,7 @@ export function registerDisplayCommands(registry) {
             obj.representations.add(repName);
           }
         }
-        viewer.render();
+        scheduleRender();
         notifyStateChange();
         ctx.terminal.print(
           `Showing ${repName}${selStr ? ` for ${selStr}` : ''} (per-entry)`,
@@ -164,7 +164,7 @@ export function registerDisplayCommands(registry) {
         viewer.addStyle(selSpec, repStyle(repName));
       }
 
-      viewer.render();
+      scheduleRender();
       notifyStateChange();
 
       ctx.terminal.print(
@@ -202,7 +202,7 @@ export function registerDisplayCommands(registry) {
             }
           }
         }
-        viewer.render();
+        scheduleRender();
         notifyStateChange();
         ctx.terminal.print(
           `Hiding ${raw.toLowerCase()}${selStr ? ` for ${selStr}` : ''} (per-entry)`,
@@ -254,7 +254,7 @@ export function registerDisplayCommands(registry) {
       }
       obj.model.show();
       obj.visible = true;
-      getViewer().render();
+      scheduleRender();
       notifyStateChange();
       ctx.terminal.print(`Enabled "${name}"`, 'result');
     },
@@ -275,7 +275,7 @@ export function registerDisplayCommands(registry) {
       }
       obj.model.hide();
       obj.visible = false;
-      getViewer().render();
+      scheduleRender();
       notifyStateChange();
       ctx.terminal.print(`Disabled "${name}"`, 'result');
     },

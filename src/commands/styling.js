@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer, repStyle, repKey } from '../viewer.js';
+import { getViewer, repStyle, repKey, scheduleRender } from '../viewer.js';
 import { getState, notifyStateChange } from '../state.js';
 import { buildBfactorScheme, BFACTOR_DEFAULTS } from '../ui/color-swatches.js';
 
@@ -141,7 +141,7 @@ export function registerStylingCommands(registry) {
             cartoon: { colorscheme: { prop: 'b', gradient: 'roygb' } },
           });
         }
-        viewer.render();
+        scheduleRender();
         ctx.terminal.print(
           `Colored by ${colorInput}${selStr ? ` for ${selStr}` : ''}`,
           'result'
@@ -172,7 +172,7 @@ export function registerStylingCommands(registry) {
         styleObj[repKey(rep)] = { color: hex };
       }
       viewer.setStyle(selSpec, styleObj);
-      viewer.render();
+      scheduleRender();
 
       ctx.terminal.print(
         `Colored ${parts[0]}${selStr ? ` for ${selStr}` : ''}`,
@@ -238,7 +238,7 @@ export function registerStylingCommands(registry) {
       }
       const viewer = getViewer();
       viewer.setBackgroundColor(hex);
-      viewer.render();
+      scheduleRender();
 
       const state = getState();
       state.settings.bgColor = hex;
@@ -324,7 +324,7 @@ export function registerStylingCommands(registry) {
             `Unknown setting "${setting}". Valid: bg_color, stick_radius, sphere_scale, label_size`
           );
       }
-      viewer.render();
+      scheduleRender();
       notifyStateChange();
       ctx.terminal.print(`Set ${setting} = ${value}`, 'result');
     },
@@ -386,7 +386,7 @@ export function registerStylingCommands(registry) {
         );
       }
 
-      viewer.render();
+      scheduleRender();
       const target = entryName || 'all objects';
       ctx.terminal.print(`Set cartoon style to ${styleValue} for ${target}`, 'result');
     },
@@ -428,7 +428,7 @@ export function registerStylingCommands(registry) {
         }
         viewer.setStyle(selSpec, styleObj);
       }
-      viewer.render();
+      scheduleRender();
       notifyStateChange();
       ctx.terminal.print(
         `B-factor spectrum set to ${min}\u2013${max} (pastel blue \u2192 pastel red)`,

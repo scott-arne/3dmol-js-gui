@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, repKey, refreshLabels, orientView } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clearHighlight, applyHighlight, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -75,7 +75,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       } else {
         obj.model.hide();
       }
-      getViewer().render();
+      scheduleRender();
       sidebar.refresh(getState());
     }
   },
@@ -89,7 +89,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     switch (action) {
       case 'center':
         viewer.center({ model: obj.model });
-        viewer.render();
+        scheduleRender();
         terminal.print(`Centered on "${name}"`, 'result');
         break;
       case 'orient':
@@ -98,14 +98,14 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         break;
       case 'zoom':
         viewer.zoomTo({ model: obj.model });
-        viewer.render();
+        scheduleRender();
         terminal.print(`Zoomed to "${name}"`, 'result');
         break;
       case 'delete': {
         const modelAtoms = viewer.selectedAtoms({ model: obj.model });
         const removedIndices = modelAtoms.map(a => a.index);
         viewer.removeModel(obj.model);
-        viewer.render();
+        scheduleRender();
         removeObject(name);
         pruneSelections(removedIndices);
         // Clean up stale highlight and selected atoms
@@ -203,12 +203,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       }
       case 'center':
         getViewer().center(sel.spec);
-        getViewer().render();
+        scheduleRender();
         terminal.print(`Centered on "(${name})"`, 'result');
         break;
       case 'zoom':
         getViewer().zoomTo(sel.spec);
-        getViewer().render();
+        scheduleRender();
         terminal.print(`Zoomed to "(${name})"`, 'result');
         break;
     }
@@ -218,7 +218,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     const sel = getState().selections.get(name);
     if (!sel) return;
     getViewer().addStyle(sel.spec, repStyle(rep));
-    getViewer().render();
+    scheduleRender();
     terminal.print(`Showing ${rep} on "(${name})"`, 'result');
   },
 
@@ -276,7 +276,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         else obj.model.hide();
       }
     }
-    viewer.render();
+    scheduleRender();
     notifyStateChange();
   },
 
@@ -298,7 +298,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
             else obj.model.hide();
           }
         }
-        viewer.render();
+        scheduleRender();
         notifyStateChange();
         break;
       }
@@ -316,7 +316,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
             viewer.removeModel(obj.model);
           }
         }
-        viewer.render();
+        scheduleRender();
         removeGroup(name);
         pruneSelections(allRemovedIndices);
         clearHighlight();
@@ -653,12 +653,12 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     switch (action) {
       case 'center':
         v.center(state.activeSelection);
-        v.render();
+        scheduleRender();
         terminal.print('Centered on selection', 'result');
         break;
       case 'zoom':
         v.zoomTo(state.activeSelection);
-        v.render();
+        scheduleRender();
         terminal.print('Zoomed to selection', 'result');
         break;
     }
@@ -667,13 +667,13 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
   onToggleSidebar() {
     app.classList.toggle('sidebar-hidden');
     getViewer().resize();
-    getViewer().render();
+    scheduleRender();
   },
 
   onToggleTerminal() {
     app.classList.toggle('terminal-hidden');
     getViewer().resize();
-    getViewer().render();
+    scheduleRender();
   },
 
   onToggleCompact(isCompact) {
@@ -692,7 +692,7 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     }
 
     refreshLabels();
-    getViewer().render();
+    scheduleRender();
     notifyStateChange();
 
     try {
@@ -719,7 +719,7 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     if (!state.settings.userSetBgColor) {
       state.settings.bgColor = '#ffffff';
       getViewer().setBackgroundColor('#ffffff');
-      getViewer().render();
+      scheduleRender();
     }
   }
 }
@@ -924,12 +924,12 @@ createContextMenu(document.getElementById('viewer-container'), {
     switch (action) {
       case 'center':
         v.center(selSpec);
-        v.render();
+        scheduleRender();
         terminal.print('Centered on selection', 'result');
         break;
       case 'zoom':
         v.zoomTo(selSpec);
-        v.render();
+        scheduleRender();
         terminal.print('Zoomed to selection', 'result');
         break;
     }
@@ -947,7 +947,7 @@ createContextMenu(document.getElementById('viewer-container'), {
     const selSpec = getState().activeSelection;
     if (!selSpec) return;
     v.addStyle(selSpec, repStyle(rep));
-    v.render();
+    scheduleRender();
     terminal.print(`Showing ${rep} on selection`, 'result');
   },
 
@@ -1173,7 +1173,7 @@ if (init) {
         }
       }
     }
-    v.render();
+    scheduleRender();
   }
 
   // Configure UI visibility
@@ -1250,7 +1250,7 @@ if (init) {
     v.zoomTo();
   }
 
-  v.render();
+  scheduleRender();
   terminal.print(`Loaded ${molecules.length} molecule(s) from initialization`, 'info');
 } else {
   // --- Welcome message ---

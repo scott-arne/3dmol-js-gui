@@ -62,6 +62,7 @@ vi.mock('../src/viewer.js', () => ({
   removeModel: vi.fn(),
   clearHighlight: vi.fn(),
   applyHighlight: vi.fn(),
+  scheduleRender: vi.fn(),
 }));
 
 vi.mock('../src/state.js', async (importOriginal) => {
@@ -154,7 +155,7 @@ import { registerPresetCommands } from '../src/commands/preset.js';
 import { registerGroupingCommands } from '../src/commands/grouping.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
-import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, clearHighlight, applyHighlight, loadModelData } from '../src/viewer.js';
+import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, clearHighlight, applyHighlight, loadModelData, scheduleRender } from '../src/viewer.js';
 import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange, addGroup, ungroupGroup, reparentEntry, unparentEntry } from '../src/state.js';
 import { resolveSelection, getSelSpec, resolveSelectionByEntry } from '../src/commands/resolve-selection.js';
 import { parse } from '../src/parser/selection.pegjs';
@@ -213,7 +214,7 @@ describe('camera.js', () => {
     it('zooms to all atoms when no arguments', () => {
       registry.execute('zoom', ctx);
       expect(mockViewer.zoomTo).toHaveBeenCalledWith();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('Zoomed to selection');
     });
 
@@ -221,7 +222,7 @@ describe('camera.js', () => {
       registry.execute('zoom protein', ctx);
       expect(resolveSelection).toHaveBeenCalledWith('protein');
       expect(mockViewer.zoomTo).toHaveBeenCalledWith({ hetflag: false });
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
     });
   });
 
@@ -229,7 +230,7 @@ describe('camera.js', () => {
     it('centers on all atoms when no arguments', () => {
       registry.execute('center', ctx);
       expect(mockViewer.center).toHaveBeenCalledWith();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('Centered on selection');
     });
 
@@ -237,7 +238,7 @@ describe('camera.js', () => {
       registry.execute('center protein', ctx);
       expect(resolveSelection).toHaveBeenCalledWith('protein');
       expect(mockViewer.center).toHaveBeenCalledWith({ hetflag: false });
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
     });
   });
 
@@ -259,7 +260,7 @@ describe('camera.js', () => {
     it('rotates around x axis', () => {
       registry.execute('rotate x, 45', ctx);
       expect(mockViewer.rotate).toHaveBeenCalledWith(45, 'x');
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('45');
       expect(terminal.lines[0].msg).toContain('x');
     });
@@ -305,7 +306,7 @@ describe('camera.js', () => {
     it('translates by x and y', () => {
       registry.execute('translate 1, 2', ctx);
       expect(mockViewer.translate).toHaveBeenCalledWith(1, 2);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('1');
       expect(terminal.lines[0].msg).toContain('2');
     });
@@ -336,7 +337,7 @@ describe('camera.js', () => {
     it('sets clipping planes', () => {
       registry.execute('clip 0, 100', ctx);
       expect(mockViewer.setSlab).toHaveBeenCalledWith(0, 100);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('near=0');
       expect(terminal.lines[0].msg).toContain('far=100');
     });
@@ -367,7 +368,7 @@ describe('camera.js', () => {
     it('resets the view', () => {
       registry.execute('reset', ctx);
       expect(mockViewer.zoomTo).toHaveBeenCalledWith();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('View reset');
     });
   });
@@ -396,7 +397,7 @@ describe('display.js', () => {
     it('shows cartoon for all atoms', () => {
       registry.execute('show cartoon', ctx);
       expect(mockViewer.addStyle).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('Showing cartoon');
     });
@@ -404,14 +405,14 @@ describe('display.js', () => {
     it('shows sticks for a selection', () => {
       registry.execute('show sticks, resn ALA', ctx);
       expect(resolveSelection).toHaveBeenCalledWith('resn ALA');
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('stick');
       expect(terminal.lines[0].msg).toContain('resn ALA');
     });
 
     it('shows lines representation', () => {
       registry.execute('show lines', ctx);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('line');
     });
 
@@ -486,7 +487,7 @@ describe('display.js', () => {
       registry.execute('show line', ctx);
       // Should still render and add 'line' to representations
       expect(mockObj.representations.has('line')).toBe(true);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
     });
 
     it('rebuilds visual when adding stick while line is active (global)', () => {
@@ -573,7 +574,7 @@ describe('display.js', () => {
 
       registry.execute('hide cartoon', ctx);
       expect(mockViewer.setStyle).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
       expect(mockObj.representations.has('cartoon')).toBe(false);
       expect(terminal.lines[0].msg).toContain('cartoon');
@@ -697,7 +698,7 @@ describe('display.js', () => {
       registry.execute('enable mol', ctx);
       expect(mockModel.show).toHaveBeenCalled();
       expect(mockState.objects.get('mol').visible).toBe(true);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('Enabled');
       expect(terminal.lines[0].msg).toContain('mol');
@@ -724,7 +725,7 @@ describe('display.js', () => {
       registry.execute('disable mol', ctx);
       expect(mockModel.hide).toHaveBeenCalled();
       expect(mockState.objects.get('mol').visible).toBe(false);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('Disabled');
       expect(terminal.lines[0].msg).toContain('mol');
@@ -972,7 +973,7 @@ describe('editing.js', () => {
       registry.execute('remove resn ALA', ctx);
       expect(resolveSelection).toHaveBeenCalledWith('resn ALA');
       expect(mockViewer.setStyle).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(pruneSelections).toHaveBeenCalledWith([0, 1]);
       expect(terminal.lines[0].msg).toBe('Removed 2 atoms');
     });
@@ -1034,7 +1035,7 @@ describe('editing.js', () => {
 
       registry.execute('delete mol', ctx);
       expect(mockViewer.removeModel).toHaveBeenCalledWith(modelRef);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(removeObject).toHaveBeenCalledWith('mol');
       expect(pruneSelections).toHaveBeenCalledWith([0, 1]);
       expect(terminal.lines[0].msg).toContain('Deleted object');
@@ -1237,7 +1238,7 @@ describe('labeling.js', () => {
       expect(addTrackedLabel).toHaveBeenCalledTimes(2);
       expect(addTrackedLabel).toHaveBeenCalledWith('C', { x: 0, y: 0, z: 0 });
       expect(addTrackedLabel).toHaveBeenCalledWith('C', { x: 1, y: 1, z: 1 });
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('2 labels');
       expect(terminal.lines[0].msg).toContain('elem');
     });
@@ -1334,7 +1335,7 @@ describe('labeling.js', () => {
     it('removes all labels', () => {
       registry.execute('unlabel', ctx);
       expect(clearAllLabels).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('All labels removed');
     });
   });
@@ -1812,7 +1813,7 @@ describe('styling.js', () => {
     it('applies a named color (red)', () => {
       registry.execute('color red', ctx);
       expect(mockViewer.setStyle).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('red');
     });
 
@@ -2024,7 +2025,7 @@ describe('styling.js', () => {
     it('sets background color from named color', () => {
       registry.execute('bg_color white', ctx);
       expect(mockViewer.setBackgroundColor).toHaveBeenCalledWith('#FFFFFF');
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(mockState.settings.bgColor).toBe('#FFFFFF');
       expect(mockState.settings.userSetBgColor).toBe(true);
       expect(notifyStateChange).toHaveBeenCalled();
@@ -2064,7 +2065,7 @@ describe('styling.js', () => {
     it('sets stick_radius', () => {
       registry.execute('set stick_radius, 0.3', ctx);
       expect(mockState.settings.stickRadius).toBe(0.3);
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('stick_radius');
     });
@@ -2214,7 +2215,7 @@ describe('styling.js', () => {
       registry.execute('cartoon_style oval', ctx);
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.addStyle).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('oval');
       expect(terminal.lines[0].msg).toContain('all objects');
     });
@@ -2368,7 +2369,7 @@ describe('styling.js', () => {
       expect(mockState.settings.bfactorMax).toBe(50);
       expect(buildBfactorScheme).toHaveBeenCalledWith(10, 50);
       expect(mockViewer.setStyle).toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toContain('10');
       expect(terminal.lines[0].msg).toContain('50');

@@ -6,7 +6,7 @@
  * base selection spec to scope the effect.
  */
 
-import { repStyle, repKey } from './viewer.js';
+import { repStyle, repKey, scheduleRender } from './viewer.js';
 import { CHAIN_PALETTES } from './ui/color-swatches.js';
 import { SpatialGrid } from './spatial-grid.js';
 
@@ -120,7 +120,7 @@ export const PRESETS = {
       );
       applyElementByChain(viewer, merge(base, { hetflag: false }), ['cartoon']);
       hideNonpolarH(viewer, base);
-      viewer.render();
+      scheduleRender();
       return new Set(['cartoon', 'stick']);
     },
   },
@@ -161,7 +161,7 @@ export const PRESETS = {
       }
 
       hideNonpolarH(viewer, base);
-      viewer.render();
+      scheduleRender();
       return new Set(['cartoon', 'stick']);
     },
   },
@@ -175,7 +175,7 @@ export const PRESETS = {
       viewer.addStyle(hetSpec, repStyle('stick'));
       viewer.addStyle(hetSpec, { sphere: { scale: 0.3 } });
       hideNonpolarH(viewer, base);
-      viewer.render();
+      scheduleRender();
       return new Set(['stick', 'sphere']);
     },
   },

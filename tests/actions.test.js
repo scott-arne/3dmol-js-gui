@@ -17,6 +17,7 @@ vi.mock('../src/viewer.js', () => ({
   repKey: vi.fn((rep) => rep),
   addTrackedLabel: vi.fn(),
   clearAllLabels: vi.fn(),
+  scheduleRender: vi.fn(),
 }));
 
 vi.mock('../src/state.js', () => ({
@@ -44,7 +45,7 @@ import {
   applyViewPreset,
   getPresetLabel,
 } from '../src/actions.js';
-import { getViewer, addTrackedLabel, clearAllLabels, repStyle, repKey } from '../src/viewer.js';
+import { getViewer, addTrackedLabel, clearAllLabels, repStyle, repKey, scheduleRender } from '../src/viewer.js';
 import { getState, notifyStateChange } from '../src/state.js';
 import { applyPreset, PRESETS } from '../src/presets.js';
 
@@ -144,7 +145,7 @@ describe('applyColor', () => {
     applyColor(selSpec, reps, 'element');
 
     expect(mockViewer.setStyle).toHaveBeenCalled();
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
     // Verify the style object references the 'cartoon' key via repKey
     const styleArg = mockViewer.setStyle.mock.calls[0][1];
     expect(styleArg).toHaveProperty('cartoon');
@@ -157,7 +158,7 @@ describe('applyColor', () => {
     const [sel, styleObj] = mockViewer.setStyle.mock.calls[0];
     expect(sel).toEqual(selSpec);
     expect(styleObj.line).toHaveProperty('color', '#FF0000');
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
   });
 
   it('applies a raw hex color directly', () => {
@@ -280,7 +281,7 @@ describe('applyColorToSelection', () => {
     expect(mockViewer.setStyle.mock.calls[0][0]).toHaveProperty('model', 0);
     // Second call scoped to model 1
     expect(mockViewer.setStyle.mock.calls[1][0]).toHaveProperty('model', 1);
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
   });
 
   it('skips invisible objects', () => {
@@ -397,7 +398,7 @@ describe('applyLabel', () => {
     applyLabel({}, 'clear');
 
     expect(clearAllLabels).toHaveBeenCalled();
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
     // Should NOT call addTrackedLabel or selectedAtoms
     expect(addTrackedLabel).not.toHaveBeenCalled();
   });
@@ -413,7 +414,7 @@ describe('applyLabel', () => {
     expect(addTrackedLabel).toHaveBeenCalledTimes(2);
     expect(addTrackedLabel).toHaveBeenCalledWith('CA', { x: 1, y: 2, z: 3 });
     expect(addTrackedLabel).toHaveBeenCalledWith('CB', { x: 4, y: 5, z: 6 });
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
   });
 
   it('filters to CA atoms for prop="resn"', () => {
@@ -502,7 +503,7 @@ describe('applyShow', () => {
 
     expect(obj.representations.has('stick')).toBe(true);
     expect(mockViewer.addStyle).toHaveBeenCalledWith(selSpec, { stick: {} });
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
     expect(notifyStateChange).toHaveBeenCalled();
   });
 
@@ -514,7 +515,7 @@ describe('applyShow', () => {
     // Should NOT call addStyle or setStyle since sticks cover lines
     expect(mockViewer.addStyle).not.toHaveBeenCalled();
     expect(mockViewer.setStyle).not.toHaveBeenCalled();
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
     expect(notifyStateChange).toHaveBeenCalled();
   });
 
@@ -562,7 +563,7 @@ describe('applyHide', () => {
 
     expect(mockViewer.setStyle).toHaveBeenCalledWith(selSpec, {});
     expect(obj.representations.size).toBe(0);
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
     expect(notifyStateChange).toHaveBeenCalled();
   });
 
@@ -638,7 +639,7 @@ describe('applyHideSelection', () => {
     applyHideSelection({}, 'everything');
 
     expect(mockViewer.setStyle).toHaveBeenCalledWith({}, {});
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
   });
 
   it('iterates visible objects and rebuilds without the hidden rep', () => {
@@ -652,7 +653,7 @@ describe('applyHideSelection', () => {
     // obj1: setStyle({}) + addStyle for stick (cartoon skipped)
     // obj2: setStyle({}) + addStyle for line (cartoon not in set, line remains)
     expect(mockViewer.setStyle).toHaveBeenCalledTimes(2);
-    expect(mockViewer.render).toHaveBeenCalled();
+    expect(scheduleRender).toHaveBeenCalled();
   });
 
   it('skips invisible objects', () => {
@@ -820,7 +821,7 @@ describe('line/stick key collision', () => {
       expect(mockViewer.setStyle).not.toHaveBeenCalled();
       expect(mockViewer.addStyle).not.toHaveBeenCalled();
       // Still renders and notifies
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
       expect(notifyStateChange).toHaveBeenCalled();
     });
 
@@ -861,7 +862,7 @@ describe('line/stick key collision', () => {
       // No style changes — collision detected, line hidden behind sticks
       expect(mockViewer.setStyle).not.toHaveBeenCalled();
       expect(mockViewer.addStyle).not.toHaveBeenCalled();
-      expect(mockViewer.render).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
     });
 
     it('hiding stick preserves cartoon and downgrades stick to line params', () => {

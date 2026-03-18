@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer, orientView } from '../viewer.js';
+import { getViewer, orientView, scheduleRender } from '../viewer.js';
 
 /**
  * Register the camera commands (zoom, center, orient, rotate, translate, clip,
@@ -19,7 +19,7 @@ export function registerCameraCommands(registry) {
       } else {
         viewer.zoomTo();
       }
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print('Zoomed to selection', 'result');
     },
     usage: 'zoom [selection]',
@@ -36,7 +36,7 @@ export function registerCameraCommands(registry) {
       } else {
         viewer.center();
       }
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print('Centered on selection', 'result');
     },
     usage: 'center [selection]',
@@ -74,7 +74,7 @@ export function registerCameraCommands(registry) {
       }
       const viewer = getViewer();
       viewer.rotate(angle, axis);
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print(`Rotated ${angle}\u00B0 around ${axis} axis`, 'result');
     },
     usage: 'rotate <axis>, <angle>',
@@ -94,7 +94,7 @@ export function registerCameraCommands(registry) {
       }
       const viewer = getViewer();
       viewer.translate(x, y);
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print(`Translated by (${x}, ${y})`, 'result');
     },
     usage: 'translate <x>, <y>',
@@ -114,7 +114,7 @@ export function registerCameraCommands(registry) {
       }
       const viewer = getViewer();
       viewer.setSlab(near, far);
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print(`Clipping planes set: near=${near}, far=${far}`, 'result');
     },
     usage: 'clip <near>, <far>',
@@ -125,7 +125,7 @@ export function registerCameraCommands(registry) {
     handler: (args, ctx) => {
       const viewer = getViewer();
       viewer.zoomTo();
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print('View reset', 'result');
     },
     usage: 'reset',
@@ -160,7 +160,7 @@ export function registerCameraCommands(registry) {
       }
       const viewer = getViewer();
       viewer.setView(view);
-      viewer.render();
+      scheduleRender();
       ctx.terminal.print('View restored', 'result');
     },
     usage: 'set_view <json_array>',

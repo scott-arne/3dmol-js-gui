@@ -4,6 +4,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 // Mock dependencies before importing the module under test
 // ---------------------------------------------------------------------------
 
+const mockScheduleRender = vi.fn();
+
 vi.mock('../src/viewer.js', () => ({
   repStyle: (rep) => {
     if (rep === 'line') return { stick: { radius: 0.05 } };
@@ -11,6 +13,7 @@ vi.mock('../src/viewer.js', () => ({
     return { [rep]: {} };
   },
   repKey: (rep) => (rep === 'line' ? 'stick' : rep),
+  scheduleRender: (...args) => mockScheduleRender(...args),
 }));
 
 vi.mock('../src/ui/color-swatches.js', () => ({
@@ -42,6 +45,10 @@ function makeMockViewer(atoms = []) {
 // ---------------------------------------------------------------------------
 
 describe('presets.js', () => {
+  beforeEach(() => {
+    mockScheduleRender.mockClear();
+  });
+
   // -----------------------------------------------------------------------
   // PRESET_NAMES
   // -----------------------------------------------------------------------
@@ -96,7 +103,7 @@ describe('presets.js', () => {
 
       expect(viewer.setStyle).toHaveBeenCalled();
       expect(viewer.addStyle).toHaveBeenCalled();
-      expect(viewer.render).toHaveBeenCalled();
+      expect(mockScheduleRender).toHaveBeenCalled();
       expect(result).toBeInstanceOf(Set);
       expect(result.has('cartoon')).toBe(true);
       expect(result.has('stick')).toBe(true);
@@ -147,7 +154,7 @@ describe('presets.js', () => {
 
       expect(viewer.setStyle).toHaveBeenCalled();
       expect(viewer.addStyle).toHaveBeenCalled();
-      expect(viewer.render).toHaveBeenCalled();
+      expect(mockScheduleRender).toHaveBeenCalled();
       expect(result).toEqual(new Set(['cartoon', 'stick']));
     });
 
@@ -164,7 +171,7 @@ describe('presets.js', () => {
 
       const result = applyPreset('sites', viewer);
       expect(result).toEqual(new Set(['cartoon', 'stick']));
-      expect(viewer.render).toHaveBeenCalled();
+      expect(mockScheduleRender).toHaveBeenCalled();
     });
 
     it('scopes near-residue sticks with the base selection spec', () => {
@@ -212,7 +219,7 @@ describe('presets.js', () => {
       const sphereCall = viewer.addStyle.mock.calls[1];
       expect(sphereCall[1]).toEqual({ sphere: { scale: 0.3 } });
 
-      expect(viewer.render).toHaveBeenCalled();
+      expect(mockScheduleRender).toHaveBeenCalled();
       expect(result).toEqual(new Set(['stick', 'sphere']));
     });
   });

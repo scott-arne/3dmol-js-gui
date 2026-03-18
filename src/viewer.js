@@ -110,7 +110,7 @@ export function refreshLabels() {
   for (const lbl of trackedLabels) {
     viewer.addLabel(lbl.text, { position: lbl.position, ...style });
   }
-  viewer.render();
+  scheduleRender();
 }
 
 /** @type {object|null} The 3Dmol GLViewer instance. */
@@ -181,7 +181,7 @@ export function initViewer(container) {
       viewer.setView(view);
     }
 
-    viewer.render();
+    scheduleRender();
   }, { capture: true, passive: false });
 
   let resizeRAF = null;
@@ -189,7 +189,7 @@ export function initViewer(container) {
     if (resizeRAF) return;
     resizeRAF = requestAnimationFrame(() => {
       viewer.resize();
-      viewer.render();
+      scheduleRender();
       resizeRAF = null;
     });
   });
@@ -242,7 +242,7 @@ export async function fetchPDB(pdbId) {
   viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();
-  viewer.render();
+  scheduleRender();
 
   return model;
 }
@@ -262,7 +262,7 @@ export function loadModelData(data, format) {
   viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();
-  viewer.render();
+  scheduleRender();
 
   return model;
 }
@@ -274,7 +274,7 @@ export function loadModelData(data, format) {
  */
 export function removeModel(model) {
   viewer.removeModel(model);
-  viewer.render();
+  scheduleRender();
 }
 
 /**
@@ -406,7 +406,7 @@ export function orientView(selSpec) {
   const atoms = viewer.selectedAtoms(selSpec || {});
   if (atoms.length < 2) {
     viewer.zoomTo(selSpec || {});
-    viewer.render();
+    scheduleRender();
     return;
   }
 
@@ -457,7 +457,7 @@ export function orientView(selSpec) {
   view[6] = q[2];
   view[7] = q[3];
   viewer.setView(view);
-  viewer.render();
+  scheduleRender();
 }
 
 /** @type {Array<object>} Shape objects for the current highlight overlay. */
@@ -494,7 +494,7 @@ function registerClickable() {
 export function setupClickHandler(callback) {
   clickCallback = callback;
   registerClickable();
-  viewer.render();
+  scheduleRender();
 }
 
 /**
@@ -510,7 +510,7 @@ export function clearHighlight() {
     viewer.removeAllShapes();
     highlightUsesStyle = false;
     highlightStyleSpec = null;
-    viewer.render();
+    scheduleRender();
     return;
   }
   if (highlightShapes.length === 0) return;
@@ -518,7 +518,7 @@ export function clearHighlight() {
     viewer.removeShape(shape);
   }
   highlightShapes = [];
-  viewer.render();
+  scheduleRender();
 }
 
 /**
@@ -537,7 +537,7 @@ export function applyHighlight(selSpec) {
     viewer.addStyle(selSpec, { sphere: { radius: 0.4, color: 'yellow', opacity: 0.35 } });
     highlightUsesStyle = true;
     highlightStyleSpec = selSpec;
-    viewer.render();
+    scheduleRender();
     return;
   }
 
@@ -551,5 +551,5 @@ export function applyHighlight(selSpec) {
     });
     highlightShapes.push(shape);
   }
-  viewer.render();
+  scheduleRender();
 }
