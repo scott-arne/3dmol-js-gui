@@ -156,7 +156,7 @@ export const PRESETS = {
             if (nearResKeys.has(`${a.chain}:${a.resi}`)) nearIndices.push(a.index);
           }
           if (nearIndices.length > 0) {
-            applyElementByChain(viewer, { index: nearIndices }, ['line']);
+            applyElementByChain(viewer, merge(base, { index: nearIndices }), ['line']);
           }
         }
       }

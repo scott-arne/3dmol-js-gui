@@ -166,6 +166,30 @@ describe('presets.js', () => {
       expect(result).toEqual(new Set(['cartoon', 'stick']));
       expect(viewer.render).toHaveBeenCalled();
     });
+
+    it('scopes near-residue sticks with the base selection spec', () => {
+      const base = { model: 42 };
+      const atoms = [
+        { chain: 'A', resi: 1, elem: 'C', resn: 'ALA', hetflag: false, x: 0, y: 0, z: 0, index: 0 },
+        { chain: 'A', resi: 500, elem: 'C', resn: 'LIG', hetflag: true, x: 2, y: 0, z: 0, index: 1 },
+      ];
+      const viewer = makeMockViewer(atoms);
+      viewer.selectedAtoms.mockImplementation((spec) => {
+        if (spec && spec.hetflag === true) return atoms.filter(a => a.hetflag);
+        if (spec && spec.hetflag === false) return atoms.filter(a => !a.hetflag);
+        if (spec && spec.index) return atoms.filter(a => spec.index.includes(a.index));
+        return atoms;
+      });
+
+      applyPreset('sites', viewer, base);
+
+      // The near-residue applyElementByChain call should include the base model
+      // Look for an addStyle call with an index array that also has model: 42
+      const indexCalls = viewer.addStyle.mock.calls.filter(
+        ([sel]) => sel.index && sel.model === 42
+      );
+      expect(indexCalls.length).toBeGreaterThan(0);
+    });
   });
 
   // -----------------------------------------------------------------------
