@@ -422,6 +422,76 @@ describe('Sidebar tree-based rendering', () => {
     });
   });
 
+  describe('incremental tree updates', () => {
+    it('toggling visibility updates status without full rebuild', () => {
+      const objects = new Map([['mol1', makeObject()]]);
+      const tree = [{ type: 'object', name: 'mol1' }];
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      const firstRow = container.querySelector('[data-name="mol1"]');
+      expect(firstRow).toBeTruthy();
+
+      // Toggle visibility
+      objects.set('mol1', makeObject({ visible: false }));
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      const secondRow = container.querySelector('[data-name="mol1"]');
+      expect(secondRow).toBe(firstRow); // Same DOM element reused
+      expect(secondRow.classList.contains('dimmed')).toBe(true);
+    });
+
+    it('adding an entry inserts without destroying existing rows', () => {
+      const objects = new Map([['mol1', makeObject()]]);
+      const tree = [{ type: 'object', name: 'mol1' }];
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      const firstRow = container.querySelector('[data-name="mol1"]');
+
+      // Add second object
+      objects.set('mol2', makeObject());
+      tree.push({ type: 'object', name: 'mol2' });
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      expect(container.querySelector('[data-name="mol1"]')).toBe(firstRow);
+      expect(container.querySelector('[data-name="mol2"]')).toBeTruthy();
+    });
+
+    it('removing an entry removes only that row', () => {
+      const objects = new Map([['mol1', makeObject()], ['mol2', makeObject()]]);
+      const tree = [{ type: 'object', name: 'mol1' }, { type: 'object', name: 'mol2' }];
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      const mol1Row = container.querySelector('[data-name="mol1"]');
+
+      // Remove mol2
+      objects.delete('mol2');
+      tree.splice(1, 1);
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      expect(container.querySelector('[data-name="mol1"]')).toBe(mol1Row);
+      expect(container.querySelector('[data-name="mol2"]')).toBeNull();
+    });
+
+    it('group collapse/expand preserves child DOM elements', () => {
+      const objects = new Map([['mol1', makeObject()]]);
+      const tree = [{
+        type: 'group', name: 'grp1', collapsed: false,
+        children: [{ type: 'object', name: 'mol1' }],
+      }];
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      const childRow = container.querySelector('[data-name="mol1"]');
+      expect(childRow).toBeTruthy();
+
+      // Collapse group
+      tree[0].collapsed = true;
+      sidebar.refresh(makeTreeState({ objects, entryTree: tree }));
+
+      const childRowAfter = container.querySelector('[data-name="mol1"]');
+      expect(childRowAfter).toBe(childRow);
+    });
+  });
+
   describe('mixed tree', () => {
     it('renders groups, objects, hierarchies, and selections together', () => {
       const objects = new Map([

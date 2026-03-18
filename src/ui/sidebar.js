@@ -801,6 +801,272 @@ export function createSidebar(container, callbacks) {
     return false;
   }
 
+  /**
+   * Build a flat list of expected key descriptors from a tree node.
+   * Each descriptor has { key, type, node } for matching against existing DOM.
+   */
+  function addExpectedKeys(node, out) {
+    if (node.type === 'group') {
+      out.push({ key: `group:${node.name}`, type: 'group-header', node });
+      out.push({ key: `group-children:${node.name}`, type: 'group-children', node });
+    } else if (node.type === 'object' && node.children && node.children.length > 0) {
+      out.push({ key: `object:${node.name}`, type: 'hierarchy-parent', node });
+      out.push({ key: `hierarchy-children:${node.name}`, type: 'hierarchy-children', node });
+    } else if (node.type === 'object') {
+      out.push({ key: `object:${node.name}`, type: 'object', node });
+    } else if (node.type === 'selection') {
+      out.push({ key: `selection:${node.name}`, type: 'selection', node });
+    }
+  }
+
+  /**
+   * Get a stable key for a DOM element, or null if it has no key.
+   */
+  function getElementKey(el) {
+    if (el.dataset.kind && el.dataset.name) {
+      return `${el.dataset.kind}:${el.dataset.name}`;
+    }
+    if (el.dataset.groupChildren !== undefined) {
+      return `group-children:${el.dataset.groupChildren}`;
+    }
+    if (el.dataset.hierarchyChildren !== undefined) {
+      return `hierarchy-children:${el.dataset.hierarchyChildren}`;
+    }
+    if (el.classList && el.classList.contains('sidebar-separator')) {
+      return '__separator__';
+    }
+    return null;
+  }
+
+  /**
+   * Update an existing object row in place (visibility + status).
+   */
+  function updateObjectRow(row, obj) {
+    row.classList.toggle('dimmed', !obj.visible);
+    const status = row.querySelector('.sidebar-object-status');
+    if (status) status.classList.toggle('active', obj.visible);
+  }
+
+  /**
+   * Update an existing selection row in place (visibility + status).
+   */
+  function updateSelectionRow(row, sel) {
+    row.classList.toggle('dimmed', !sel.visible);
+    const status = row.querySelector('.sidebar-object-status');
+    if (status) status.classList.toggle('active', sel.visible);
+  }
+
+  /**
+   * Update a group header row in place (toggle icon).
+   */
+  function updateGroupHeader(header, node) {
+    const toggle = header.querySelector('.sidebar-group-toggle');
+    if (toggle) {
+      toggle.textContent = node.collapsed ? '\u25B6' : '\u25BC';
+    }
+  }
+
+  /**
+   * Update a group children container in place (collapsed class + recurse).
+   */
+  function updateGroupChildren(childContainer, node, state) {
+    childContainer.classList.toggle('collapsed', !!node.collapsed);
+    // Recursively diff the children
+    const childExpected = [];
+    if (node.children) {
+      for (const child of node.children) {
+        addExpectedKeys(child, childExpected);
+      }
+    }
+    diffChildren(childContainer, childExpected, state, null);
+  }
+
+  /**
+   * Update a hierarchy parent row in place (visibility + toggle icon).
+   */
+  function updateHierarchyParentRow(row, node, state) {
+    const obj = state.objects.get(node.name);
+    if (obj) {
+      updateObjectRow(row, obj);
+    }
+    const toggle = row.querySelector('.sidebar-hierarchy-toggle');
+    if (toggle) {
+      toggle.textContent = node.collapsed ? '[+]' : '[\u2212]';
+    }
+  }
+
+  /**
+   * Update a hierarchy children container in place (collapsed class + recurse).
+   */
+  function updateHierarchyChildren(childContainer, node, state) {
+    childContainer.classList.toggle('collapsed', !!node.collapsed);
+    const childExpected = [];
+    if (node.children) {
+      for (const child of node.children) {
+        addExpectedKeys(child, childExpected);
+      }
+    }
+    diffChildren(childContainer, childExpected, state, null);
+  }
+
+  /**
+   * Create a new DOM element for a given expected descriptor.
+   */
+  function createElementForDescriptor(desc, state) {
+    switch (desc.type) {
+      case 'group-header': {
+        // buildGroupNode returns a fragment with header + children container
+        // We only need the header here; children container is a separate descriptor
+        const frag = buildGroupNode(desc.node, state);
+        // First child of fragment is the header
+        return frag.firstChild;
+      }
+      case 'group-children': {
+        // Build the full group node and return just the children container
+        const frag = buildGroupNode(desc.node, state);
+        // After extracting header (first child), the next is children container
+        // But since we already extracted header in group-header, rebuild here
+        const childContainer = document.createElement('div');
+        childContainer.className = 'sidebar-group-children';
+        childContainer.dataset.groupChildren = desc.node.name;
+        if (desc.node.collapsed) {
+          childContainer.classList.add('collapsed');
+        }
+        if (desc.node.children) {
+          renderTreeNodes(desc.node.children, state, childContainer);
+        }
+        return childContainer;
+      }
+      case 'hierarchy-parent': {
+        const obj = state.objects.get(desc.node.name);
+        const row = buildObjectRow(desc.node.name, obj || { visible: true }, true);
+        row.dataset.kind = 'object';
+        row.dataset.name = desc.node.name;
+        const toggle = row.querySelector('.sidebar-hierarchy-toggle');
+        if (toggle) {
+          toggle.textContent = desc.node.collapsed ? '[+]' : '[\u2212]';
+        }
+        return row;
+      }
+      case 'hierarchy-children': {
+        const childContainer = document.createElement('div');
+        childContainer.className = 'sidebar-hierarchy-children';
+        childContainer.dataset.hierarchyChildren = desc.node.name;
+        if (desc.node.collapsed) {
+          childContainer.classList.add('collapsed');
+        }
+        if (desc.node.children) {
+          renderTreeNodes(desc.node.children, state, childContainer);
+        }
+        return childContainer;
+      }
+      case 'object': {
+        const obj = state.objects.get(desc.node.name);
+        if (!obj) return null;
+        const row = buildObjectRow(desc.node.name, obj, false);
+        row.dataset.kind = 'object';
+        row.dataset.name = desc.node.name;
+        return row;
+      }
+      case 'selection': {
+        const sel = state.selections.get(desc.node.name);
+        if (!sel) return null;
+        const row = buildSelectionRow(desc.node.name, sel);
+        row.dataset.kind = 'selection';
+        row.dataset.name = desc.node.name;
+        return row;
+      }
+      case 'separator': {
+        const sep = document.createElement('div');
+        sep.className = 'sidebar-separator';
+        return sep;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Perform a keyed diff of a container's children against an expected list.
+   * Reuses existing DOM elements where keys match, inserts new ones, removes stale ones.
+   *
+   * @param {HTMLElement} parent - The container element.
+   * @param {Array} expectedSequence - Array of { key, type, node } descriptors.
+   * @param {object} state - The application state.
+   * @param {HTMLElement|null} preserveFirst - Element to preserve as first child (e.g., resizeHandle).
+   */
+  function diffChildren(parent, expectedSequence, state, preserveFirst) {
+    // Index existing keyed children
+    const existingByKey = new Map();
+    for (const child of parent.children) {
+      if (child === preserveFirst) continue;
+      const key = getElementKey(child);
+      if (key) {
+        existingByKey.set(key, child);
+      }
+    }
+
+    // Track which keys we've seen
+    const visitedKeys = new Set();
+
+    // Walk expected sequence and reconcile
+    let cursor = preserveFirst ? preserveFirst.nextSibling : parent.firstChild;
+
+    for (const desc of expectedSequence) {
+      visitedKeys.add(desc.key);
+      const existing = existingByKey.get(desc.key);
+
+      if (existing) {
+        // Update in place
+        switch (desc.type) {
+          case 'object': {
+            const obj = state.objects.get(desc.node.name);
+            if (obj) updateObjectRow(existing, obj);
+            break;
+          }
+          case 'selection': {
+            const sel = state.selections.get(desc.node.name);
+            if (sel) updateSelectionRow(existing, sel);
+            break;
+          }
+          case 'group-header':
+            updateGroupHeader(existing, desc.node);
+            break;
+          case 'group-children':
+            updateGroupChildren(existing, desc.node, state);
+            break;
+          case 'hierarchy-parent':
+            updateHierarchyParentRow(existing, desc.node, state);
+            break;
+          case 'hierarchy-children':
+            updateHierarchyChildren(existing, desc.node, state);
+            break;
+          // separator: nothing to update
+        }
+
+        // Move into correct position if needed
+        if (existing !== cursor) {
+          parent.insertBefore(existing, cursor);
+        } else {
+          cursor = existing.nextSibling;
+        }
+      } else {
+        // Create new element and insert
+        const newEl = createElementForDescriptor(desc, state);
+        if (newEl) {
+          parent.insertBefore(newEl, cursor);
+        }
+      }
+    }
+
+    // Remove stale elements
+    for (const [key, el] of existingByKey) {
+      if (!visitedKeys.has(key)) {
+        el.remove();
+      }
+    }
+  }
+
   return {
     /**
      * Rebuild the sidebar object list from the current state.
@@ -815,25 +1081,27 @@ export function createSidebar(container, callbacks) {
       const hasTree = state.entryTree && state.entryTree.length > 0;
 
       if (hasTree) {
-        // --- Tree-based rendering (full rebuild) ---
-        container.innerHTML = '';
-        container.appendChild(resizeHandle);
-
+        // --- Tree-based rendering (incremental keyed diff) ---
         const tree = state.entryTree;
 
         // Split into non-selection and selection top-level nodes
         const objNodes = tree.filter(n => n.type !== 'selection');
         const selNodes = tree.filter(n => n.type === 'selection');
 
-        renderTreeNodes(objNodes, state, container);
-
+        // Build the flat sequence of expected top-level elements
+        const expectedSequence = [];
+        for (const node of objNodes) {
+          addExpectedKeys(node, expectedSequence);
+        }
         if (objNodes.length > 0 && selNodes.length > 0) {
-          const sep = document.createElement('div');
-          sep.className = 'sidebar-separator';
-          container.appendChild(sep);
+          expectedSequence.push({ key: '__separator__', type: 'separator' });
+        }
+        for (const node of selNodes) {
+          addExpectedKeys(node, expectedSequence);
         }
 
-        renderTreeNodes(selNodes, state, container);
+        // Perform incremental diff on this container's direct children
+        diffChildren(container, expectedSequence, state, resizeHandle);
       } else {
         // --- Legacy flat rendering (incremental update) ---
         const expectedNames = new Set();
