@@ -10,6 +10,7 @@ import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, clea
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
+import { resolveTheme } from './theme-detect.js';
 import {
   getState,
   onStateChange,
@@ -1097,19 +1098,26 @@ if (init) {
     }
   }
 
-  // Apply theme
-  if (init.theme === 'light' || init.theme === 'dark') {
-    const state = getState();
-    state.settings.theme = init.theme;
-    document.body.dataset.theme = init.theme === 'light' ? 'light' : '';
-    menubar.setTheme(init.theme);
-    if (!state.settings.userSetBgColor) {
-      const bgColor = init.theme === 'light' ? '#ffffff' : '#000000';
-      state.settings.bgColor = bgColor;
-      v.setBackgroundColor(bgColor);
+  // Apply theme (resolve "auto" to concrete value)
+  {
+    let resolvedTheme = init.theme;
+    if (resolvedTheme === 'auto') {
+      resolvedTheme = resolveTheme(resolvedTheme);
     }
-    refreshLabels();
-    notifyStateChange();
+
+    if (resolvedTheme === 'light' || resolvedTheme === 'dark') {
+      const state = getState();
+      state.settings.theme = resolvedTheme;
+      document.body.dataset.theme = resolvedTheme === 'light' ? 'light' : '';
+      menubar.setTheme(resolvedTheme);
+      if (!state.settings.userSetBgColor) {
+        const bgColor = resolvedTheme === 'light' ? '#ffffff' : '#000000';
+        state.settings.bgColor = bgColor;
+        v.setBackgroundColor(bgColor);
+      }
+      refreshLabels();
+      notifyStateChange();
+    }
   }
 
   // Set background color
