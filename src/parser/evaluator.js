@@ -5,6 +5,8 @@
  * (3Dmol.js-style atoms with serial, atom, resn, resi, chain, elem, ss, x, y, z).
  */
 
+import { SpatialGrid } from '../spatial-grid.js';
+
 // ---------------------------------------------------------------------------
 // Reference data sets
 // ---------------------------------------------------------------------------
@@ -328,12 +330,11 @@ export function evaluate(ast, atoms, context = {}) {
       const refAtoms = evaluate(ast.child, atoms, context);
       const refSet = new Set(refAtoms);
       const radius = ast.radius;
+      const grid = new SpatialGrid(refAtoms, radius);
       return atoms.filter(a => {
         if (refSet.has(a)) return true;
-        for (const ref of refAtoms) {
-          if (distance(a, ref) <= radius) return true;
-        }
-        return false;
+        const neighbors = grid.neighborsWithin(a.x, a.y, a.z, radius);
+        return neighbors.length > 0;
       });
     }
 
@@ -341,23 +342,21 @@ export function evaluate(ast, atoms, context = {}) {
       const refAtoms = evaluate(ast.child, atoms, context);
       const refSet = new Set(refAtoms);
       const radius = ast.radius;
+      const grid = new SpatialGrid(refAtoms, radius);
       return atoms.filter(a => {
         if (refSet.has(a)) return false;
-        for (const ref of refAtoms) {
-          if (distance(a, ref) <= radius) return true;
-        }
-        return false;
+        const neighbors = grid.neighborsWithin(a.x, a.y, a.z, radius);
+        return neighbors.length > 0;
       });
     }
 
     case 'beyond': {
       const refAtoms = evaluate(ast.child, atoms, context);
       const radius = ast.radius;
+      const grid = new SpatialGrid(refAtoms, radius);
       return atoms.filter(a => {
-        for (const ref of refAtoms) {
-          if (distance(a, ref) <= radius) return false;
-        }
-        return true;
+        const neighbors = grid.neighborsWithin(a.x, a.y, a.z, radius);
+        return neighbors.length === 0;
       });
     }
 
