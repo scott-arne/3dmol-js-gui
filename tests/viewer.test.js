@@ -105,7 +105,7 @@ describe('viewer.js', () => {
     it('returns thin-stick spec for "line"', () => {
       const style = repStyle('line');
       expect(style).toEqual({
-        stick: { radius: 0.05, doubleBondScaling: 1.5, tripleBondScaling: 1.0 },
+        stick: { radius: 0.05, doubleBondScaling: 3.0, tripleBondScaling: 3.0 },
       });
       // _useStick flag should be stripped
       expect(style.stick._useStick).toBeUndefined();
@@ -171,7 +171,7 @@ describe('viewer.js', () => {
       expect(mockViewer.addModel).toHaveBeenCalledWith(
         'ATOM      1  N   ALA A   1',
         'pdb',
-        { keepH: true }
+        { keepH: true, assignBonds: true }
       );
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.zoomTo).toHaveBeenCalled();
@@ -200,7 +200,7 @@ describe('viewer.js', () => {
       const data = 'ATOM      1  N   ALA A   1';
       const model = loadModelData(data, 'pdb');
 
-      expect(mockViewer.addModel).toHaveBeenCalledWith(data, 'pdb', { keepH: true });
+      expect(mockViewer.addModel).toHaveBeenCalledWith(data, 'pdb', { keepH: true, assignBonds: true });
       expect(mockViewer.setStyle).toHaveBeenCalled();
       expect(mockViewer.zoomTo).toHaveBeenCalled();
       expect(mockViewer.render).toHaveBeenCalled();
@@ -209,7 +209,7 @@ describe('viewer.js', () => {
 
     it('accepts alternate format strings', () => {
       loadModelData('data', 'sdf');
-      expect(mockViewer.addModel).toHaveBeenCalledWith('data', 'sdf', { keepH: true });
+      expect(mockViewer.addModel).toHaveBeenCalledWith('data', 'sdf', { keepH: true, assignBonds: true });
     });
   });
 

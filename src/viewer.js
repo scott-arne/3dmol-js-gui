@@ -19,7 +19,7 @@
  * due to vanishing browser support."
  */
 const REP_DEFAULTS = {
-  line: { _useStick: true, radius: 0.05, doubleBondScaling: 1.5, tripleBondScaling: 1.0 },
+  line: { _useStick: true, radius: 0.05, doubleBondScaling: 3.0, tripleBondScaling: 3.0 },
   stick: { radius: 0.25 },
 };
 
@@ -218,7 +218,7 @@ export async function fetchPDB(pdbId) {
   }
 
   const data = await response.text();
-  const model = viewer.addModel(data, 'pdb', { keepH: true });
+  const model = viewer.addModel(data, 'pdb', { keepH: true, assignBonds: true });
   viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();
@@ -238,7 +238,7 @@ export async function fetchPDB(pdbId) {
  * @returns {object} The 3Dmol model that was added.
  */
 export function loadModelData(data, format) {
-  const model = viewer.addModel(data, format, { keepH: true });
+  const model = viewer.addModel(data, format, { keepH: true, assignBonds: true });
   viewer.setStyle({ model: model }, repStyle('line'));
   viewer.zoomTo();
   registerClickable();

@@ -971,7 +971,7 @@ if (init) {
         // Group entry: { group: 'name', entries: [{name, data, format}, ...] }
         const memberNames = [];
         for (const entry of mol.entries) {
-          const model = v.addModel(entry.data, entry.format, { keepH: true });
+          const model = v.addModel(entry.data, entry.format, { keepH: true, assignBonds: true });
           const modelIndex = model.getID ? model.getID() : null;
           const entryName = addObject(entry.name || entry.format, model, modelIndex);
           memberNames.push(entryName);
@@ -985,7 +985,7 @@ if (init) {
         }
       } else if (mol.children && Array.isArray(mol.children)) {
         // Hierarchy entry: { name, data, format, children: [{name, data, format}, ...] }
-        const model = v.addModel(mol.data, mol.format, { keepH: true });
+        const model = v.addModel(mol.data, mol.format, { keepH: true, assignBonds: true });
         const modelIndex = model.getID ? model.getID() : null;
         const parentName = addObject(mol.name || mol.format, model, modelIndex);
         if (mol.disabled) {
@@ -993,7 +993,7 @@ if (init) {
           if (obj) { obj.visible = false; model.hide(); }
         }
         for (const child of mol.children) {
-          const childModel = v.addModel(child.data, child.format, { keepH: true });
+          const childModel = v.addModel(child.data, child.format, { keepH: true, assignBonds: true });
           const childModelIndex = childModel.getID ? childModel.getID() : null;
           const childName = addObject(child.name || child.format, childModel, childModelIndex);
           if (child.disabled) {
@@ -1004,7 +1004,7 @@ if (init) {
         }
       } else {
         // Simple flat entry
-        const model = v.addModel(mol.data, mol.format, { keepH: true });
+        const model = v.addModel(mol.data, mol.format, { keepH: true, assignBonds: true });
         const modelIndex = model.getID ? model.getID() : null;
         const name = addObject(mol.name || mol.format, model, modelIndex);
         if (mol.disabled) {
