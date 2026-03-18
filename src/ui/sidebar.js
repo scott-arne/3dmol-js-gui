@@ -396,6 +396,36 @@ const BUTTON_MENUS = {
 export function createSidebar(container, callbacks) {
   container.classList.add('sidebar');
 
+  // --- Resize handle ---
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'sidebar-resize-handle';
+  container.appendChild(resizeHandle);
+
+  const MIN_WIDTH = 160;
+  const MAX_WIDTH = 600;
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    resizeHandle.classList.add('active');
+    const startX = e.clientX;
+    const startWidth = container.getBoundingClientRect().width;
+
+    function onMouseMove(ev) {
+      const delta = startX - ev.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+      document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+    }
+
+    function onMouseUp() {
+      resizeHandle.classList.remove('active');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+
   /**
    * Attach A,S,H,L,C buttons for an object row.
    */
@@ -750,6 +780,7 @@ export function createSidebar(container, callbacks) {
       if (hasTree) {
         // --- Tree-based rendering (full rebuild) ---
         container.innerHTML = '';
+        container.appendChild(resizeHandle);
 
         const tree = state.entryTree;
 

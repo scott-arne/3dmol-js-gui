@@ -16,6 +16,7 @@
   --terminal-text: #a0d0a0;
   --dropdown-bg: #3a3a3a;
   --error: #ff6b6b;
+  --sidebar-width: 240px;
 }
 
 /* --- Light Theme Overrides --- */
@@ -97,7 +98,7 @@ body {
     "viewer   sidebar"
     "terminal terminal";
   grid-template-rows: 28px 1fr auto;
-  grid-template-columns: 1fr 240px;
+  grid-template-columns: 1fr var(--sidebar-width);
 }
 
 #app.sidebar-hidden {
@@ -322,7 +323,38 @@ body {
   background: var(--panel-bg);
   border-left: 1px solid var(--border);
   overflow-y: auto;
-  padding: 4px;
+  padding: 4px 4px 4px 10px;
+  position: relative;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-resize-handle::after {
+  content: '⋮';
+  font-size: 14px;
+  color: var(--inactive);
+  pointer-events: none;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle.active {
+  background: var(--border);
+}
+
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.active::after {
+  color: var(--text);
 }
 
 #app.sidebar-hidden .sidebar {
