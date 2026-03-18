@@ -13,7 +13,6 @@ function resetState() {
   state.selections.clear();
   state.entryTree.length = 0;
   state._listeners.length = 0;
-  state.activeSelection = null;
   state.selectionMode = 'atoms';
 }
 
