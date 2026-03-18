@@ -2,6 +2,7 @@ import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
 import { getViewer } from '../viewer.js';
 import { getState, addSelection } from '../state.js';
+import { renderHighlight } from '../highlight.js';
 
 /**
  * Resolve a selection expression and return the spec and atom count.
@@ -34,6 +35,8 @@ export function registerSelectionCommands(registry) {
 
       const { spec, atomCount } = resolveAndCount(expression);
       addSelection('sele', expression, spec, atomCount);
+      const atoms = getViewer().selectedAtoms(spec);
+      renderHighlight(atoms);
       ctx.terminal.print(`(sele): ${atomCount} atoms`, 'result');
     },
     usage: 'sele <expression>',

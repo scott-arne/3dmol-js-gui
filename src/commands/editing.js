@@ -2,7 +2,7 @@ import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
 import { getViewer, scheduleRender } from '../viewer.js';
 import { getState, removeObject, removeSelection, renameSelection, renameObject, renameGroup, pruneSelections, findTreeNode, removeGroup, collectEntryNames } from '../state.js';
-import { clearHighlight, applyHighlight } from '../viewer.js';
+import { renderHighlight, clearHighlight } from '../highlight.js';
 
 /**
  * Register the editing commands (remove, delete) into the given command
@@ -41,9 +41,12 @@ export function registerEditingCommands(registry) {
       // Prune removed atoms from all stored selections
       const removedIndices = atoms.map(a => a.index);
       pruneSelections(removedIndices);
-      clearHighlight();
-      if (getState().activeSelection) {
-        applyHighlight(getState().activeSelection);
+      const sele = getState().selections.get('sele');
+      if (sele && sele.visible) {
+        const atoms = getViewer().selectedAtoms(sele.spec);
+        renderHighlight(atoms);
+      } else {
+        clearHighlight();
       }
 
       ctx.terminal.print(`Removed ${atoms.length} atoms`, 'result');
@@ -86,9 +89,12 @@ export function registerEditingCommands(registry) {
         scheduleRender();
         removeGroup(name);
         pruneSelections(allRemovedIndices);
-        clearHighlight();
-        if (getState().activeSelection) {
-          applyHighlight(getState().activeSelection);
+        const sele = getState().selections.get('sele');
+        if (sele && sele.visible) {
+          const atoms = getViewer().selectedAtoms(sele.spec);
+          renderHighlight(atoms);
+        } else {
+          clearHighlight();
         }
 
         ctx.terminal.print(`Deleted group "${name}" (${entries.objects.length} objects, ${entries.selections.length} selections)`, 'result');
@@ -129,9 +135,12 @@ export function registerEditingCommands(registry) {
 
       // Prune deleted atoms from all stored selections
       pruneSelections(allRemovedIndices);
-      clearHighlight();
-      if (getState().activeSelection) {
-        applyHighlight(getState().activeSelection);
+      const sele = getState().selections.get('sele');
+      if (sele && sele.visible) {
+        const atoms = getViewer().selectedAtoms(sele.spec);
+        renderHighlight(atoms);
+      } else {
+        clearHighlight();
       }
 
       ctx.terminal.print(`Deleted object "${name}"`, 'result');

@@ -29,7 +29,6 @@ const mockViewer = {
 const mockState = {
   objects: new Map(),
   selections: new Map(),
-  activeSelection: null,
   selectionMode: 'atoms',
   settings: {
     bgColor: '#000000',
@@ -60,9 +59,12 @@ vi.mock('../src/viewer.js', () => ({
   addTrackedLabel: vi.fn(),
   clearAllLabels: vi.fn(),
   removeModel: vi.fn(),
-  clearHighlight: vi.fn(),
-  applyHighlight: vi.fn(),
   scheduleRender: vi.fn(),
+}));
+
+vi.mock('../src/highlight.js', () => ({
+  renderHighlight: vi.fn(),
+  clearHighlight: vi.fn(),
 }));
 
 vi.mock('../src/state.js', async (importOriginal) => {
@@ -155,7 +157,8 @@ import { registerPresetCommands } from '../src/commands/preset.js';
 import { registerGroupingCommands } from '../src/commands/grouping.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
-import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, clearHighlight, applyHighlight, loadModelData, scheduleRender } from '../src/viewer.js';
+import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, loadModelData, scheduleRender } from '../src/viewer.js';
+import { renderHighlight, clearHighlight as hlClearHighlight } from '../src/highlight.js';
 import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange, addGroup, ungroupGroup, reparentEntry, unparentEntry } from '../src/state.js';
 import { resolveSelection, getSelSpec, resolveSelectionByEntry } from '../src/commands/resolve-selection.js';
 import { parse } from '../src/parser/selection.pegjs';
@@ -185,7 +188,6 @@ function resetMocks() {
   mockState.objects.clear();
   mockState.selections.clear();
   mockState.entryTree.length = 0;
-  mockState.activeSelection = null;
   mockState.selectionMode = 'atoms';
   mockState.settings = {
     bgColor: '#000000',
@@ -997,13 +999,13 @@ describe('editing.js', () => {
       expect(terminal.lines[0].msg).toBe('Removed 1 atoms');
     });
 
-    it('calls clearHighlight and applyHighlight after remove when activeSelection is set', () => {
+    it('re-renders highlight after remove when sele is visible', () => {
       mockViewer.selectedAtoms.mockReturnValueOnce([{ index: 0, serial: 1 }]);
-      mockState.activeSelection = { resn: ['ALA'] };
+      mockState.selections.set('sele', { spec: { resn: ['ALA'] }, visible: true, atomCount: 1 });
+      mockViewer.selectedAtoms.mockReturnValueOnce([{ x: 1, y: 2, z: 3 }]);
 
       registry.execute('remove resn ALA', ctx);
-      expect(clearHighlight).toHaveBeenCalled();
-      expect(applyHighlight).toHaveBeenCalledWith({ resn: ['ALA'] });
+      expect(renderHighlight).toHaveBeenCalled();
     });
   });
 
@@ -1059,15 +1061,13 @@ describe('editing.js', () => {
       expect(removeObject).not.toHaveBeenCalled();
     });
 
-    it('calls clearHighlight and applyHighlight after delete when activeSelection is set', () => {
+    it('clears highlight after delete when no sele is visible', () => {
       const modelRef = {};
       mockState.objects.set('mol', { model: modelRef, visible: true, representations: new Set() });
       mockViewer.selectedAtoms.mockReturnValueOnce([]);
-      mockState.activeSelection = { chain: 'A' };
 
       registry.execute('delete mol', ctx);
-      expect(clearHighlight).toHaveBeenCalled();
-      expect(applyHighlight).toHaveBeenCalledWith({ chain: 'A' });
+      expect(hlClearHighlight).toHaveBeenCalled();
     });
   });
 
