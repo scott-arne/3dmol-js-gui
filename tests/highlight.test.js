@@ -1,6 +1,11 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-// Mock viewer
+// Mock viewer.js module (highlight.js imports scheduleRender)
+vi.mock('../src/viewer.js', () => ({
+  scheduleRender: vi.fn(),
+}));
+
+// Mock viewer instance
 const mockViewer = {
   addCustom: vi.fn(() => ({ id: 1 })),
   removeShape: vi.fn(),

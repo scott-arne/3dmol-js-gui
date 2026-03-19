@@ -469,14 +469,24 @@ export function orientView(selSpec) {
 /** @type {function|null} Stored click callback for re-registration after model loads. */
 let clickCallback = null;
 
+/** @type {object} Selection spec for clickable atoms (default: all). */
+let clickableSpec = {};
+
 /**
- * Re-register the stored click callback on all atoms.
- * Called internally after addModel to ensure new atoms are clickable.
+ * Re-register the stored click callback using the current clickable spec.
+ * Called internally after addModel and after visibility changes.
  */
 function registerClickable() {
   if (clickCallback && viewer) {
-    viewer.setClickable({}, true, function (atom, viewerInstance, event) {
-      clickCallback(atom, viewerInstance, event);
+    // Clear clickable flag on ALL atoms first, then enable only the target set.
+    // setClickable only adds/removes the flag — it doesn't reset previous state.
+    viewer.setClickable({}, false, function() {});
+    viewer.setClickable(clickableSpec, true, function (atom, viewerInstance, event) {
+      try {
+        clickCallback(atom, viewerInstance, event);
+      } catch (e) {
+        console.error('Click handler error:', e);
+      }
     });
   }
 }
@@ -490,6 +500,22 @@ function registerClickable() {
  */
 export function setupClickHandler(callback) {
   clickCallback = callback;
+  registerClickable();
+  scheduleRender();
+}
+
+/**
+ * Update which atoms are clickable based on visible models.
+ * Call this after any model visibility change (show/hide).
+ *
+ * @param {object[]} visibleModels - Array of 3Dmol model objects that are currently visible.
+ */
+export function updateClickableModels(visibleModels) {
+  if (visibleModels.length === 0) {
+    clickableSpec = { model: -1 };
+  } else {
+    clickableSpec = { model: visibleModels };
+  }
   registerClickable();
   scheduleRender();
 }

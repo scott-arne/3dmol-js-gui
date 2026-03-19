@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
+import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
 import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
@@ -66,6 +66,15 @@ initHighlight(viewer);
 function getActiveSeleSpec() {
   const sele = getState().selections.get('sele');
   return (sele && sele.visible) ? sele.spec : null;
+}
+
+function refreshClickableModels() {
+  const state = getState();
+  const visible = [];
+  for (const [, obj] of state.objects) {
+    if (obj.visible) visible.push(obj.model);
+  }
+  updateClickableModels(visible);
 }
 
 // --- Create the terminal ---
@@ -780,43 +789,67 @@ function buildModeSelection(atom, state) {
 }
 
 function handleViewerClick(atom, viewerInstance, event) {
-  // Ignore clicks on atoms belonging to hidden objects
-  const preState = getState();
-  for (const [, obj] of preState.objects) {
-    const modelId = obj.model.getID ? obj.model.getID() : obj.modelIndex;
-    if (modelId === atom.model && !obj.visible) return;
-  }
-
   atomClickedThisCycle = true;
   const state = getState();
   const mode = state.selectionMode;
   const isShift = event && event.shiftKey;
 
   const { selSpec: clickSpec, description } = buildModeSelection(atom, state);
-  const matchedAtoms = viewerInstance.selectedAtoms(clickSpec);
-  const newIndices = new Set(matchedAtoms.map(a => a.index));
+  const newAtoms = viewerInstance.selectedAtoms(clickSpec);
 
-  let combinedIndices;
+  let allAtoms;
 
   if (isShift) {
     const existingSele = state.selections.get('sele');
     if (existingSele && existingSele.visible) {
       const existingAtoms = viewerInstance.selectedAtoms(existingSele.spec);
-      combinedIndices = new Set(existingAtoms.map(a => a.index));
-      for (const idx of newIndices) combinedIndices.add(idx);
+      // Merge by unique (model, index) to avoid cross-model collisions
+      const seen = new Set(existingAtoms.map(a => `${a.model}:${a.index}`));
+      allAtoms = [...existingAtoms];
+      for (const a of newAtoms) {
+        const key = `${a.model}:${a.index}`;
+        if (!seen.has(key)) { allAtoms.push(a); seen.add(key); }
+      }
     } else {
-      combinedIndices = newIndices;
+      allAtoms = newAtoms;
     }
   } else {
-    combinedIndices = newIndices;
+    allAtoms = newAtoms;
   }
 
-  const combinedSpec = { index: [...combinedIndices] };
-  const atomCount = combinedIndices.size;
+  // Build a spec using serial numbers scoped per model to avoid cross-model matches
+  const serialsByModel = new Map();
+  for (const a of allAtoms) {
+    let serials = serialsByModel.get(a.model);
+    if (!serials) { serials = []; serialsByModel.set(a.model, serials); }
+    serials.push(a.serial);
+  }
+  let combinedSpec;
+  if (serialsByModel.size === 1) {
+    const [modelId, serials] = [...serialsByModel.entries()][0];
+    // Find the model object for this ID
+    let modelObj;
+    for (const [, obj] of state.objects) {
+      const id = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+      if (id === modelId) { modelObj = obj.model; break; }
+    }
+    combinedSpec = modelObj ? { serial: serials, model: modelObj } : { serial: serials };
+  } else {
+    // Multi-model selection: use OR of per-model specs
+    const orSpecs = [];
+    for (const [modelId, serials] of serialsByModel) {
+      let modelObj;
+      for (const [, obj] of state.objects) {
+        const id = obj.model.getID ? obj.model.getID() : obj.modelIndex;
+        if (id === modelId) { modelObj = obj.model; break; }
+      }
+      orSpecs.push(modelObj ? { serial: serials, model: modelObj } : { serial: serials });
+    }
+    combinedSpec = { or: orSpecs };
+  }
 
+  const atomCount = allAtoms.length;
   addSelection('sele', 'click selection', combinedSpec, atomCount);
-
-  const allAtoms = viewerInstance.selectedAtoms(combinedSpec);
   renderHighlight(allAtoms);
 
   const verb = isShift ? 'Added' : 'Selected';
@@ -966,8 +999,9 @@ terminal.setCompleter((prefix, isFirstWord) => {
   return names.filter(n => n.toLowerCase().startsWith(lower)).sort();
 });
 
-// --- Register state change listener ---
+// --- Register state change listeners ---
 onStateChange(() => sidebar.refresh(getState()));
+onStateChange(() => refreshClickableModels());
 
 // --- Initialization / Quick-start ---
 let dismissQuickstart = null;
@@ -1038,6 +1072,7 @@ if (init) {
 
   // Re-register click handler now that all models are loaded
   setupClickHandler(handleViewerClick);
+  refreshClickableModels();
 
   // Apply operations in order (styles, presets, colors)
   v.setStyle({}, {});

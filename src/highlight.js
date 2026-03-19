@@ -6,9 +6,11 @@
  * both creation and removal regardless of atom count.
  */
 
-const HIGHLIGHT_RADIUS = 0.3;
+import { scheduleRender } from './viewer.js';
+
+const HIGHLIGHT_RADIUS = 0.45;
 const HIGHLIGHT_COLOR = '#FFFF00';
-const HIGHLIGHT_OPACITY = 0.4;
+const HIGHLIGHT_OPACITY = 0.75;
 
 // ---------------------------------------------------------------------------
 // Icosphere template (subdivided icosahedron, 42 vertices, 80 faces)
@@ -100,6 +102,7 @@ export function clearHighlight() {
   if (currentShape === null) return;
   if (viewer) viewer.removeShape(currentShape);
   currentShape = null;
+  scheduleRender();
 }
 
 export function renderHighlight(atoms) {
@@ -146,5 +149,7 @@ export function renderHighlight(atoms) {
     normalArr,
     faceArr,
     color: HIGHLIGHT_COLOR,
+    opacity: HIGHLIGHT_OPACITY,
   });
+  scheduleRender();
 }
