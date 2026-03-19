@@ -788,30 +788,24 @@ function buildModeSelection(atom, state) {
   return { selSpec, description };
 }
 
-function handleViewerClick(atom, viewerInstance, event) {
+function handleViewerClick(atom, viewerInstance) {
   atomClickedThisCycle = true;
   const state = getState();
   const mode = state.selectionMode;
-  const isShift = event && event.shiftKey;
 
   const { selSpec: clickSpec, description } = buildModeSelection(atom, state);
   const newAtoms = viewerInstance.selectedAtoms(clickSpec);
 
+  // If sele exists and is enabled, accumulate; otherwise start fresh
   let allAtoms;
-
-  if (isShift) {
-    const existingSele = state.selections.get('sele');
-    if (existingSele && existingSele.visible) {
-      const existingAtoms = viewerInstance.selectedAtoms(existingSele.spec);
-      // Merge by unique (model, index) to avoid cross-model collisions
-      const seen = new Set(existingAtoms.map(a => `${a.model}:${a.index}`));
-      allAtoms = [...existingAtoms];
-      for (const a of newAtoms) {
-        const key = `${a.model}:${a.index}`;
-        if (!seen.has(key)) { allAtoms.push(a); seen.add(key); }
-      }
-    } else {
-      allAtoms = newAtoms;
+  const existingSele = state.selections.get('sele');
+  if (existingSele && existingSele.visible) {
+    const existingAtoms = viewerInstance.selectedAtoms(existingSele.spec);
+    const seen = new Set(existingAtoms.map(a => `${a.model}:${a.index}`));
+    allAtoms = [...existingAtoms];
+    for (const a of newAtoms) {
+      const key = `${a.model}:${a.index}`;
+      if (!seen.has(key)) { allAtoms.push(a); seen.add(key); }
     }
   } else {
     allAtoms = newAtoms;
@@ -852,8 +846,7 @@ function handleViewerClick(atom, viewerInstance, event) {
   addSelection('sele', 'click selection', combinedSpec, atomCount);
   renderHighlight(allAtoms);
 
-  const verb = isShift ? 'Added' : 'Selected';
-  terminal.print(`${verb} ${description} [mode: ${mode}, ${atomCount} atom${atomCount !== 1 ? 's' : ''} total]`, 'info');
+  terminal.print(`Added ${description} [mode: ${mode}, ${atomCount} atom${atomCount !== 1 ? 's' : ''} total]`, 'info');
 }
 
 // Register the click callback — viewer.js stores it and automatically
@@ -882,6 +875,8 @@ setupClickHandler(handleViewerClick);
 
     setTimeout(() => {
       if (!atomClickedThisCycle) {
+        // Shift+click on background: do nothing (preserve sele)
+        if (e.shiftKey) { atomClickedThisCycle = false; return; }
         const sele = getState().selections.get('sele');
         if (sele && sele.visible) {
           toggleSelectionVisibility('sele');
