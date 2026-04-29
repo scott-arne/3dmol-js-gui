@@ -369,7 +369,7 @@ describe('Sidebar', () => {
       const items = popup.querySelectorAll('.popup-menu-item');
       const labels = Array.from(items).map((el) => el.textContent);
       expect(labels).toContain('Rename...');
-      expect(labels).toContain('Duplicate');
+      expect(labels).not.toContain('Duplicate');
       expect(labels).toContain('Delete');
       expect(labels).toContain('Center');
       expect(labels).toContain('Orient');

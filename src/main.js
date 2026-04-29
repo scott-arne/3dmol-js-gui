@@ -144,9 +144,6 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         });
         break;
       }
-      case 'duplicate':
-        terminal.print('Duplicate not yet implemented', 'info');
-        break;
     }
   },
 

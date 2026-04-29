@@ -367,7 +367,6 @@ const BUTTON_MENUS = {
     callbackKey: 'onAction',
     items: [
       { label: 'Rename...', value: 'rename' },
-      { label: 'Duplicate', value: 'duplicate' },
       { label: 'Delete', value: 'delete' },
       { separator: true },
       { label: 'Center', value: 'center' },
