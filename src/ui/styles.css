@@ -729,6 +729,21 @@ body {
   padding: 4px 0;
 }
 
+.modal-status {
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--terminal-bg);
+  color: var(--terminal-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.modal-status.error {
+  color: var(--error);
+}
+
 .modal-btn {
   padding: 8px 16px;
   background: var(--accent);

@@ -50,6 +50,18 @@ export function showLoadDialog(callbacks) {
   // Content
   const content = document.createElement('div');
   content.className = 'modal-body';
+  const status = document.createElement('div');
+  status.className = 'modal-status hidden';
+
+  function setStatus(message, type = 'info') {
+    status.textContent = message;
+    status.className = `modal-status ${type}`;
+  }
+
+  function clearStatus() {
+    status.textContent = '';
+    status.className = 'modal-status hidden';
+  }
 
   // Fetch PDB panel
   const fetchPanel = document.createElement('div');
@@ -64,10 +76,13 @@ export function showLoadDialog(callbacks) {
   fetchBtn.textContent = 'Fetch';
   fetchBtn.addEventListener('click', () => {
     const pdbId = pdbInput.value.trim().toUpperCase();
-    if (pdbId.length === 4) {
-      callbacks.onFetch(pdbId);
-      overlay.remove();
+    if (!/^[A-Z0-9]{4}$/.test(pdbId)) {
+      setStatus('Enter a 4-character PDB ID.', 'error');
+      return;
     }
+    clearStatus();
+    callbacks.onFetch(pdbId);
+    overlay.remove();
   });
   pdbInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') fetchBtn.click();
@@ -87,29 +102,47 @@ export function showLoadDialog(callbacks) {
   loadBtn.textContent = 'Load';
   loadBtn.addEventListener('click', () => {
     const file = fileInput.files[0];
-    if (!file) return;
+    if (!file) {
+      setStatus('Choose a structure file to load.', 'error');
+      return;
+    }
+    clearStatus();
     const format = file.name.split('.').pop().toLowerCase();
     const reader = new FileReader();
     reader.onload = (ev) => {
-      callbacks.onLoad(ev.target.result, format, file.name);
+      const data = ev.target.result;
+      if (typeof data !== 'string' || data.trim() === '') {
+        setStatus(`"${file.name}" is empty.`, 'error');
+        return;
+      }
+      callbacks.onLoad(data, format, file.name);
       overlay.remove();
+    };
+    reader.onerror = () => {
+      setStatus(
+        `Error reading "${file.name}": ${reader.error?.message || 'unknown error'}`,
+        'error',
+      );
     };
     reader.readAsText(file);
   });
   filePanel.appendChild(fileInput);
   filePanel.appendChild(loadBtn);
   content.appendChild(filePanel);
+  content.appendChild(status);
 
   dialog.appendChild(content);
 
   // Tab switching
   tabFetch.addEventListener('click', () => {
+    clearStatus();
     tabFetch.classList.add('active');
     tabFile.classList.remove('active');
     fetchPanel.classList.remove('hidden');
     filePanel.classList.add('hidden');
   });
   tabFile.addEventListener('click', () => {
+    clearStatus();
     tabFile.classList.add('active');
     tabFetch.classList.remove('active');
     filePanel.classList.remove('hidden');

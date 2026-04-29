@@ -117,6 +117,23 @@ describe('showLoadDialog', () => {
     expect(document.querySelector('.modal-overlay')).not.toBeNull();
   });
 
+  it('shows an inline error for invalid PDB input', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const pdbInput = overlay.querySelector('.modal-input');
+    const fetchBtn = overlay.querySelector('.modal-btn');
+
+    pdbInput.value = '12!';
+    fetchBtn.click();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onFetch).not.toHaveBeenCalled();
+    expect(status).not.toBeNull();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Enter a 4-character PDB ID.');
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+  });
+
   it('Enter key in PDB input triggers fetch', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');
@@ -175,6 +192,81 @@ describe('showLoadDialog', () => {
     loadBtn.click();
 
     expect(callbacks.onLoad).not.toHaveBeenCalled();
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+  });
+
+  it('shows an inline error when loading without choosing a file', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const panels = overlay.querySelectorAll('.modal-panel');
+    const filePanel = panels[1];
+    const loadBtn = filePanel.querySelector('.modal-btn');
+
+    loadBtn.click();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onLoad).not.toHaveBeenCalled();
+    expect(status).not.toBeNull();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Choose a structure file to load.');
+  });
+
+  it('shows an inline error when the selected file is empty', () => {
+    const mockFileReader = {
+      readAsText: vi.fn(),
+      onload: null,
+      onerror: null,
+      error: null,
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const loadBtn = filePanel.querySelector('.modal-btn');
+    const file = new File([''], 'empty.pdb', { type: 'text/plain' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+
+    loadBtn.click();
+    mockFileReader.onload({ target: { result: '' } });
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onLoad).not.toHaveBeenCalled();
+    expect(status.textContent).toBe('"empty.pdb" is empty.');
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+  });
+
+  it('shows an inline error when FileReader fails', () => {
+    const mockFileReader = {
+      readAsText: vi.fn(),
+      onload: null,
+      onerror: null,
+      error: { message: 'Read failed' },
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const loadBtn = filePanel.querySelector('.modal-btn');
+    const file = new File(['ATOM      1  CA  ALA A   1'], 'bad.pdb', { type: 'text/plain' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+
+    loadBtn.click();
+    mockFileReader.onerror();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onLoad).not.toHaveBeenCalled();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Error reading "bad.pdb": Read failed');
     expect(document.querySelector('.modal-overlay')).not.toBeNull();
   });
 
