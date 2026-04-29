@@ -1397,19 +1397,33 @@ describe('loading.js', () => {
       expect(addObject).toHaveBeenCalledWith('1ABC', expect.anything(), null);
     });
 
-    it('prevents concurrent fetches', async () => {
-      // Make the first fetch hang by never resolving
+    it('prevents duplicate concurrent fetches for the same PDB ID', async () => {
       let resolveFirst;
       fetchPDB.mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }));
 
       const firstFetch = registry.execute('fetch 1UBQ', ctx);
 
-      // Second fetch should throw while first is in progress
-      await expect(registry.execute('fetch 1ABC', ctx)).rejects.toThrow(
-        'A fetch is already in progress'
+      await expect(registry.execute('fetch 1ubq', ctx)).rejects.toThrow(
+        'PDB 1UBQ is already being fetched'
       );
 
-      // Resolve first fetch so fetching flag resets
+      resolveFirst({ getID: () => 0 });
+      await firstFetch;
+    });
+
+    it('allows concurrent fetches for different PDB IDs', async () => {
+      let resolveFirst;
+      fetchPDB
+        .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
+        .mockResolvedValueOnce({ getID: () => 1 });
+
+      const firstFetch = registry.execute('fetch 1UBQ', ctx);
+      await registry.execute('fetch 2ABC', ctx);
+
+      expect(fetchPDB).toHaveBeenCalledWith('1UBQ');
+      expect(fetchPDB).toHaveBeenCalledWith('2ABC');
+      expect(addObject).toHaveBeenCalledWith('2ABC', expect.anything(), 1);
+
       resolveFirst({ getID: () => 0 });
       await firstFetch;
     });

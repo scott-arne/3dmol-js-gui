@@ -1,7 +1,7 @@
 import { fetchPDB, loadModelData } from '../viewer.js';
 import { addObject } from '../state.js';
 
-let fetching = false;
+const inFlightFetches = new Set();
 
 /**
  * Register the loading commands (fetch, load) into the given command registry.
@@ -15,10 +15,10 @@ export function registerLoadingCommands(registry) {
       if (!/^[A-Z0-9]{4}$/.test(pdbId)) {
         throw new Error('Usage: fetch <pdb_id> (must be a 4-character PDB ID)');
       }
-      if (fetching) {
-        throw new Error('A fetch is already in progress. Please wait.');
+      if (inFlightFetches.has(pdbId)) {
+        throw new Error(`PDB ${pdbId} is already being fetched. Please wait.`);
       }
-      fetching = true;
+      inFlightFetches.add(pdbId);
       try {
         ctx.terminal.print(`Fetching PDB ${pdbId}...`, 'info');
         const model = await fetchPDB(pdbId);
@@ -28,7 +28,7 @@ export function registerLoadingCommands(registry) {
       } catch (e) {
         throw new Error(`Failed to fetch ${pdbId}: ${e.message}`);
       } finally {
-        fetching = false;
+        inFlightFetches.delete(pdbId);
       }
     },
     usage: 'fetch <pdb_id>',
