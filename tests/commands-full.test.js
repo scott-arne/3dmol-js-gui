@@ -90,6 +90,23 @@ vi.mock('../src/state.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/loading/structure-loader.js', () => ({
+  loadStructure: vi.fn(async (request) => ({
+    ok: true,
+    code: 'loaded',
+    name: request.kind === 'pdb' ? request.pdbId.toUpperCase() : request.name,
+    message: request.kind === 'pdb'
+      ? `Loaded ${request.pdbId.toUpperCase()} as "${request.pdbId.toUpperCase()}"`
+      : `Loaded "${request.name}"`,
+  })),
+  loadStructureFile: vi.fn(async () => ({
+    ok: true,
+    code: 'loaded',
+    name: 'protein',
+    message: 'Loaded "protein"',
+  })),
+}));
+
 vi.mock('../src/commands/resolve-selection.js', () => ({
   resolveSelection: vi.fn((str) => {
     if (!str || str === 'all') return { spec: {} };
@@ -158,6 +175,7 @@ import { registerGroupingCommands } from '../src/commands/grouping.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
 import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, loadModelData, scheduleRender } from '../src/viewer.js';
+import { loadStructure, loadStructureFile } from '../src/loading/structure-loader.js';
 import { renderHighlight, clearHighlight as hlClearHighlight } from '../src/highlight.js';
 import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange, addGroup, ungroupGroup, reparentEntry, unparentEntry } from '../src/state.js';
 import { resolveSelection, getSelSpec, resolveSelectionByEntry } from '../src/commands/resolve-selection.js';
@@ -1359,15 +1377,14 @@ describe('loading.js', () => {
   describe('fetch', () => {
     it('fetches a PDB by valid 4-char ID', async () => {
       await registry.execute('fetch 1UBQ', ctx);
-      expect(fetchPDB).toHaveBeenCalledWith('1UBQ');
-      expect(addObject).toHaveBeenCalledWith('1UBQ', expect.anything(), 0);
+      expect(loadStructure).toHaveBeenCalledWith({ kind: 'pdb', pdbId: '1UBQ' });
       expect(terminal.lines[0].msg).toContain('Fetching PDB 1UBQ');
       expect(terminal.lines[1].msg).toContain('Loaded 1UBQ');
     });
 
     it('uppercases the PDB ID', async () => {
       await registry.execute('fetch 1ubq', ctx);
-      expect(fetchPDB).toHaveBeenCalledWith('1UBQ');
+      expect(loadStructure).toHaveBeenCalledWith({ kind: 'pdb', pdbId: '1UBQ' });
     });
 
     it('throws on empty PDB ID', async () => {
@@ -1387,55 +1404,28 @@ describe('loading.js', () => {
     });
 
     it('handles fetch failure', async () => {
-      fetchPDB.mockRejectedValueOnce(new Error('Network error'));
+      loadStructure.mockResolvedValueOnce({
+        ok: false,
+        code: 'fetch_failed',
+        message: 'Failed to fetch 1UBQ: Network error',
+      });
       await expect(registry.execute('fetch 1UBQ', ctx)).rejects.toThrow('Failed to fetch 1UBQ');
     });
 
-    it('handles model without getID', async () => {
-      fetchPDB.mockResolvedValueOnce({});
+    it('prints the structured loader result message', async () => {
+      loadStructure.mockResolvedValueOnce({
+        ok: true,
+        code: 'loaded',
+        name: '1ABC_2',
+        message: 'Loaded 1ABC as "1ABC_2"',
+      });
+
       await registry.execute('fetch 1ABC', ctx);
-      expect(addObject).toHaveBeenCalledWith('1ABC', expect.anything(), null);
-    });
 
-    it('prevents duplicate concurrent fetches for the same PDB ID', async () => {
-      let resolveFirst;
-      fetchPDB.mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }));
-
-      const firstFetch = registry.execute('fetch 1UBQ', ctx);
-
-      await expect(registry.execute('fetch 1ubq', ctx)).rejects.toThrow(
-        'PDB 1UBQ is already being fetched'
-      );
-
-      resolveFirst({ getID: () => 0 });
-      await firstFetch;
-    });
-
-    it('allows concurrent fetches for different PDB IDs', async () => {
-      let resolveFirst;
-      fetchPDB
-        .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
-        .mockResolvedValueOnce({ getID: () => 1 });
-
-      const firstFetch = registry.execute('fetch 1UBQ', ctx);
-      await registry.execute('fetch 2ABC', ctx);
-
-      expect(fetchPDB).toHaveBeenCalledWith('1UBQ');
-      expect(fetchPDB).toHaveBeenCalledWith('2ABC');
-      expect(addObject).toHaveBeenCalledWith('2ABC', expect.anything(), 1);
-
-      resolveFirst({ getID: () => 0 });
-      await firstFetch;
-    });
-
-    it('resets fetching flag after failure', async () => {
-      fetchPDB.mockRejectedValueOnce(new Error('fail'));
-      await expect(registry.execute('fetch 1UBQ', ctx)).rejects.toThrow();
-
-      // Next fetch should work (fetching flag was reset in finally)
-      fetchPDB.mockResolvedValueOnce({ getID: () => 1 });
-      await registry.execute('fetch 2ABC', ctx);
-      expect(addObject).toHaveBeenCalled();
+      expect(terminal.lines[1]).toEqual({
+        msg: 'Loaded 1ABC as "1ABC_2"',
+        type: 'result',
+      });
     });
   });
 
@@ -1479,7 +1469,7 @@ describe('loading.js', () => {
       vi.restoreAllMocks();
     });
 
-    it('handles file selection via onchange callback', () => {
+    it('loads the selected file through the shared loader', async () => {
       let capturedInput = null;
       const createElementOriginal = document.createElement.bind(document);
       vi.spyOn(document, 'createElement').mockImplementation((tag) => {
@@ -1491,18 +1481,19 @@ describe('loading.js', () => {
 
       registry.execute('load', ctx);
 
-      // Simulate file selection
       const mockFile = new File(['ATOM      1  CA  ALA A   1'], 'test.pdb', { type: 'text/plain' });
-      Object.defineProperty(mockFile, 'name', { value: 'test.pdb' });
 
-      // Simulate the onchange event
-      capturedInput.onchange({ target: { files: [mockFile] } });
+      await capturedInput.onchange({ target: { files: [mockFile] } });
 
-      // The FileReader.readAsText is async, but we can verify the flow was initiated
+      expect(loadStructureFile).toHaveBeenCalledWith(mockFile);
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Loaded "protein"',
+        type: 'result',
+      });
       vi.restoreAllMocks();
     });
 
-    it('handles empty file selection (no file)', () => {
+    it('prints loader errors for empty file selection', async () => {
       let capturedInput = null;
       const createElementOriginal = document.createElement.bind(document);
       vi.spyOn(document, 'createElement').mockImplementation((tag) => {
@@ -1514,16 +1505,23 @@ describe('loading.js', () => {
 
       registry.execute('load', ctx);
 
-      // Simulate file selection with no file
-      capturedInput.onchange({ target: { files: [] } });
+      loadStructureFile.mockResolvedValueOnce({
+        ok: false,
+        code: 'missing_file',
+        message: 'Choose a structure file to load.',
+      });
 
-      // Should not print anything (early return)
-      expect(terminal.lines.length).toBe(0);
+      await capturedInput.onchange({ target: { files: [] } });
 
+      expect(loadStructureFile).toHaveBeenCalledWith(undefined);
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Choose a structure file to load.',
+        type: 'error',
+      });
       vi.restoreAllMocks();
     });
 
-    it('loads a file successfully via FileReader onload', async () => {
+    it('prints loader parse or read failures', async () => {
       let capturedInput = null;
       const createElementOriginal = document.createElement.bind(document);
       vi.spyOn(document, 'createElement').mockImplementation((tag) => {
@@ -1535,158 +1533,19 @@ describe('loading.js', () => {
 
       registry.execute('load', ctx);
 
-      // Create a real blob-backed file so FileReader can read it
-      const fileContent = 'ATOM      1  CA  ALA A   1';
-      const blob = new Blob([fileContent], { type: 'text/plain' });
-      const mockFile = new File([blob], 'protein.pdb', { type: 'text/plain' });
-
-      // Trigger the onchange callback
-      capturedInput.onchange({ target: { files: [mockFile] } });
-
-      // Wait for the FileReader to finish (microtask)
-      await new Promise(r => setTimeout(r, 50));
-
-      expect(loadModelData).toHaveBeenCalledWith(fileContent, 'pdb');
-      expect(addObject).toHaveBeenCalledWith('protein', expect.anything(), 0);
-      expect(terminal.lines[0].msg).toContain('Loaded');
-      expect(terminal.lines[0].msg).toContain('protein.pdb');
-
-      vi.restoreAllMocks();
-    });
-
-    it('handles loadModelData error in FileReader onload', async () => {
-      let capturedInput = null;
-      const createElementOriginal = document.createElement.bind(document);
-      vi.spyOn(document, 'createElement').mockImplementation((tag) => {
-        const el = createElementOriginal(tag);
-        el.click = vi.fn();
-        if (tag === 'input') capturedInput = el;
-        return el;
+      loadStructureFile.mockResolvedValueOnce({
+        ok: false,
+        code: 'load_failed',
+        message: 'Failed to load structure: Parse error',
       });
 
-      loadModelData.mockImplementationOnce(() => {
-        throw new Error('Parse error');
+      const mockFile = new File(['bad data'], 'bad.xyz', { type: 'text/plain' });
+      await capturedInput.onchange({ target: { files: [mockFile] } });
+
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Failed to load structure: Parse error',
+        type: 'error',
       });
-
-      registry.execute('load', ctx);
-
-      const blob = new Blob(['bad data'], { type: 'text/plain' });
-      const mockFile = new File([blob], 'bad.xyz', { type: 'text/plain' });
-
-      capturedInput.onchange({ target: { files: [mockFile] } });
-
-      await new Promise(r => setTimeout(r, 50));
-
-      expect(terminal.lines[0].msg).toContain('Error loading file');
-      expect(terminal.lines[0].msg).toContain('Parse error');
-      expect(terminal.lines[0].type).toBe('error');
-
-      vi.restoreAllMocks();
-    });
-
-    it('handles FileReader onerror', async () => {
-      let capturedInput = null;
-      const createElementOriginal = document.createElement.bind(document);
-      vi.spyOn(document, 'createElement').mockImplementation((tag) => {
-        const el = createElementOriginal(tag);
-        el.click = vi.fn();
-        if (tag === 'input') capturedInput = el;
-        return el;
-      });
-
-      // Override FileReader to simulate an error
-      const OriginalFileReader = globalThis.FileReader;
-      const mockReader = {
-        onload: null,
-        onerror: null,
-        error: { message: 'Read failed' },
-        readAsText: vi.fn(function () {
-          // Trigger onerror asynchronously
-          setTimeout(() => {
-            if (this.onerror) this.onerror();
-          }, 0);
-        }),
-      };
-      globalThis.FileReader = vi.fn(() => mockReader);
-
-      registry.execute('load', ctx);
-
-      const blob = new Blob(['data'], { type: 'text/plain' });
-      const mockFile = new File([blob], 'bad.pdb', { type: 'text/plain' });
-
-      capturedInput.onchange({ target: { files: [mockFile] } });
-
-      await new Promise(r => setTimeout(r, 50));
-
-      expect(terminal.lines[0].msg).toContain('Error reading file');
-      expect(terminal.lines[0].msg).toContain('Read failed');
-      expect(terminal.lines[0].type).toBe('error');
-
-      globalThis.FileReader = OriginalFileReader;
-      vi.restoreAllMocks();
-    });
-
-    it('handles FileReader onerror with no error message', async () => {
-      let capturedInput = null;
-      const createElementOriginal = document.createElement.bind(document);
-      vi.spyOn(document, 'createElement').mockImplementation((tag) => {
-        const el = createElementOriginal(tag);
-        el.click = vi.fn();
-        if (tag === 'input') capturedInput = el;
-        return el;
-      });
-
-      const OriginalFileReader = globalThis.FileReader;
-      const mockReader = {
-        onload: null,
-        onerror: null,
-        error: null,  // no error object
-        readAsText: vi.fn(function () {
-          setTimeout(() => {
-            if (this.onerror) this.onerror();
-          }, 0);
-        }),
-      };
-      globalThis.FileReader = vi.fn(() => mockReader);
-
-      registry.execute('load', ctx);
-
-      const blob = new Blob(['data'], { type: 'text/plain' });
-      const mockFile = new File([blob], 'bad.pdb', { type: 'text/plain' });
-
-      capturedInput.onchange({ target: { files: [mockFile] } });
-
-      await new Promise(r => setTimeout(r, 50));
-
-      expect(terminal.lines[0].msg).toContain('unknown error');
-      expect(terminal.lines[0].type).toBe('error');
-
-      globalThis.FileReader = OriginalFileReader;
-      vi.restoreAllMocks();
-    });
-
-    it('handles model without getID in load callback', async () => {
-      let capturedInput = null;
-      const createElementOriginal = document.createElement.bind(document);
-      vi.spyOn(document, 'createElement').mockImplementation((tag) => {
-        const el = createElementOriginal(tag);
-        el.click = vi.fn();
-        if (tag === 'input') capturedInput = el;
-        return el;
-      });
-
-      loadModelData.mockReturnValueOnce({});  // no getID method
-
-      registry.execute('load', ctx);
-
-      const blob = new Blob(['data'], { type: 'text/plain' });
-      const mockFile = new File([blob], 'mol.sdf', { type: 'text/plain' });
-
-      capturedInput.onchange({ target: { files: [mockFile] } });
-
-      await new Promise(r => setTimeout(r, 50));
-
-      expect(addObject).toHaveBeenCalledWith('mol', expect.anything(), null);
 
       vi.restoreAllMocks();
     });

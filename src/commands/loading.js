@@ -1,7 +1,4 @@
-import { fetchPDB, loadModelData } from '../viewer.js';
-import { addObject } from '../state.js';
-
-const inFlightFetches = new Set();
+import { loadStructure, loadStructureFile } from '../loading/structure-loader.js';
 
 /**
  * Register the loading commands (fetch, load) into the given command registry.
@@ -15,21 +12,12 @@ export function registerLoadingCommands(registry) {
       if (!/^[A-Z0-9]{4}$/.test(pdbId)) {
         throw new Error('Usage: fetch <pdb_id> (must be a 4-character PDB ID)');
       }
-      if (inFlightFetches.has(pdbId)) {
-        throw new Error(`PDB ${pdbId} is already being fetched. Please wait.`);
+      ctx.terminal.print(`Fetching PDB ${pdbId}...`, 'info');
+      const result = await loadStructure({ kind: 'pdb', pdbId });
+      if (!result.ok) {
+        throw new Error(result.message);
       }
-      inFlightFetches.add(pdbId);
-      try {
-        ctx.terminal.print(`Fetching PDB ${pdbId}...`, 'info');
-        const model = await fetchPDB(pdbId);
-        const modelIndex = model.getID ? model.getID() : null;
-        const name = addObject(pdbId, model, modelIndex);
-        ctx.terminal.print(`Loaded ${pdbId} as "${name}"`, 'result');
-      } catch (e) {
-        throw new Error(`Failed to fetch ${pdbId}: ${e.message}`);
-      } finally {
-        inFlightFetches.delete(pdbId);
-      }
+      ctx.terminal.print(result.message, 'result');
     },
     usage: 'fetch <pdb_id>',
     help: 'Fetch a structure from the RCSB PDB by ID.',
@@ -41,26 +29,14 @@ export function registerLoadingCommands(registry) {
       input.type = 'file';
       input.style.display = 'none';
       input.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif';
-      input.onchange = (e) => {
+      input.onchange = async (e) => {
         const file = e.target.files[0];
-        if (!file) return;
-        const format = file.name.split('.').pop().toLowerCase();
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          try {
-            const model = loadModelData(ev.target.result, format);
-            const modelIndex = model.getID ? model.getID() : null;
-            const baseName = file.name.replace(/\.[^.]+$/, '');
-            const name = addObject(baseName, model, modelIndex);
-            ctx.terminal.print(`Loaded "${file.name}" as "${name}"`, 'result');
-          } catch (err) {
-            ctx.terminal.print(`Error loading file: ${err.message}`, 'error');
-          }
-        };
-        reader.onerror = () => {
-          ctx.terminal.print(`Error reading file: ${reader.error?.message || 'unknown error'}`, 'error');
-        };
-        reader.readAsText(file);
+        const result = await loadStructureFile(file);
+        if (!result.ok) {
+          ctx.terminal.print(result.message, 'error');
+          return;
+        }
+        ctx.terminal.print(result.message, 'result');
       };
       input.click();
     },
