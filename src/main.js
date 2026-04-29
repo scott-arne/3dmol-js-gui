@@ -6,8 +6,9 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, fetchPDB, loadModelData, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
+import { initViewer, getViewer, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
 import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
+import { loadStructure } from './loading/structure-loader.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -18,7 +19,6 @@ import {
   onStateChange,
   toggleObjectVisibility,
   setSelectionMode,
-  addObject,
   removeObject,
   addSelection,
   removeSelection,
@@ -440,25 +440,21 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     showLoadDialog({
       onFetch: async (pdbId) => {
         terminal.print(`Fetching PDB ${pdbId}...`, 'info');
-        try {
-          const model = await fetchPDB(pdbId);
-          const modelIndex = model.getID ? model.getID() : null;
-          const name = addObject(pdbId, model, modelIndex);
-          terminal.print(`Loaded ${pdbId} as "${name}"`, 'result');
-        } catch (e) {
-          terminal.print(`Failed to fetch ${pdbId}: ${e.message}`, 'error');
-        }
+        const result = await loadStructure({ kind: 'pdb', pdbId });
+        terminal.print(result.message, result.ok ? 'result' : 'error');
       },
-      onLoad: (data, format, filename) => {
-        try {
-          const model = loadModelData(data, format);
-          const modelIndex = model.getID ? model.getID() : null;
-          const baseName = filename.replace(/\.[^.]+$/, '');
-          const name = addObject(baseName, model, modelIndex);
-          terminal.print(`Loaded "${filename}" as "${name}"`, 'result');
-        } catch (e) {
-          terminal.print(`Error loading file: ${e.message}`, 'error');
-        }
+      onLoad: async (data, format, filename) => {
+        const baseName = filename.replace(/\.[^.]+$/, '');
+        const result = await loadStructure({
+          kind: 'inline',
+          name: baseName,
+          format,
+          data,
+        });
+        terminal.print(
+          result.ok ? `Loaded "${filename}" as "${result.name}"` : result.message,
+          result.ok ? 'result' : 'error',
+        );
       },
     });
   },
@@ -847,7 +843,7 @@ function handleViewerClick(atom, viewerInstance) {
 }
 
 // Register the click callback — viewer.js stores it and automatically
-// re-registers after each fetchPDB/loadModelData call.
+// re-registers after each model load.
 setupClickHandler(handleViewerClick);
 
 // Clear selection when clicking on empty space (no atom hit).
@@ -1006,56 +1002,50 @@ if (init) {
   // Supports: flat entries, { children: [...] } for hierarchies,
   // and { group: 'name', entries: [...] } for groups.
   const molecules = init.molecules || [];
+  async function loadInitEntry(entry, fallbackName) {
+    const result = await loadStructure({
+      kind: 'inline',
+      name: entry.name || fallbackName || entry.format,
+      format: entry.format,
+      data: entry.data,
+    }, {
+      loadOptions: { applyDefaultStyle: false, zoom: false, render: false },
+    });
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+    if (entry.disabled) {
+      const obj = getState().objects.get(result.name);
+      if (obj) {
+        obj.visible = false;
+        result.model.hide();
+      }
+    }
+    return result;
+  }
+
   for (const mol of molecules) {
     try {
       if (mol.group && Array.isArray(mol.entries)) {
         // Group entry: { group: 'name', entries: [{name, data, format}, ...] }
         const memberNames = [];
         for (const entry of mol.entries) {
-          const model = v.addModel(entry.data, entry.format, { keepH: true, assignBonds: true });
-          const modelIndex = model.getID ? model.getID() : null;
-          const entryName = addObject(entry.name || entry.format, model, modelIndex);
-          memberNames.push(entryName);
-          if (entry.disabled) {
-            const obj = getState().objects.get(entryName);
-            if (obj) { obj.visible = false; model.hide(); }
-          }
+          const result = await loadInitEntry(entry, entry.format);
+          memberNames.push(result.name);
         }
         if (memberNames.length > 0) {
           addGroup(mol.group, memberNames);
         }
       } else if (mol.children && Array.isArray(mol.children)) {
         // Hierarchy entry: { name, data, format, children: [{name, data, format}, ...] }
-        const model = v.addModel(mol.data, mol.format, { keepH: true, assignBonds: true });
-        const modelIndex = model.getID ? model.getID() : null;
-        const parentName = addObject(mol.name || mol.format, model, modelIndex);
-        if (mol.disabled) {
-          const obj = getState().objects.get(parentName);
-          if (obj) { obj.visible = false; model.hide(); }
-        }
+        const parent = await loadInitEntry(mol, mol.format);
         for (const child of mol.children) {
-          const childModel = v.addModel(child.data, child.format, { keepH: true, assignBonds: true });
-          const childModelIndex = childModel.getID ? childModel.getID() : null;
-          const childName = addObject(child.name || child.format, childModel, childModelIndex);
-          if (child.disabled) {
-            const obj = getState().objects.get(childName);
-            if (obj) { obj.visible = false; childModel.hide(); }
-          }
-          reparentEntry(childName, parentName);
+          const childResult = await loadInitEntry(child, child.format);
+          reparentEntry(childResult.name, parent.name);
         }
       } else {
         // Simple flat entry
-        const model = v.addModel(mol.data, mol.format, { keepH: true, assignBonds: true });
-        const modelIndex = model.getID ? model.getID() : null;
-        const name = addObject(mol.name || mol.format, model, modelIndex);
-        if (mol.disabled) {
-          const st = getState();
-          const obj = st.objects.get(name);
-          if (obj) {
-            obj.visible = false;
-            model.hide();
-          }
-        }
+        await loadInitEntry(mol, mol.format);
       }
     } catch (e) {
       terminal.print(`Failed to load "${mol.name || mol.group || mol.format}": ${e.message}`, 'error');

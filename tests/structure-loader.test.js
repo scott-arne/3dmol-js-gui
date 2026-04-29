@@ -74,6 +74,25 @@ describe('structure-loader', () => {
     expect(deps.addObject).toHaveBeenCalledWith('protein', expect.anything(), 3);
   });
 
+  it('returns the actual unique object name from state registration', async () => {
+    const deps = makeDeps({
+      addObject: vi.fn(() => 'protein_2'),
+    });
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'protein',
+      format: 'pdb',
+      data: 'ATOM',
+    }, { deps });
+
+    expect(result).toMatchObject({
+      ok: true,
+      name: 'protein_2',
+      message: 'Loaded "protein_2"',
+    });
+  });
+
   it('uses load options for initialization-style inline loads', async () => {
     const deps = makeDeps();
     await loadStructure({
