@@ -36,6 +36,7 @@ Or use **File > Load...** to open a local structure file (PDB, SDF, MOL2, XYZ, C
 | Production | `npm run build` | Outputs to `dist/`; PEG grammar compiled at build time |
 | Preview | `npm run preview` | Serves the production build locally |
 | Tests | `npm test` | Runs the test suite once |
+| Verify | `npm run verify` | Runs the full test suite and production build |
 | Test (watch) | `npm run test:watch` | Reruns tests on file changes |
 
 The production build uses relative asset paths (`base: './'`), so the output can be served from any directory without path adjustments.
