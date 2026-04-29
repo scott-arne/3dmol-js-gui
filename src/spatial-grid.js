@@ -1,15 +1,21 @@
 /**
  * Uniform cell grid for fast spatial neighbor queries.
  *
- * Partitions atoms into cells of `cellSize` width. Neighbor queries check
- * only the 27 adjacent cells (3^3 cube), turning O(n*m) distance searches
- * into O(n*k) where k is the average atoms per cell neighborhood.
+ * Partitions atoms into cells of `cellSize` width. Neighbor queries scan the
+ * cells touched by the query radius, turning O(n*m) distance searches into
+ * O(n*k) where k is the average atoms per relevant cell neighborhood.
  */
+function assertPositiveNumber(value, name) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive number`);
+  }
+}
+
 export class SpatialGrid {
   constructor(atoms, cellSize) {
+    assertPositiveNumber(cellSize, 'cellSize');
     this._cellSize = cellSize;
     this._cells = new Map();
-    this._radiusSq = cellSize * cellSize;
 
     for (const atom of atoms) {
       const ix = Math.floor(atom.x / cellSize);
@@ -26,16 +32,19 @@ export class SpatialGrid {
   }
 
   neighborsWithin(x, y, z, radius) {
+    assertPositiveNumber(radius, 'radius');
+
     const rSq = radius * radius;
     const cs = this._cellSize;
     const cx = Math.floor(x / cs);
     const cy = Math.floor(y / cs);
     const cz = Math.floor(z / cs);
+    const cellSpan = Math.ceil(radius / cs);
     const result = [];
 
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -cellSpan; dx <= cellSpan; dx++) {
+      for (let dy = -cellSpan; dy <= cellSpan; dy++) {
+        for (let dz = -cellSpan; dz <= cellSpan; dz++) {
           const key = `${cx + dx},${cy + dy},${cz + dz}`;
           const cell = this._cells.get(key);
           if (!cell) continue;

@@ -97,4 +97,28 @@ describe('SpatialGrid', () => {
     const elapsed = performance.now() - start;
     expect(elapsed).toBeLessThan(100);
   });
+
+  it('finds atoms when query radius spans more than adjacent cells', () => {
+    const wideAtoms = [
+      { serial: 0, x: 0, y: 0, z: 0, elem: 'N' },
+      { serial: 1, x: 4, y: 0, z: 0, elem: 'C' },
+      { serial: 2, x: 8, y: 0, z: 0, elem: 'O' },
+      { serial: 3, x: 12, y: 0, z: 0, elem: 'S' },
+    ];
+    const grid = new SpatialGrid(wideAtoms, 2.0);
+    const result = grid.neighborsWithin(0, 0, 0, 8.0);
+    const serials = result.map(a => a.serial).sort((a, b) => a - b);
+    expect(serials).toEqual([0, 1, 2]);
+  });
+
+  it('throws when constructed with a non-positive cell size', () => {
+    expect(() => new SpatialGrid(atoms, 0)).toThrow('cellSize must be a positive number');
+    expect(() => new SpatialGrid(atoms, -1)).toThrow('cellSize must be a positive number');
+  });
+
+  it('throws when queried with a non-positive radius', () => {
+    const grid = new SpatialGrid(atoms, 2.0);
+    expect(() => grid.neighborsWithin(0, 0, 0, 0)).toThrow('radius must be a positive number');
+    expect(() => grid.neighborsWithin(0, 0, 0, -1)).toThrow('radius must be a positive number');
+  });
 });
