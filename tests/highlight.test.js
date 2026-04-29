@@ -86,6 +86,34 @@ describe('highlight', () => {
       expect(mockViewer.addCustom).not.toHaveBeenCalled();
     });
 
+    it('clears an existing highlight when called with an empty atoms array', () => {
+      const shape = { id: 7 };
+      mockViewer.addCustom.mockReturnValueOnce(shape);
+
+      renderHighlight([{ x: 0, y: 0, z: 0 }]);
+      expect(hasHighlight()).toBe(true);
+
+      vi.clearAllMocks();
+      renderHighlight([]);
+
+      expect(mockViewer.removeShape).toHaveBeenCalledWith(shape);
+      expect(hasHighlight()).toBe(false);
+    });
+
+    it('clears an existing highlight when called without atoms', () => {
+      const shape = { id: 8 };
+      mockViewer.addCustom.mockReturnValueOnce(shape);
+
+      renderHighlight([{ x: 0, y: 0, z: 0 }]);
+      expect(hasHighlight()).toBe(true);
+
+      vi.clearAllMocks();
+      renderHighlight();
+
+      expect(mockViewer.removeShape).toHaveBeenCalledWith(shape);
+      expect(hasHighlight()).toBe(false);
+    });
+
     it('replaces existing highlight when called twice', () => {
       const shape1 = { id: 1 };
       const shape2 = { id: 2 };

@@ -107,7 +107,10 @@ export function clearHighlight() {
 
 export function renderHighlight(atoms) {
   if (!viewer) return;
-  if (atoms.length === 0) return;
+  if (!atoms || atoms.length === 0) {
+    clearHighlight();
+    return;
+  }
 
   // Clear any existing highlight
   if (currentShape !== null) {
