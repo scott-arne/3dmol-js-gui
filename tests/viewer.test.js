@@ -213,6 +213,27 @@ describe('viewer.js', () => {
       loadModelData('data', 'sdf');
       expect(mockViewer.addModel).toHaveBeenCalledWith('data', 'sdf', { keepH: true, assignBonds: true });
     });
+
+    it('can skip default style, zoom, and render for initialization loading', async () => {
+      mockViewer.render.mockClear();
+
+      const model = loadModelData('data', 'pdb', {
+        applyDefaultStyle: false,
+        zoom: false,
+        render: false,
+      });
+
+      expect(model).toBe(mockModel);
+      expect(mockViewer.addModel).toHaveBeenCalledWith(
+        'data',
+        'pdb',
+        { keepH: true, assignBonds: true },
+      );
+      expect(mockViewer.setStyle).not.toHaveBeenCalled();
+      expect(mockViewer.zoomTo).not.toHaveBeenCalled();
+      await new Promise(r => queueMicrotask(r));
+      expect(mockViewer.render).not.toHaveBeenCalled();
+    });
   });
 
   // -----------------------------------------------------------------------

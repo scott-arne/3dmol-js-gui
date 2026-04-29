@@ -256,19 +256,36 @@ export async function fetchPDB(pdbId) {
 /**
  * Load molecular data directly into the viewer from a string.
  *
- * Adds the model, applies a default wire style, zooms to fit, and
- * renders the scene.
+ * Adds the model and, by default, applies a wire style, zooms to fit, and
+ * renders the scene. Initialization can disable those side effects so global
+ * style and view operations can be applied after all models are present.
  *
  * @param {string} data - The molecular data as a string.
  * @param {string} format - The format of the data (e.g. "pdb", "sdf", "mol2").
+ * @param {object} [options] - Optional loading behavior.
+ * @param {boolean} [options.applyDefaultStyle=true] - Apply the default line style.
+ * @param {boolean} [options.zoom=true] - Zoom to the loaded model.
+ * @param {boolean} [options.render=true] - Schedule a render after loading.
  * @returns {object} The 3Dmol model that was added.
  */
-export function loadModelData(data, format) {
+export function loadModelData(data, format, options = {}) {
+  const {
+    applyDefaultStyle = true,
+    zoom = true,
+    render = true,
+  } = options;
+
   const model = viewer.addModel(data, format, { keepH: true, assignBonds: true });
-  viewer.setStyle({ model: model }, repStyle('line'));
-  viewer.zoomTo();
+  if (applyDefaultStyle) {
+    viewer.setStyle({ model: model }, repStyle('line'));
+  }
+  if (zoom) {
+    viewer.zoomTo();
+  }
   registerClickable();
-  scheduleRender();
+  if (render) {
+    scheduleRender();
+  }
 
   return model;
 }
