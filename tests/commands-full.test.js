@@ -91,6 +91,18 @@ vi.mock('../src/state.js', async (importOriginal) => {
 });
 
 vi.mock('../src/loading/structure-loader.js', () => ({
+  getStructureFormatFromFilename: vi.fn((filename) => {
+    const match = String(filename || '').match(/\.([^.]+)$/);
+    if (!match) throw new Error('Structure file must have a supported extension.');
+    return match[1].toLowerCase() === 'mmcif' ? 'cif' : match[1].toLowerCase();
+  }),
+  normalizeStructureRequest: vi.fn((request) => ({
+    ...request,
+    kind: String(request.kind || '').toLowerCase(),
+    format: String(request.format || '').toLowerCase() === 'mmcif'
+      ? 'cif'
+      : String(request.format || '').toLowerCase(),
+  })),
   loadStructure: vi.fn(async (request) => ({
     ok: true,
     code: 'loaded',
@@ -1550,6 +1562,129 @@ describe('loading.js', () => {
       vi.restoreAllMocks();
     });
   });
+
+  describe('load_remote', () => {
+    it('loads a configured remote source path', async () => {
+      registry = createCommandRegistry();
+      registerLoadingCommands(registry, {
+        remoteLoading: {
+          sources: [{ name: 'App Structures', baseUrl: '/api/c3d/structures/' }],
+        },
+      });
+
+      await registry.execute('load_remote App Structures, poses/ligand.pdb', ctx);
+
+      expect(loadStructure).toHaveBeenCalledWith({
+        kind: 'url',
+        name: 'ligand',
+        format: 'pdb',
+        url: '/api/c3d/structures/poses/ligand.pdb',
+      });
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Loading "ligand" from App Structures...',
+        type: 'info',
+      });
+      expect(terminal.lines[1].type).toBe('result');
+    });
+
+    it('loads a configured remote source path with explicit name and format', async () => {
+      registry = createCommandRegistry();
+      registerLoadingCommands(registry, {
+        remoteLoading: {
+          sources: [{ id: 'app', name: 'App Structures', baseUrl: '/api/c3d/structures/' }],
+        },
+      });
+
+      await registry.execute('load_remote app, poses/123, Design Unit Pose, pdb', ctx);
+
+      expect(loadStructure).toHaveBeenCalledWith({
+        kind: 'url',
+        name: 'Design Unit Pose',
+        format: 'pdb',
+        url: '/api/c3d/structures/poses/123',
+      });
+    });
+
+    it('reports missing configured remote sources', async () => {
+      await expect(registry.execute('load_remote app, poses/ligand.pdb', ctx))
+        .rejects.toThrow('No remote structure sources are configured.');
+    });
+  });
+
+  describe('load_url', () => {
+    it('rejects arbitrary URL loading when not enabled', async () => {
+      await expect(registry.execute('load_url remote, pdb, https://example.test/remote.pdb', ctx))
+        .rejects.toThrow('Arbitrary URL loading is disabled.');
+    });
+
+    it('loads arbitrary URLs when enabled', async () => {
+      registry = createCommandRegistry();
+      registerLoadingCommands(registry, {
+        remoteLoading: { allowArbitraryUrls: true },
+      });
+
+      await registry.execute('load_url remote, pdb, https://example.test/remote.pdb', ctx);
+
+      expect(loadStructure).toHaveBeenCalledWith({
+        kind: 'url',
+        name: 'remote',
+        format: 'pdb',
+        url: 'https://example.test/remote.pdb',
+      });
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Loading "remote" from URL...',
+        type: 'info',
+      });
+    });
+
+    it('preserves commas inside arbitrary URLs', async () => {
+      registry = createCommandRegistry();
+      registerLoadingCommands(registry, {
+        remoteLoading: { allowArbitraryUrls: true },
+      });
+
+      await registry.execute('load_url remote, pdb, https://example.test/pose.pdb?ids=1,2', ctx);
+
+      expect(loadStructure).toHaveBeenCalledWith({
+        kind: 'url',
+        name: 'remote',
+        format: 'pdb',
+        url: 'https://example.test/pose.pdb?ids=1,2',
+      });
+    });
+
+    it('preserves consecutive commas inside arbitrary URLs', async () => {
+      registry = createCommandRegistry();
+      registerLoadingCommands(registry, {
+        remoteLoading: { allowArbitraryUrls: true },
+      });
+
+      await registry.execute('load_url remote, pdb, https://example.test/a,,b.pdb', ctx);
+
+      expect(loadStructure).toHaveBeenCalledWith({
+        kind: 'url',
+        name: 'remote',
+        format: 'pdb',
+        url: 'https://example.test/a,,b.pdb',
+      });
+    });
+
+    it('preserves trailing commas inside arbitrary URLs', async () => {
+      registry = createCommandRegistry();
+      registerLoadingCommands(registry, {
+        remoteLoading: { allowArbitraryUrls: true },
+      });
+
+      await registry.execute('load_url remote, pdb, https://example.test/a,b.pdb,', ctx);
+
+      expect(loadStructure).toHaveBeenCalledWith({
+        kind: 'url',
+        name: 'remote',
+        format: 'pdb',
+        url: 'https://example.test/a,b.pdb,',
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2348,6 +2483,8 @@ describe('index.js', () => {
     // Loading commands
     expect(registry.has('fetch')).toBe(true);
     expect(registry.has('load')).toBe(true);
+    expect(registry.has('load_remote')).toBe(true);
+    expect(registry.has('load_url')).toBe(true);
 
     // Styling commands
     expect(registry.has('color')).toBe(true);
@@ -2365,8 +2502,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 9 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 2 loading + 6 styling + 1 preset + 4 grouping = 37
-    expect(commands.length).toBe(37);
+    // 9 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 39
+    expect(commands.length).toBe(39);
   });
 
   it('all registered commands have help text', () => {
@@ -2379,6 +2516,28 @@ describe('index.js', () => {
       expect(info.usage).toBeTruthy();
       expect(info.help).toBeTruthy();
     }
+  });
+
+  it('passes remote loading options to loading commands', async () => {
+    const registry = createCommandRegistry();
+    const terminal = makeTerminal();
+    const ctx = makeCtx(terminal);
+    registerAllCommands(registry, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    await registry.execute('load_url remote, pdb, https://example.test/remote.pdb', ctx);
+
+    expect(loadStructure).toHaveBeenCalledWith({
+      kind: 'url',
+      name: 'remote',
+      format: 'pdb',
+      url: 'https://example.test/remote.pdb',
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Loading "remote" from URL...',
+      type: 'info',
+    });
   });
 });
 

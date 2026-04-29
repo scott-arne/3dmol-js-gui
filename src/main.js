@@ -9,6 +9,12 @@ import './ui/styles.css';
 import { initViewer, getViewer, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
 import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
 import { loadStructure } from './loading/structure-loader.js';
+import {
+  normalizeRemoteLoadingConfig,
+  resolveArbitraryUrlRequest,
+  resolveConfiguredSourceRequest,
+  resolveInitializationStructureRequest,
+} from './loading/remote-loading.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createTerminal } from './ui/terminal.js';
@@ -58,6 +64,8 @@ if (typeof $3Dmol === 'undefined') {
 }
 
 const app = document.getElementById('app');
+const init = window.__C3D_INIT__;
+const remoteLoading = normalizeRemoteLoadingConfig(init?.services?.remoteLoading);
 
 // --- Initialize the 3Dmol viewer ---
 const viewer = initViewer(document.getElementById('viewer-container'));
@@ -456,6 +464,41 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
           result.ok ? 'result' : 'error',
         );
       },
+      onRemoteSource: async ({ sourceId, path, name, format }) => {
+        let resolved;
+        try {
+          resolved = resolveConfiguredSourceRequest(remoteLoading, {
+            sourceId,
+            path,
+            name,
+            format,
+          });
+        } catch (e) {
+          terminal.print(e.message, 'error');
+          return { ok: false, message: e.message };
+        }
+
+        terminal.print(`Loading "${path}" from ${resolved.source.name}...`, 'info');
+        const result = await loadStructure(resolved.request);
+        terminal.print(result.message, result.ok ? 'result' : 'error');
+        return result;
+      },
+      onLoadUrl: async ({ name, format, url }) => {
+        let resolved;
+        try {
+          resolved = resolveArbitraryUrlRequest(remoteLoading, { name, format, url });
+        } catch (e) {
+          terminal.print(e.message, 'error');
+          return { ok: false, message: e.message };
+        }
+
+        terminal.print(`Loading "${name}" from URL...`, 'info');
+        const result = await loadStructure(resolved.request);
+        terminal.print(result.message, result.ok ? 'result' : 'error');
+        return result;
+      },
+    }, {
+      remoteLoading,
     });
   },
 
@@ -721,7 +764,7 @@ const ctx = createCommandContext({
   sidebar,
   state: getState(),
 });
-registerAllCommands(registry);
+registerAllCommands(registry, { remoteLoading });
 
 // --- Viewer click handler for visual selection ---
 /** @type {boolean} Flag to detect background clicks (no atom hit). */
@@ -993,7 +1036,6 @@ onStateChange(() => refreshClickableModels());
 
 // --- Initialization / Quick-start ---
 let dismissQuickstart = null;
-const init = window.__C3D_INIT__;
 
 if (init) {
   const v = getViewer();
@@ -1003,12 +1045,8 @@ if (init) {
   // and { group: 'name', entries: [...] } for groups.
   const molecules = init.molecules || [];
   async function loadInitEntry(entry, fallbackName) {
-    const result = await loadStructure({
-      kind: 'inline',
-      name: entry.name || fallbackName || entry.format,
-      format: entry.format,
-      data: entry.data,
-    }, {
+    const { request } = resolveInitializationStructureRequest(entry, fallbackName, remoteLoading);
+    const result = await loadStructure(request, {
       loadOptions: { applyDefaultStyle: false, zoom: false, render: false },
     });
     if (!result.ok) {

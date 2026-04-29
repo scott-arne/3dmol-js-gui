@@ -32,6 +32,10 @@ function findCloseBtn(overlay) {
   return overlay.querySelector('.modal-close');
 }
 
+function getTabLabels(overlay) {
+  return [...overlay.querySelectorAll('.modal-tab')].map((tab) => tab.textContent);
+}
+
 // ---------------------------------------------------------------------------
 // showLoadDialog
 // ---------------------------------------------------------------------------
@@ -282,6 +286,261 @@ describe('showLoadDialog', () => {
     const overlay = document.querySelector('.modal-overlay');
     const dialog = overlay.querySelector('.modal');
     dialog.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+  });
+
+  it('shows a Remote Source tab when sources are configured', () => {
+    showLoadDialog(callbacks, {
+      remoteLoading: {
+        sources: [{ id: 'app', name: 'App Structures', baseUrl: '/api/structures/' }],
+      },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    expect(getTabLabels(overlay)).toEqual(['Fetch PDB', 'Local File', 'Remote Source']);
+  });
+
+  it('remote source form calls onRemoteSource and closes on success', async () => {
+    callbacks.onRemoteSource = vi.fn().mockResolvedValue({ ok: true });
+    showLoadDialog(callbacks, {
+      remoteLoading: {
+        sources: [{ id: 'app', name: 'App Structures', baseUrl: '/api/structures/' }],
+      },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    const remoteTab = [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'Remote Source');
+    remoteTab.click();
+    overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
+    overlay.querySelector('.modal-source-name').value = 'Ligand Pose';
+    overlay.querySelector('.modal-source-format').value = 'pdb';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+    await vi.waitFor(() => expect(callbacks.onRemoteSource).toHaveBeenCalled());
+
+    expect(callbacks.onRemoteSource).toHaveBeenCalledWith({
+      sourceId: 'app',
+      path: 'poses/ligand.pdb',
+      name: 'Ligand Pose',
+      format: 'pdb',
+    });
+    await vi.waitFor(() => expect(document.querySelector('.modal-overlay')).toBeNull());
+  });
+
+  it('remote source failures show an inline error and keep the dialog open', async () => {
+    callbacks.onRemoteSource = vi.fn().mockResolvedValue({
+      ok: false,
+      message: 'Remote failed',
+    });
+    showLoadDialog(callbacks, {
+      remoteLoading: {
+        sources: [{ id: 'app', name: 'App Structures', baseUrl: '/api/structures/' }],
+      },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'Remote Source')
+      .click();
+    overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
+    overlay.querySelector('.modal-source-name').value = 'Ligand Pose';
+    overlay.querySelector('.modal-source-format').value = 'pdb';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+
+    await vi.waitFor(() => {
+      const status = overlay.querySelector('.modal-status');
+      expect(status.classList.contains('error')).toBe(true);
+      expect(status.textContent).toBe('Remote failed');
+    });
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+  });
+
+  it('remote source load ignores duplicate submissions while pending', async () => {
+    callbacks.onRemoteSource = vi.fn(() => new Promise(() => {}));
+    showLoadDialog(callbacks, {
+      remoteLoading: {
+        sources: [{ id: 'app', name: 'App Structures', baseUrl: '/api/structures/' }],
+      },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'Remote Source')
+      .click();
+    overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
+    const loadBtn = overlay.querySelector('.modal-panel:not(.hidden) .modal-btn');
+
+    loadBtn.click();
+    loadBtn.click();
+    await vi.waitFor(() => expect(callbacks.onRemoteSource).toHaveBeenCalledTimes(1));
+    expect(loadBtn.disabled).toBe(true);
+  });
+
+  it('remote source blank path shows an inline error and does not call onRemoteSource', () => {
+    callbacks.onRemoteSource = vi.fn();
+    showLoadDialog(callbacks, {
+      remoteLoading: {
+        sources: [{ id: 'app', name: 'App Structures', baseUrl: '/api/structures/' }],
+      },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'Remote Source')
+      .click();
+    overlay.querySelector('.modal-source-path').value = '   ';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onRemoteSource).not.toHaveBeenCalled();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Enter a remote source path.');
+  });
+
+  it('shows a URL tab only when arbitrary URLs are enabled', () => {
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    expect(getTabLabels(overlay)).toEqual(['Fetch PDB', 'Local File', 'URL']);
+
+    overlay.remove();
+    showLoadDialog(callbacks);
+    expect(getTabLabels(document.querySelector('.modal-overlay'))).toEqual([
+      'Fetch PDB',
+      'Local File',
+    ]);
+  });
+
+  it('URL form calls onLoadUrl and closes on success', async () => {
+    callbacks.onLoadUrl = vi.fn().mockResolvedValue({ ok: true });
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'URL')
+      .click();
+    overlay.querySelector('.modal-url-name').value = 'Remote Pose';
+    overlay.querySelector('.modal-url-format').value = 'cif';
+    overlay.querySelector('.modal-url-input').value = 'https://example.test/remote.cif';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+    await vi.waitFor(() => expect(callbacks.onLoadUrl).toHaveBeenCalled());
+
+    expect(callbacks.onLoadUrl).toHaveBeenCalledWith({
+      name: 'Remote Pose',
+      format: 'cif',
+      url: 'https://example.test/remote.cif',
+    });
+    await vi.waitFor(() => expect(document.querySelector('.modal-overlay')).toBeNull());
+  });
+
+  it('URL load ignores duplicate submissions while pending', async () => {
+    callbacks.onLoadUrl = vi.fn(() => new Promise(() => {}));
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'URL')
+      .click();
+    overlay.querySelector('.modal-url-name').value = 'Remote Pose';
+    overlay.querySelector('.modal-url-format').value = 'cif';
+    overlay.querySelector('.modal-url-input').value = 'https://example.test/remote.cif';
+    const loadBtn = overlay.querySelector('.modal-panel:not(.hidden) .modal-btn');
+
+    loadBtn.click();
+    loadBtn.click();
+    await vi.waitFor(() => expect(callbacks.onLoadUrl).toHaveBeenCalledTimes(1));
+    expect(loadBtn.disabled).toBe(true);
+  });
+
+  it('URL blank name shows an inline error and does not call onLoadUrl', () => {
+    callbacks.onLoadUrl = vi.fn();
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'URL')
+      .click();
+    overlay.querySelector('.modal-url-name').value = ' ';
+    overlay.querySelector('.modal-url-format').value = 'cif';
+    overlay.querySelector('.modal-url-input').value = 'https://example.test/remote.cif';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onLoadUrl).not.toHaveBeenCalled();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Enter a structure name.');
+  });
+
+  it('URL blank format shows an inline error and does not call onLoadUrl', () => {
+    callbacks.onLoadUrl = vi.fn();
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'URL')
+      .click();
+    overlay.querySelector('.modal-url-name').value = 'Remote Pose';
+    overlay.querySelector('.modal-url-format').value = ' ';
+    overlay.querySelector('.modal-url-input').value = 'https://example.test/remote.cif';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onLoadUrl).not.toHaveBeenCalled();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Enter a structure format.');
+  });
+
+  it('URL blank URL shows an inline error and does not call onLoadUrl', () => {
+    callbacks.onLoadUrl = vi.fn();
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'URL')
+      .click();
+    overlay.querySelector('.modal-url-name').value = 'Remote Pose';
+    overlay.querySelector('.modal-url-format').value = 'cif';
+    overlay.querySelector('.modal-url-input').value = ' ';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+
+    const status = overlay.querySelector('.modal-status');
+    expect(callbacks.onLoadUrl).not.toHaveBeenCalled();
+    expect(status.classList.contains('error')).toBe(true);
+    expect(status.textContent).toBe('Enter a structure URL.');
+  });
+
+  it('URL thrown errors show inline and keep the dialog open', async () => {
+    callbacks.onLoadUrl = vi.fn().mockRejectedValue(new Error('URL exploded'));
+    showLoadDialog(callbacks, {
+      remoteLoading: { allowArbitraryUrls: true },
+    });
+
+    const overlay = document.querySelector('.modal-overlay');
+    [...overlay.querySelectorAll('.modal-tab')]
+      .find((tab) => tab.textContent === 'URL')
+      .click();
+    overlay.querySelector('.modal-url-name').value = 'Remote Pose';
+    overlay.querySelector('.modal-url-format').value = 'cif';
+    overlay.querySelector('.modal-url-input').value = 'https://example.test/remote.cif';
+    overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
+
+    await vi.waitFor(() => {
+      const status = overlay.querySelector('.modal-status');
+      expect(status.classList.contains('error')).toBe(true);
+      expect(status.textContent).toBe('URL exploded');
+    });
     expect(document.querySelector('.modal-overlay')).not.toBeNull();
   });
 });

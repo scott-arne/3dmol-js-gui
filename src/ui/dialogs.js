@@ -6,15 +6,21 @@
  */
 
 import { getViewer } from '../viewer.js';
+import { normalizeRemoteLoadingConfig } from '../loading/remote-loading.js';
 
 /**
- * Show a Load dialog with two tabs: Fetch PDB and Local File.
+ * Show a Load dialog with local and optional remote loading tabs.
  *
  * @param {object} callbacks - Callback functions.
  * @param {function} callbacks.onFetch - Called with (pdbId).
  * @param {function} callbacks.onLoad - Called with (data, format, filename).
+ * @param {function} [callbacks.onRemoteSource] - Called with configured source input.
+ * @param {function} [callbacks.onLoadUrl] - Called with arbitrary URL input.
+ * @param {object} [options] - Optional dialog configuration.
+ * @param {object} [options.remoteLoading] - Remote loading configuration.
  */
-export function showLoadDialog(callbacks) {
+export function showLoadDialog(callbacks, options = {}) {
+  const remoteLoading = normalizeRemoteLoadingConfig(options.remoteLoading);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
 
@@ -46,10 +52,12 @@ export function showLoadDialog(callbacks) {
   tabBar.appendChild(tabFetch);
   tabBar.appendChild(tabFile);
   dialog.appendChild(tabBar);
+  const tabs = [tabFetch, tabFile];
 
   // Content
   const content = document.createElement('div');
   content.className = 'modal-body';
+  const panels = [];
   const status = document.createElement('div');
   status.className = 'modal-status hidden';
 
@@ -90,6 +98,7 @@ export function showLoadDialog(callbacks) {
   fetchPanel.appendChild(pdbInput);
   fetchPanel.appendChild(fetchBtn);
   content.appendChild(fetchPanel);
+  panels.push(fetchPanel);
 
   // File panel (hidden initially)
   const filePanel = document.createElement('div');
@@ -129,25 +138,186 @@ export function showLoadDialog(callbacks) {
   filePanel.appendChild(fileInput);
   filePanel.appendChild(loadBtn);
   content.appendChild(filePanel);
+  panels.push(filePanel);
+
+  let remoteLoadPending = false;
+
+  function setRemoteControlsDisabled(controls, disabled) {
+    for (const control of controls) {
+      control.disabled = disabled;
+    }
+  }
+
+  async function runRemoteLoad(callback, payload, controls = []) {
+    if (remoteLoadPending) return;
+    if (typeof callback !== 'function') {
+      setStatus('Remote loading is not available.', 'error');
+      return;
+    }
+
+    remoteLoadPending = true;
+    setRemoteControlsDisabled(controls, true);
+    setStatus('Loading remote structure...', 'info');
+    try {
+      const result = await callback(payload);
+      if (result?.ok) {
+        overlay.remove();
+        return;
+      }
+      setStatus(result?.message || 'Remote loading failed.', 'error');
+    } catch (e) {
+      setStatus(e?.message || 'Remote loading failed.', 'error');
+    } finally {
+      if (overlay.isConnected) {
+        remoteLoadPending = false;
+        setRemoteControlsDisabled(controls, false);
+      }
+    }
+  }
+
+  if (remoteLoading.sources.length > 0) {
+    const tabRemote = document.createElement('button');
+    tabRemote.className = 'modal-tab';
+    tabRemote.textContent = 'Remote Source';
+    tabBar.appendChild(tabRemote);
+    tabs.push(tabRemote);
+
+    const remotePanel = document.createElement('div');
+    remotePanel.className = 'modal-panel hidden';
+    const sourceSelect = document.createElement('select');
+    sourceSelect.className = 'modal-source-select modal-input';
+    for (const source of remoteLoading.sources) {
+      const option = document.createElement('option');
+      option.value = source.id;
+      option.textContent = source.name;
+      sourceSelect.appendChild(option);
+    }
+    const sourcePathInput = document.createElement('input');
+    sourcePathInput.type = 'text';
+    sourcePathInput.className = 'modal-source-path modal-input';
+    sourcePathInput.placeholder = 'Remote path (e.g. poses/ligand.pdb)';
+    const sourceNameInput = document.createElement('input');
+    sourceNameInput.type = 'text';
+    sourceNameInput.className = 'modal-source-name modal-input';
+    sourceNameInput.placeholder = 'Name (optional)';
+    const sourceFormatInput = document.createElement('input');
+    sourceFormatInput.type = 'text';
+    sourceFormatInput.className = 'modal-source-format modal-input';
+    sourceFormatInput.placeholder = 'Format (optional)';
+    const sourceBtn = document.createElement('button');
+    sourceBtn.className = 'modal-btn';
+    sourceBtn.textContent = 'Load';
+    sourceBtn.addEventListener('click', () => {
+      const path = sourcePathInput.value.trim();
+      if (!path) {
+        setStatus('Enter a remote source path.', 'error');
+        return;
+      }
+      runRemoteLoad(
+        callbacks.onRemoteSource,
+        {
+          sourceId: sourceSelect.value,
+          path,
+          name: sourceNameInput.value.trim(),
+          format: sourceFormatInput.value.trim(),
+        },
+        [sourceSelect, sourcePathInput, sourceNameInput, sourceFormatInput, sourceBtn],
+      );
+    });
+    sourcePathInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sourceBtn.click();
+    });
+    remotePanel.appendChild(sourceSelect);
+    remotePanel.appendChild(sourcePathInput);
+    remotePanel.appendChild(sourceNameInput);
+    remotePanel.appendChild(sourceFormatInput);
+    remotePanel.appendChild(sourceBtn);
+    content.appendChild(remotePanel);
+    panels.push(remotePanel);
+  }
+
+  if (remoteLoading.allowArbitraryUrls) {
+    const tabUrl = document.createElement('button');
+    tabUrl.className = 'modal-tab';
+    tabUrl.textContent = 'URL';
+    tabBar.appendChild(tabUrl);
+    tabs.push(tabUrl);
+
+    const urlPanel = document.createElement('div');
+    urlPanel.className = 'modal-panel hidden';
+    const urlNameInput = document.createElement('input');
+    urlNameInput.type = 'text';
+    urlNameInput.className = 'modal-url-name modal-input';
+    urlNameInput.placeholder = 'Name';
+    const urlFormatInput = document.createElement('input');
+    urlFormatInput.type = 'text';
+    urlFormatInput.className = 'modal-url-format modal-input';
+    urlFormatInput.placeholder = 'Format';
+    const urlInput = document.createElement('input');
+    urlInput.type = 'url';
+    urlInput.className = 'modal-url-input modal-input';
+    urlInput.placeholder = 'URL';
+    const urlBtn = document.createElement('button');
+    urlBtn.className = 'modal-btn';
+    urlBtn.textContent = 'Load';
+    urlBtn.addEventListener('click', () => {
+      const name = urlNameInput.value.trim();
+      const format = urlFormatInput.value.trim();
+      const url = urlInput.value.trim();
+      if (!name) {
+        setStatus('Enter a structure name.', 'error');
+        return;
+      }
+      if (!format) {
+        setStatus('Enter a structure format.', 'error');
+        return;
+      }
+      if (!url) {
+        setStatus('Enter a structure URL.', 'error');
+        return;
+      }
+      runRemoteLoad(
+        callbacks.onLoadUrl,
+        { name, format, url },
+        [urlNameInput, urlFormatInput, urlInput, urlBtn],
+      );
+    });
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') urlBtn.click();
+    });
+    urlPanel.appendChild(urlNameInput);
+    urlPanel.appendChild(urlFormatInput);
+    urlPanel.appendChild(urlInput);
+    urlPanel.appendChild(urlBtn);
+    content.appendChild(urlPanel);
+    panels.push(urlPanel);
+  }
   content.appendChild(status);
 
   dialog.appendChild(content);
 
   // Tab switching
-  tabFetch.addEventListener('click', () => {
+  function activateTab(activeTab, activePanel) {
     clearStatus();
-    tabFetch.classList.add('active');
-    tabFile.classList.remove('active');
-    fetchPanel.classList.remove('hidden');
-    filePanel.classList.add('hidden');
+    for (const tab of tabs) {
+      tab.classList.toggle('active', tab === activeTab);
+    }
+    for (const panel of panels) {
+      panel.classList.toggle('hidden', panel !== activePanel);
+    }
+  }
+
+  tabFetch.addEventListener('click', () => {
+    activateTab(tabFetch, fetchPanel);
   });
   tabFile.addEventListener('click', () => {
-    clearStatus();
-    tabFile.classList.add('active');
-    tabFetch.classList.remove('active');
-    filePanel.classList.remove('hidden');
-    fetchPanel.classList.add('hidden');
+    activateTab(tabFile, filePanel);
   });
+  for (let i = 2; i < tabs.length; i += 1) {
+    tabs[i].addEventListener('click', () => {
+      activateTab(tabs[i], panels[i]);
+    });
+  }
 
   overlay.appendChild(dialog);
   overlay.addEventListener('click', (e) => {

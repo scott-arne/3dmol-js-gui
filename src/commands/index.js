@@ -13,9 +13,10 @@ import { registerGroupingCommands } from './grouping.js';
  * Register all available commands into the given command registry.
  *
  * @param {object} registry - The command registry to register commands with.
+ * @param {object} options - Optional command registration configuration.
  */
-export function registerAllCommands(registry) {
-  registerLoadingCommands(registry);
+export function registerAllCommands(registry, options = {}) {
+  registerLoadingCommands(registry, options);
   registerDisplayCommands(registry);
   registerStylingCommands(registry);
   registerCameraCommands(registry);

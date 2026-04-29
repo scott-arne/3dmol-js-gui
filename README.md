@@ -44,8 +44,28 @@ The production build uses relative asset paths (`base: './'`), so the output can
 Structure loading is routed through a shared client-side loader. Existing static
 paths remain the default: inline initialization data, local files, and public PDB
 IDs work without a server. The loader also has an internal generic URL-backed
-request shape for future live-app integrations, but arbitrary remote URL loading
-is not exposed in the UI unless a later runtime configuration enables it.
+request shape for live-app integrations, while arbitrary remote URL loading stays
+disabled unless runtime configuration enables it.
+
+Live applications can opt into remote loading at initialization time:
+
+```js
+window.__C3D_INIT__ = {
+  services: {
+    remoteLoading: {
+      allowArbitraryUrls: false,
+      sources: [
+        { name: "App Structures", baseUrl: "/api/c3d/structures/" },
+        { name: "PDB Proxy", baseUrl: "/api/c3d/pdb/" },
+      ],
+    },
+  },
+};
+```
+
+Configured sources are available through `load_remote <source>, <path> [, name] [, format]`
+and the File > Load dialog. Direct URL loading uses `load_url <name>, <format>, <url>`
+and appears in the dialog only when `allowArbitraryUrls` is true.
 
 ## Commands
 
