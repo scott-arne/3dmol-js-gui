@@ -20,6 +20,30 @@ function resolveAndCount(expression) {
 }
 
 /**
+ * Create or replace a selection and apply the anonymous selection side effects.
+ *
+ * The anonymous selection is stored under the same ``sele`` state key as named
+ * selections, but it also drives the transient atom highlight.
+ *
+ * @param {string} name - Selection name.
+ * @param {string} expression - Selection expression.
+ * @param {object} terminal - Terminal output API.
+ */
+function createSelection(name, expression, terminal) {
+  const { spec, atomCount } = resolveAndCount(expression);
+  addSelection(name, expression, spec, atomCount);
+
+  if (name === 'sele') {
+    const atoms = getViewer().selectedAtoms(spec);
+    renderHighlight(atoms);
+    terminal.print(`(sele): ${atomCount} atoms`, 'result');
+    return;
+  }
+
+  terminal.print(`Selection "${name}" defined: ${atomCount} atoms`, 'result');
+}
+
+/**
  * Register the selection commands (select, count_atoms, get_model) into the
  * given command registry.
  *
@@ -33,11 +57,7 @@ export function registerSelectionCommands(registry) {
         throw new Error('Usage: sele <expression>');
       }
 
-      const { spec, atomCount } = resolveAndCount(expression);
-      addSelection('sele', expression, spec, atomCount);
-      const atoms = getViewer().selectedAtoms(spec);
-      renderHighlight(atoms);
-      ctx.terminal.print(`(sele): ${atomCount} atoms`, 'result');
+      createSelection('sele', expression, ctx.terminal);
     },
     usage: 'sele <expression>',
     help: 'Create or overwrite the anonymous "sele" selection.',
@@ -46,18 +66,20 @@ export function registerSelectionCommands(registry) {
   registry.register('select', {
     handler: (args, ctx) => {
       const parts = parseArgs(args);
-      if (parts.length < 2) {
-        throw new Error('Usage: select <name>, <expression>');
+      if (parts.length === 0) {
+        throw new Error('Usage: select <expression> | select <name>, <expression>');
+      }
+      if (parts.length === 1) {
+        createSelection('sele', parts[0], ctx.terminal);
+        return;
       }
       const name = parts[0].trim();
       const expression = parts.slice(1).join(', ').trim();
 
-      const { spec, atomCount } = resolveAndCount(expression);
-      addSelection(name, expression, spec, atomCount);
-      ctx.terminal.print(`Selection "${name}" defined: ${atomCount} atoms`, 'result');
+      createSelection(name, expression, ctx.terminal);
     },
-    usage: 'select <name>, <expression>',
-    help: 'Define a named selection for use in other commands.',
+    usage: 'select <expression> | select <name>, <expression>',
+    help: 'Create the anonymous selection, or define a named selection with a comma.',
   });
 
   registry.register('count_atoms', {

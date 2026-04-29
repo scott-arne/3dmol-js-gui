@@ -403,6 +403,19 @@ describe('applyLabel', () => {
     expect(addTrackedLabel).not.toHaveBeenCalled();
   });
 
+  it('clears existing labels before adding a replacement label set', () => {
+    mockViewer.selectedAtoms.mockReturnValue([
+      { atom: 'CA', serial: 100, x: 1, y: 2, z: 3 },
+    ]);
+
+    applyLabel({}, 'index');
+
+    expect(clearAllLabels).toHaveBeenCalledTimes(1);
+    expect(addTrackedLabel).toHaveBeenCalledWith('100', { x: 1, y: 2, z: 3 });
+    expect(clearAllLabels.mock.invocationCallOrder[0])
+      .toBeLessThan(addTrackedLabel.mock.invocationCallOrder[0]);
+  });
+
   it('labels all atoms by atom name for prop="atom"', () => {
     mockViewer.selectedAtoms.mockReturnValue([
       { atom: 'CA', x: 1, y: 2, z: 3, serial: 1 },

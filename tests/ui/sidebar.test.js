@@ -180,6 +180,17 @@ describe('Sidebar', () => {
 
       expect(callbacks.onToggleVisibility).toHaveBeenCalledWith('1UBQ');
     });
+
+    it('clicking an object action button does not toggle visibility', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      sidebar.refresh(makeState({ objects }));
+
+      const row = container.querySelector('[data-kind="object"]');
+      const aBtn = row.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      expect(callbacks.onToggleVisibility).not.toHaveBeenCalled();
+    });
   });
 
   describe('selection rendering', () => {
@@ -237,6 +248,17 @@ describe('Sidebar', () => {
       row.click();
 
       expect(callbacks.onToggleSelectionVisibility).toHaveBeenCalledWith('sele1');
+    });
+
+    it('clicking a selection action button does not toggle visibility', () => {
+      const selections = new Map([['sele1', makeSelection()]]);
+      sidebar.refresh(makeState({ selections }));
+
+      const row = container.querySelector('[data-kind="selection"]');
+      const lBtn = row.querySelectorAll('.sidebar-btn')[3];
+      lBtn.click();
+
+      expect(callbacks.onToggleSelectionVisibility).not.toHaveBeenCalled();
     });
 
     it('sets data-kind="selection" and data-name on selection rows', () => {

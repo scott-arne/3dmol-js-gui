@@ -73,7 +73,7 @@ and appears in the dialog only when `allowArbitraryUrls` is true.
 |---------|-------|-------------|
 | fetch | `fetch <pdb_id>` | Fetch a structure from RCSB PDB |
 | load | `load` | Open file picker for local structure files |
-| select | `select <name>, <expression>` | Define a named selection |
+| select | `select <expression>` or `select <name>, <expression>` | Create `(sele)` or define a named selection |
 | count_atoms | `count_atoms [selection]` | Count atoms matching a selection |
 | get_model | `get_model [selection]` | Print summary info about a selection |
 | show | `show <rep> [, selection]` | Show a representation |

@@ -872,8 +872,16 @@ describe('selection.js', () => {
       expect(() => registry.execute('select', ctx)).toThrow('Usage: select');
     });
 
-    it('throws when only name provided (no expression)', () => {
-      expect(() => registry.execute('select mysel', ctx)).toThrow('Usage: select');
+    it('creates anonymous sele when select receives a comma-free expression', () => {
+      const matchedAtoms = [{ serial: 7 }, { serial: 8 }];
+      mockViewer.selectedAtoms.mockReturnValue(matchedAtoms);
+
+      registry.execute('select ligand', ctx);
+
+      expect(resolveSelection).toHaveBeenCalledWith('ligand');
+      expect(addSelection).toHaveBeenCalledWith('sele', 'ligand', { resn: ['ligand'] }, 2);
+      expect(renderHighlight).toHaveBeenCalledWith(matchedAtoms);
+      expect(terminal.lines[0].msg).toBe('(sele): 2 atoms');
     });
 
     it('joins multi-part expressions correctly', () => {
@@ -881,6 +889,17 @@ describe('selection.js', () => {
 
       registry.execute('select mysel, resn ALA, chain A', ctx);
       expect(resolveSelection).toHaveBeenCalledWith('resn ALA, chain A');
+    });
+
+    it('selecting the anonymous sele name follows the same highlight path as sele', () => {
+      const matchedAtoms = [{ serial: 9 }, { serial: 10 }];
+      mockViewer.selectedAtoms.mockReturnValue(matchedAtoms);
+
+      registry.execute('select sele, resn ASN', ctx);
+
+      expect(addSelection).toHaveBeenCalledWith('sele', 'resn ASN', { resn: ['ASN'] }, 2);
+      expect(renderHighlight).toHaveBeenCalledWith(matchedAtoms);
+      expect(terminal.lines[0].msg).toBe('(sele): 2 atoms');
     });
   });
 

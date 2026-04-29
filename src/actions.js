@@ -263,6 +263,8 @@ export function applyLabel(selSpec, prop) {
     return;
   }
 
+  clearAllLabels();
+
   const propMap = { atom: 'atom', resn: 'resn', resi: 'resi', chain: 'chain', elem: 'elem', index: 'serial' };
   const atomProp = propMap[prop] || prop;
   let atoms = viewer.selectedAtoms(selSpec);

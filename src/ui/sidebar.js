@@ -617,8 +617,9 @@ export function createSidebar(container, callbacks) {
       toggleZone.appendChild(nameEl);
       row.appendChild(toggleZone);
     } else {
-      // Regular object: clicking anywhere on row toggles visibility
-      row.addEventListener('click', () => {
+      // Regular object: only the non-button side of the row toggles visibility.
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.sidebar-buttons')) return;
         callbacks.onToggleVisibility(name);
       });
 
@@ -656,8 +657,9 @@ export function createSidebar(container, callbacks) {
       row.classList.add('dimmed');
     }
 
-    // Clicking anywhere on the row (outside buttons) toggles visibility
-    row.addEventListener('click', () => {
+    // Clicking only the non-button side of the row toggles visibility.
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.sidebar-buttons')) return;
       callbacks.onToggleSelectionVisibility(name);
     });
 
