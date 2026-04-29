@@ -41,6 +41,12 @@ Or use **File > Load...** to open a local structure file (PDB, SDF, MOL2, XYZ, C
 
 The production build uses relative asset paths (`base: './'`), so the output can be served from any directory without path adjustments.
 
+Structure loading is routed through a shared client-side loader. Existing static
+paths remain the default: inline initialization data, local files, and public PDB
+IDs work without a server. The loader also has an internal generic URL-backed
+request shape for future live-app integrations, but arbitrary remote URL loading
+is not exposed in the UI unless a later runtime configuration enables it.
+
 ## Commands
 
 | Command | Usage | Description |
