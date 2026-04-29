@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Static Inline Init Smoke</title>
+</head>
+<body>
+  <div id="app">
+    <div id="menubar-container" class="menubar"></div>
+    <div id="viewer-container" class="viewer-container"></div>
+    <div id="sidebar-container" class="sidebar"></div>
+    <div id="terminal-container" class="terminal"></div>
+  </div>
+
+  <script type="application/json" id="c3d-init-payload">
+    {
+      "molecules": [
+        {
+          "name": "static-water",
+          "format": "pdb",
+          "data": "HEADER    static-water\nHETATM    1  O   HOH A   1       0.000   0.000   0.000  1.00  0.00           O\nHETATM    2  H1  HOH A   1       0.758   0.000   0.504  1.00  0.00           H\nHETATM    3  H2  HOH A   1      -0.758   0.000   0.504  1.00  0.00           H\nEND\n"
+        }
+      ],
+      "ui": {
+        "sidebar": false,
+        "menubar": false,
+        "terminal": false
+      }
+    }
+  </script>
+  <script type="module">
+    window.__C3D_INIT__ = JSON.parse(document.getElementById('c3d-init-payload').textContent);
+    await import('../../src/main.js');
+  </script>
+</body>
+</html>
