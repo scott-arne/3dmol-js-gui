@@ -1,0 +1,16 @@
+[[locations]]
+file = "package.json"
+type = "package-json"
+label = "package.json"
+
+[[locations]]
+file = "package-lock.json"
+type = "custom"
+label = "package-lock.json root"
+template = '''^  "version": "{version}",'''
+
+[[locations]]
+file = "package-lock.json"
+type = "custom"
+label = "package-lock.json package root"
+template = '''"": \{\n      "name": "3dmol-js-gui",\n      "version": "{version}"'''

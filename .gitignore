@@ -46,6 +46,10 @@ coverage/
 # Build artifacts
 *.tsbuildinfo
 
+# Debugging
+Screenshot.png
+
 # Plan documents
 docs/plans
 docs/superpowers
+.superpowers
