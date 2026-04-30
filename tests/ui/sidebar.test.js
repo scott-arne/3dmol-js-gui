@@ -69,12 +69,6 @@ describe('Sidebar', () => {
       onLabel: vi.fn(),
       onColor: vi.fn(),
       onView: vi.fn(),
-      onSelectionAction: vi.fn(),
-      onSelectionShow: vi.fn(),
-      onSelectionHide: vi.fn(),
-      onSelectionLabel: vi.fn(),
-      onSelectionColor: vi.fn(),
-      onSelectionView: vi.fn(),
       onToggleSurfaceVisibility: vi.fn(),
       onSurfaceAction: vi.fn(),
       onSurfaceStyle: vi.fn(),
@@ -591,7 +585,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Center');
       centerItem.click();
 
-      expect(callbacks.onAction).toHaveBeenCalledWith('1UBQ', 'center');
+      expect(callbacks.onAction).toHaveBeenCalledWith('1UBQ', 'center', 'object');
     });
 
     it('object Action menu can create surfaces', () => {
@@ -610,11 +604,11 @@ describe('Sidebar', () => {
       expect(labels).toContain('Molecular');
 
       popup.querySelector('[data-value="surface:sasa"]').click();
-      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('1UBQ', 'sasa');
+      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('1UBQ', 'sasa', 'object');
 
       aBtn.click();
       document.querySelector('[data-value="surface:molecular"]').click();
-      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('1UBQ', 'molecular');
+      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('1UBQ', 'molecular', 'object');
       expect(callbacks.onAction).not.toHaveBeenCalledWith('1UBQ', 'surface:sasa');
       expect(callbacks.onAction).not.toHaveBeenCalledWith('1UBQ', 'surface:molecular');
     });
@@ -656,7 +650,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Cartoon');
       cartoonItem.click();
 
-      expect(callbacks.onShow).toHaveBeenCalledWith('1UBQ', 'cartoon');
+      expect(callbacks.onShow).toHaveBeenCalledWith('1UBQ', 'cartoon', 'object');
     });
 
     it('S button menu omits unsupported Surface representation', () => {
@@ -687,7 +681,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Simple');
       simpleItem.click();
 
-      expect(callbacks.onView).toHaveBeenCalledWith('1UBQ', 'simple');
+      expect(callbacks.onView).toHaveBeenCalledWith('1UBQ', 'simple', 'object');
     });
 
     it('clicking H button item fires onHide callback', () => {
@@ -704,7 +698,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Everything');
       everythingItem.click();
 
-      expect(callbacks.onHide).toHaveBeenCalledWith('1UBQ', 'everything');
+      expect(callbacks.onHide).toHaveBeenCalledWith('1UBQ', 'everything', 'object');
     });
 
     it('H button menu omits unsupported Surface representation', () => {
@@ -735,7 +729,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Atom Name');
       atomItem.click();
 
-      expect(callbacks.onLabel).toHaveBeenCalledWith('1UBQ', 'atom');
+      expect(callbacks.onLabel).toHaveBeenCalledWith('1UBQ', 'atom', 'object');
     });
 
     it('clicking C button B-Factor item fires onColor callback', () => {
@@ -752,12 +746,12 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'By B-Factor');
       bfactorItem.click();
 
-      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'bfactor');
+      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'bfactor', 'object');
     });
   });
 
   describe('selection button popup menus', () => {
-    it('selection A button opens popup with selection-specific actions (no Duplicate, no Orient)', () => {
+    it('selection A button opens popup with shared action items', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -772,12 +766,12 @@ describe('Sidebar', () => {
       expect(labels).toContain('Rename...');
       expect(labels).toContain('Delete');
       expect(labels).toContain('Center');
+      expect(labels).toContain('Orient');
       expect(labels).toContain('Zoom');
       expect(labels).not.toContain('Duplicate');
-      expect(labels).not.toContain('Orient');
     });
 
-    it('selection A button action fires onSelectionAction callback', () => {
+    it('selection A button action fires onAction callback with selection scope', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -791,10 +785,53 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Delete');
       deleteItem.click();
 
-      expect(callbacks.onSelectionAction).toHaveBeenCalledWith('sele1', 'delete');
+      expect(callbacks.onAction).toHaveBeenCalledWith('sele1', 'delete', 'selection');
     });
 
-    it('selection S button fires onSelectionShow callback', () => {
+    it('selection A button orient action fires onAction callback with selection scope', () => {
+      const selections = new Map([['sele1', makeSelection()]]);
+      sidebar.refresh(makeState({ selections }));
+
+      const row = container.querySelector('[data-kind="selection"]');
+      const aBtn = row.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const orientItem = Array.from(
+        popup.querySelectorAll('.popup-menu-item'),
+      ).find((el) => el.textContent === 'Orient');
+      orientItem.click();
+
+      expect(callbacks.onAction).toHaveBeenCalledWith('sele1', 'orient', 'selection');
+    });
+
+    it('selection Action menu can create surfaces', () => {
+      const selections = new Map([['sele1', makeSelection()]]);
+      sidebar.refresh(makeState({ selections }));
+
+      const row = container.querySelector('[data-kind="selection"]');
+      const aBtn = row.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const labels = Array.from(
+        popup.querySelectorAll('.popup-menu-item, .popup-menu-submenu-item'),
+      ).map((el) => el.textContent);
+      expect(labels.some((label) => label.includes('Create Surface'))).toBe(true);
+      expect(labels).toContain('Solvent Accessible');
+      expect(labels).toContain('Molecular');
+
+      popup.querySelector('[data-value="surface:sasa"]').click();
+      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('sele1', 'sasa', 'selection');
+
+      aBtn.click();
+      document.querySelector('[data-value="surface:molecular"]').click();
+      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('sele1', 'molecular', 'selection');
+      expect(callbacks.onAction).not.toHaveBeenCalledWith('sele1', 'surface:sasa', 'selection');
+      expect(callbacks.onAction).not.toHaveBeenCalledWith('sele1', 'surface:molecular', 'selection');
+    });
+
+    it('selection S button fires onShow callback with selection scope', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -809,10 +846,10 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Sticks');
       sticksItem.click();
 
-      expect(callbacks.onSelectionShow).toHaveBeenCalledWith('sele1', 'stick');
+      expect(callbacks.onShow).toHaveBeenCalledWith('sele1', 'stick', 'selection');
     });
 
-    it('selection H button fires onSelectionHide callback', () => {
+    it('selection H button fires onHide callback with selection scope', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -827,10 +864,10 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Cartoon');
       cartoonItem.click();
 
-      expect(callbacks.onSelectionHide).toHaveBeenCalledWith('sele1', 'cartoon');
+      expect(callbacks.onHide).toHaveBeenCalledWith('sele1', 'cartoon', 'selection');
     });
 
-    it('selection L button fires onSelectionLabel callback', () => {
+    it('selection L button fires onLabel callback with selection scope', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -845,10 +882,10 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Chain ID');
       chainItem.click();
 
-      expect(callbacks.onSelectionLabel).toHaveBeenCalledWith('sele1', 'chain');
+      expect(callbacks.onLabel).toHaveBeenCalledWith('sele1', 'chain', 'selection');
     });
 
-    it('selection C button fires onSelectionColor callback', () => {
+    it('selection C button fires onColor callback with selection scope', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -863,10 +900,10 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'By B-Factor');
       bfactorItem.click();
 
-      expect(callbacks.onSelectionColor).toHaveBeenCalledWith('sele1', 'bfactor');
+      expect(callbacks.onColor).toHaveBeenCalledWith('sele1', 'bfactor', 'selection');
     });
 
-    it('selection S button view: prefixed item fires onSelectionView', () => {
+    it('selection S button view: prefixed item fires onView with selection scope', () => {
       const selections = new Map([['sele1', makeSelection()]]);
       sidebar.refresh(makeState({ selections }));
 
@@ -881,7 +918,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Sites');
       sitesItem.click();
 
-      expect(callbacks.onSelectionView).toHaveBeenCalledWith('sele1', 'sites');
+      expect(callbacks.onView).toHaveBeenCalledWith('sele1', 'sites', 'selection');
     });
   });
 
@@ -992,7 +1029,7 @@ describe('Sidebar', () => {
       const swatchCell = solidSubmenu.querySelector('.swatch-cell');
       swatchCell.click();
 
-      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', '#0000FF');
+      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', '#0000FF', 'object');
     });
 
     it('element "Standard" click fires onColor with "element"', () => {
@@ -1009,7 +1046,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Standard');
       stdItem.click();
 
-      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'element');
+      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'element', 'object');
     });
 
     it('element swatch cell click fires onColor with "element:#hex"', () => {
@@ -1024,7 +1061,7 @@ describe('Sidebar', () => {
       const swatchCell = elementSubmenu.querySelector('.swatch-cell');
       swatchCell.click();
 
-      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'element:#FF0000');
+      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'element:#FF0000', 'object');
     });
 
     it('chain palette click fires onColor with "chain:<key>"', () => {
@@ -1041,7 +1078,7 @@ describe('Sidebar', () => {
       ).find((el) => el.textContent === 'Pastel');
       palItem.click();
 
-      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'chain:pastel');
+      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'chain:pastel', 'object');
     });
 
     it('SS palette click fires onColor with "ss:<key>"', () => {
@@ -1056,7 +1093,7 @@ describe('Sidebar', () => {
       const palItem = ssSubmenu.querySelector('.ss-palette-item');
       palItem.click();
 
-      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'ss:default');
+      expect(callbacks.onColor).toHaveBeenCalledWith('1UBQ', 'ss:default', 'object');
     });
 
     it('SS palette items display Helix, Sheet, Loop spans', () => {

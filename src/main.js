@@ -134,6 +134,181 @@ function setDirectGroupedSurfaceVisibility(entries, state, visible) {
   }
 }
 
+function resolveSidebarActionTarget(name, kind = 'object') {
+  const state = getState();
+
+  if (kind === 'selection') {
+    const selectionEntry = state.selections.get(name);
+    if (!selectionEntry) return null;
+    return {
+      kind,
+      name,
+      label: `"(${name})"`,
+      selection: selectionEntry.spec,
+      selectionEntry,
+    };
+  }
+
+  const objectEntry = state.objects.get(name);
+  if (!objectEntry) return null;
+  return {
+    kind: 'object',
+    name,
+    label: `"${name}"`,
+    selection: { model: objectEntry.model },
+    objectEntry,
+  };
+}
+
+function handleSidebarEntryAction(name, action, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) return;
+  const viewer = getViewer();
+
+  switch (action) {
+    case 'center':
+      viewer.center(target.selection);
+      scheduleRender();
+      terminal.print(`Centered on ${target.label}`, 'result');
+      break;
+    case 'orient':
+      orientView(target.selection);
+      terminal.print(`Oriented ${target.label}`, 'result');
+      break;
+    case 'zoom':
+      viewer.zoomTo(target.selection);
+      scheduleRender();
+      terminal.print(`Zoomed to ${target.label}`, 'result');
+      break;
+    case 'delete':
+      if (target.kind === 'selection') {
+        removeSelection(name);
+        terminal.print(`Deleted selection ${target.label}`, 'result');
+      } else {
+        const modelAtoms = viewer.selectedAtoms(target.selection);
+        const removedIndices = modelAtoms.map(a => a.index);
+        surfaceService.removeSurfacesForParent(name);
+        viewer.removeModel(target.objectEntry.model);
+        scheduleRender();
+        removeObject(name);
+        pruneSelections(removedIndices);
+        const sele = getState().selections.get('sele');
+        if (sele && sele.visible) {
+          const atoms = viewer.selectedAtoms(sele.spec);
+          renderHighlight(atoms);
+        } else {
+          clearHighlight();
+        }
+        terminal.print(`Deleted ${target.label}`, 'result');
+      }
+      break;
+    case 'rename':
+      showRenameDialog(name, (newName) => {
+        try {
+          if (target.kind === 'selection') {
+            renameSelection(name, newName);
+            terminal.print(`Renamed ${target.label} to "(${newName})"`, 'result');
+          } else {
+            const childSurfaceNames = getChildSurfaceNames(name);
+            renameObject(name, newName);
+            for (const surfaceName of childSurfaceNames) {
+              updateSurfaceEntry(surfaceName, { parentName: newName });
+            }
+            terminal.print(`Renamed ${target.label} to "${newName}"`, 'result');
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
+        }
+      });
+      break;
+  }
+}
+
+async function handleCreateSurface(name, type, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) {
+    const label = kind === 'selection' ? `"(${name})"` : `"${name}"`;
+    terminal.print(`Cannot create surface: ${label} not found`, 'error');
+    return;
+  }
+
+  const surfaceName = getNextSurfaceName();
+  const parentName = target.kind === 'object'
+    ? target.name
+    : surfaceService.findSingleSurfaceParent(target.selection) || null;
+
+  try {
+    const surface = await surfaceService.createSurface({
+      name: surfaceName,
+      selection: target.selection,
+      type,
+      parentName,
+    });
+    if (surface) {
+      terminal.print(`Created ${type} surface "${surface.name}" for ${target.label}`, 'result');
+    }
+  } catch (e) {
+    terminal.print(`Failed to create surface for ${target.label}: ${e.message}`, 'error');
+  }
+}
+
+function handleSidebarEntryShow(name, rep, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) return;
+
+  if (target.kind === 'selection') {
+    getViewer().addStyle(target.selection, repStyle(rep));
+    scheduleRender();
+  } else {
+    applyShow(target.selection, rep, target.objectEntry);
+  }
+  terminal.print(`Showing ${rep} on ${target.label}`, 'result');
+}
+
+function handleSidebarEntryHide(name, rep, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) return;
+
+  if (target.kind === 'selection') {
+    applyHideSelection(target.selection, rep);
+  } else {
+    applyHide(target.selection, rep, target.objectEntry);
+  }
+  terminal.print(`Hiding ${rep} on ${target.label}`, 'result');
+}
+
+function handleSidebarEntryLabel(name, prop, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) return;
+
+  applyLabel(target.selection, prop);
+  terminal.print(prop === 'clear' ? 'Labels cleared' : `Labeled ${target.label} by ${prop}`, 'result');
+}
+
+function handleSidebarEntryView(name, presetName, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) return;
+
+  const reps = applyViewPreset(presetName, target.selection);
+  if (target.kind === 'object') {
+    target.objectEntry.representations = new Set(reps);
+    notifyStateChange();
+  }
+  terminal.print(`Applied "${getPresetLabel(presetName)}" preset to ${target.label}`, 'result');
+}
+
+function handleSidebarEntryColor(name, rawScheme, kind = 'object') {
+  const target = resolveSidebarActionTarget(name, kind);
+  if (!target) return;
+
+  if (target.kind === 'selection') {
+    applyColorToSelection(target.selection, rawScheme);
+  } else {
+    applyColor(target.selection, target.objectEntry.representations, rawScheme);
+  }
+  terminal.print(`Colored ${target.label} by ${formatColorDisplay(rawScheme)}`, 'result');
+}
+
 // --- Create the sidebar with callbacks ---
 const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   onToggleVisibility(name) {
@@ -150,84 +325,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
   },
 
-  onAction(name, action) {
-    const state = getState();
-    const obj = state.objects.get(name);
-    if (!obj) return;
-    const viewer = getViewer();
-
-    switch (action) {
-      case 'center':
-        viewer.center({ model: obj.model });
-        scheduleRender();
-        terminal.print(`Centered on "${name}"`, 'result');
-        break;
-      case 'orient':
-        orientView({ model: obj.model });
-        terminal.print(`Oriented "${name}"`, 'result');
-        break;
-      case 'zoom':
-        viewer.zoomTo({ model: obj.model });
-        scheduleRender();
-        terminal.print(`Zoomed to "${name}"`, 'result');
-        break;
-      case 'delete': {
-        const modelAtoms = viewer.selectedAtoms({ model: obj.model });
-        const removedIndices = modelAtoms.map(a => a.index);
-        surfaceService.removeSurfacesForParent(name);
-        viewer.removeModel(obj.model);
-        scheduleRender();
-        removeObject(name);
-        pruneSelections(removedIndices);
-        const sele = getState().selections.get('sele');
-        if (sele && sele.visible) {
-          const atoms = viewer.selectedAtoms(sele.spec);
-          renderHighlight(atoms);
-        } else {
-          clearHighlight();
-        }
-        terminal.print(`Deleted "${name}"`, 'result');
-        break;
-      }
-      case 'rename': {
-        showRenameDialog(name, (newName) => {
-          try {
-            const childSurfaceNames = getChildSurfaceNames(name);
-            renameObject(name, newName);
-            for (const surfaceName of childSurfaceNames) {
-              updateSurfaceEntry(surfaceName, { parentName: newName });
-            }
-            terminal.print(`Renamed "${name}" to "${newName}"`, 'result');
-          } catch (e) {
-            terminal.print(e.message, 'error');
-          }
-        });
-        break;
-      }
-    }
+  onAction(name, action, kind) {
+    handleSidebarEntryAction(name, action, kind);
   },
 
-  async onCreateSurface(name, type) {
-    const obj = getState().objects.get(name);
-    if (!obj) {
-      terminal.print(`Cannot create surface: "${name}" not found`, 'error');
-      return;
-    }
-
-    const surfaceName = getNextSurfaceName();
-    try {
-      const surface = await surfaceService.createSurface({
-        name: surfaceName,
-        selection: { model: obj.model },
-        type,
-        parentName: name,
-      });
-      if (surface) {
-        terminal.print(`Created ${type} surface "${surface.name}" for "${name}"`, 'result');
-      }
-    } catch (e) {
-      terminal.print(`Failed to create surface for "${name}": ${e.message}`, 'error');
-    }
+  async onCreateSurface(name, type, kind) {
+    await handleCreateSurface(name, type, kind);
   },
 
   onToggleSurfaceVisibility(name) {
@@ -303,46 +406,24 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
   },
 
-  onShow(name, rep) {
-    const state = getState();
-    const obj = state.objects.get(name);
-    if (!obj) return;
-    applyShow({ model: obj.model }, rep, obj);
-    terminal.print(`Showing ${rep} on "${name}"`, 'result');
+  onShow(name, rep, kind) {
+    handleSidebarEntryShow(name, rep, kind);
   },
 
-  onHide(name, rep) {
-    const state = getState();
-    const obj = state.objects.get(name);
-    if (!obj) return;
-    applyHide({ model: obj.model }, rep, obj);
-    terminal.print(`Hiding ${rep} on "${name}"`, 'result');
+  onHide(name, rep, kind) {
+    handleSidebarEntryHide(name, rep, kind);
   },
 
-  onLabel(name, prop) {
-    const state = getState();
-    const obj = state.objects.get(name);
-    if (!obj) return;
-    applyLabel({ model: obj.model }, prop);
-    terminal.print(prop === 'clear' ? 'Labels cleared' : `Labeled "${name}" by ${prop}`, 'result');
+  onLabel(name, prop, kind) {
+    handleSidebarEntryLabel(name, prop, kind);
   },
 
-  onView(name, presetName) {
-    const state = getState();
-    const obj = state.objects.get(name);
-    if (!obj) return;
-    const reps = applyViewPreset(presetName, { model: obj.model });
-    obj.representations = new Set(reps);
-    notifyStateChange();
-    terminal.print(`Applied "${getPresetLabel(presetName)}" preset to "${name}"`, 'result');
+  onView(name, presetName, kind) {
+    handleSidebarEntryView(name, presetName, kind);
   },
 
-  onColor(name, rawScheme) {
-    const state = getState();
-    const obj = state.objects.get(name);
-    if (!obj) return;
-    applyColor({ model: obj.model }, obj.representations, rawScheme);
-    terminal.print(`Colored "${name}" by ${formatColorDisplay(rawScheme)}`, 'result');
+  onColor(name, rawScheme, kind) {
+    handleSidebarEntryColor(name, rawScheme, kind);
   },
 
   // --- Selection sidebar callbacks ---
@@ -358,75 +439,6 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       }
       scheduleRender();
     }
-  },
-
-  onSelectionAction(name, action) {
-    const state = getState();
-    const sel = state.selections.get(name);
-    if (!sel) return;
-    switch (action) {
-      case 'delete':
-        removeSelection(name);
-        terminal.print(`Deleted selection "(${name})"`, 'result');
-        break;
-      case 'rename': {
-        showRenameDialog(name, (newName) => {
-          try {
-            renameSelection(name, newName);
-            terminal.print(`Renamed "(${name})" to "(${newName})"`, 'result');
-          } catch (e) {
-            terminal.print(e.message, 'error');
-          }
-        });
-        break;
-      }
-      case 'center':
-        getViewer().center(sel.spec);
-        scheduleRender();
-        terminal.print(`Centered on "(${name})"`, 'result');
-        break;
-      case 'zoom':
-        getViewer().zoomTo(sel.spec);
-        scheduleRender();
-        terminal.print(`Zoomed to "(${name})"`, 'result');
-        break;
-    }
-  },
-
-  onSelectionShow(name, rep) {
-    const sel = getState().selections.get(name);
-    if (!sel) return;
-    getViewer().addStyle(sel.spec, repStyle(rep));
-    scheduleRender();
-    terminal.print(`Showing ${rep} on "(${name})"`, 'result');
-  },
-
-  onSelectionHide(name, rep) {
-    const sel = getState().selections.get(name);
-    if (!sel) return;
-    applyHideSelection(sel.spec, rep);
-    terminal.print(`Hiding ${rep} on "(${name})"`, 'result');
-  },
-
-  onSelectionLabel(name, prop) {
-    const sel = getState().selections.get(name);
-    if (!sel) return;
-    applyLabel(sel.spec, prop);
-    terminal.print(prop === 'clear' ? 'Labels cleared' : `Labeled "(${name})" by ${prop}`, 'result');
-  },
-
-  onSelectionColor(name, rawScheme) {
-    const sel = getState().selections.get(name);
-    if (!sel) return;
-    applyColorToSelection(sel.spec, rawScheme);
-    terminal.print(`Colored "(${name})" by ${formatColorDisplay(rawScheme)}`, 'result');
-  },
-
-  onSelectionView(name, presetName) {
-    const sel = getState().selections.get(name);
-    if (!sel) return;
-    applyViewPreset(presetName, sel.spec);
-    terminal.print(`Applied "${getPresetLabel(presetName)}" preset to "(${name})"`, 'result');
   },
 
   // --- Group sidebar callbacks ---

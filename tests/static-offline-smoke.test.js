@@ -215,4 +215,48 @@ describe('static offline smoke fixture', () => {
 
     expect(getState().surfaces.get('child_surface').parentName).toBe('renamed-water');
   });
+
+  it('selection Action menu creates a surface from the selection spec', async () => {
+    const { mockViewer, addSelection, getState } = await bootFixtureApp();
+
+    addSelection('ligand', 'ligand atoms', { resn: 'LIG' }, 3);
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="selection"][data-name="ligand"] [data-btn="A"]').click();
+    expect(document.querySelector('[data-value="surface:sasa"]')).not.toBeNull();
+    clickPopupItem('surface:sasa');
+    await flushStateUpdates();
+
+    const surface = getState().surfaces.get('surface_1');
+    expect(surface).toMatchObject({
+      name: 'surface_1',
+      selection: { resn: 'LIG' },
+      type: 'sasa',
+      surfaceType: 'SAS',
+      parentName: null,
+    });
+    expect(mockViewer.addSurface).toHaveBeenCalledWith(
+      'SAS',
+      expect.objectContaining({ opacity: 0.75, wireframe: false }),
+      { resn: 'LIG' },
+      { resn: 'LIG' },
+    );
+  });
+
+  it('selection Action menu orients to the selection spec', async () => {
+    const { mockViewer, addSelection } = await bootFixtureApp();
+
+    addSelection('ligand', 'ligand atoms', { resn: 'LIG' }, 3);
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="selection"][data-name="ligand"] [data-btn="A"]').click();
+    const orientItem = Array.from(
+      document.querySelectorAll('.popup-menu-item'),
+    ).find((el) => el.textContent === 'Orient');
+    expect(orientItem).not.toBeUndefined();
+    orientItem.click();
+
+    expect(mockViewer.selectedAtoms).toHaveBeenCalledWith({ resn: 'LIG' });
+    expect(mockViewer.zoomTo).toHaveBeenCalledWith({ resn: 'LIG' });
+  });
 });

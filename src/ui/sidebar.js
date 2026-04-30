@@ -425,17 +425,6 @@ function createPopupMenu(anchor, items, onClick) {
  * `callbackKey` identifies which callback on the callbacks object to invoke.
  */
 /**
- * Action menu items for selection objects (no Duplicate or Orient).
- */
-const SELECTION_ACTION_MENU = [
-  { label: 'Rename...', value: 'rename' },
-  { label: 'Delete', value: 'delete' },
-  { separator: true },
-  { label: 'Center', value: 'center' },
-  { label: 'Zoom', value: 'zoom' },
-];
-
-/**
  * Action menu items for surface objects.
  */
 const SURFACE_ACTION_MENU = [
@@ -464,16 +453,6 @@ const GROUP_ACTION_MENU = [
   { label: 'Delete', value: 'delete' },
   { label: 'Ungroup', value: 'ungroup' },
 ];
-
-/**
- * Mapping from S/H/L/C button labels to selection-specific callback keys.
- */
-const SELECTION_CALLBACK_MAP = {
-  S: 'onSelectionShow',
-  H: 'onSelectionHide',
-  L: 'onSelectionLabel',
-  C: 'onSelectionColor',
-};
 
 const CREATE_SURFACE_MENU_ITEMS = [
   { separator: true },
@@ -625,7 +604,7 @@ export function createSidebar(container, callbacks) {
     const label = btn.dataset.btn;
 
     // Route to the appropriate popup menu and callback
-    if (kind === 'object') {
+    if (kind === 'object' || kind === 'selection') {
       const menuDef = BUTTON_MENUS[label];
       const items = label === 'A' && callbacks.onCreateSurface
         ? [...menuDef.items, ...CREATE_SURFACE_MENU_ITEMS]
@@ -633,30 +612,14 @@ export function createSidebar(container, callbacks) {
       createPopupMenu(btn, items, (value) => {
         if (value.startsWith('surface:')) {
           if (callbacks.onCreateSurface) {
-            callbacks.onCreateSurface(name, value.slice(8));
+            callbacks.onCreateSurface(name, value.slice(8), kind);
           }
         } else if (value.startsWith('view:') && callbacks.onView) {
-          callbacks.onView(name, value.slice(5));
+          callbacks.onView(name, value.slice(5), kind);
         } else if (callbacks[menuDef.callbackKey]) {
-          callbacks[menuDef.callbackKey](name, value);
+          callbacks[menuDef.callbackKey](name, value, kind);
         }
       });
-    } else if (kind === 'selection') {
-      if (label === 'A') {
-        createPopupMenu(btn, SELECTION_ACTION_MENU, (value) => {
-          callbacks.onSelectionAction(name, value);
-        });
-      } else {
-        const menuDef = BUTTON_MENUS[label];
-        const selCallback = SELECTION_CALLBACK_MAP[label];
-        createPopupMenu(btn, menuDef.items, (value) => {
-          if (value.startsWith('view:') && callbacks.onSelectionView) {
-            callbacks.onSelectionView(name, value.slice(5));
-          } else {
-            callbacks[selCallback](name, value);
-          }
-        });
-      }
     } else if (kind === 'group') {
       if (label === 'A') {
         createPopupMenu(btn, GROUP_ACTION_MENU, (value) => {
