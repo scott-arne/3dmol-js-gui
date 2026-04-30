@@ -1226,6 +1226,9 @@ export function reparentEntry(childName, parentName) {
   if (!childFound) {
     throw new Error(`Entry "${childName}" not found`);
   }
+  if (childFound.node.type === 'map' || childFound.node.type === 'isosurface') {
+    throw new Error('Density maps and isosurfaces cannot be reparented under objects');
+  }
   if (childFound.node.children) {
     const descendant = findTreeNode(childFound.node.children, parentName);
     if (descendant) {

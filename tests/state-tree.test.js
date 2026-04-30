@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getState, addObject, removeObject, addSelection, removeSelection,
-  addSurfaceEntry,
+  addSurfaceEntry, addMapEntry, addIsosurfaceEntry,
   renameObject, renameSelection, addGroup, removeGroup, ungroupGroup,
   renameGroup, toggleCollapsed, reparentEntry, unparentEntry,
   findTreeNode, removeTreeNode, renameTreeNode,
@@ -595,6 +595,21 @@ describe('reparentEntry', () => {
   it('throws when child not found', () => {
     addObject('P', {}, 0);
     expect(() => reparentEntry('nope', 'P')).toThrow(/not found/);
+  });
+
+  it('throws when reparenting a map under an object', () => {
+    addObject('P', {}, 0);
+    addMapEntry({ name: 'density', volumeData: {}, bounds: {} });
+
+    expect(() => reparentEntry('density', 'P')).toThrow(/cannot be reparented/);
+  });
+
+  it('throws when reparenting an isosurface under an object', () => {
+    addObject('P', {}, 0);
+    addMapEntry({ name: 'density', volumeData: {}, bounds: {} });
+    addIsosurfaceEntry({ name: 'mesh', mapName: 'density' });
+
+    expect(() => reparentEntry('mesh', 'P')).toThrow(/cannot be reparented/);
   });
 
   it('throws when reparenting would create cycle', () => {
