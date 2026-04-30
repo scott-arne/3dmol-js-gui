@@ -14,6 +14,7 @@ import { normalizeRemoteLoadingConfig } from '../loading/remote-loading.js';
  * @param {object} callbacks - Callback functions.
  * @param {function} callbacks.onFetch - Called with (pdbId).
  * @param {function} callbacks.onLoad - Called with (data, format, filename).
+ * @param {function} [callbacks.onLoadFile] - Called with a local File object.
  * @param {function} [callbacks.onRemoteSource] - Called with configured source input.
  * @param {function} [callbacks.onLoadUrl] - Called with arbitrary URL input.
  * @param {object} [options] - Optional dialog configuration.
@@ -105,17 +106,21 @@ export function showLoadDialog(callbacks, options = {}) {
   filePanel.className = 'modal-panel hidden';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif';
+  fileInput.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif,.ccp4,.map,.mrc';
   const loadBtn = document.createElement('button');
   loadBtn.className = 'modal-btn';
   loadBtn.textContent = 'Load';
-  loadBtn.addEventListener('click', () => {
+  loadBtn.addEventListener('click', async () => {
     const file = fileInput.files[0];
     if (!file) {
-      setStatus('Choose a structure file to load.', 'error');
+      setStatus('Choose a structure or map file to load.', 'error');
       return;
     }
     clearStatus();
+    if (callbacks.onLoadFile) {
+      await runRemoteLoad(callbacks.onLoadFile, file, [fileInput, loadBtn]);
+      return;
+    }
     const format = file.name.split('.').pop().toLowerCase();
     const reader = new FileReader();
     reader.onload = (ev) => {

@@ -1,7 +1,11 @@
 import { fetchPDB, loadModelData } from '../viewer.js';
 import { addObject } from '../state.js';
+import { createMap } from '../maps.js';
 
-const SUPPORTED_FORMATS = new Set(['pdb', 'sdf', 'mol2', 'xyz', 'cube', 'pqr', 'gro', 'cif', 'mmcif']);
+const STRUCTURE_FORMATS = new Set(['pdb', 'sdf', 'mol2', 'xyz', 'pqr', 'gro', 'cif', 'mmcif']);
+const MAP_FORMATS = new Set(['ccp4', 'map', 'mrc']);
+const HYBRID_FORMATS = new Set(['cube']);
+const SUPPORTED_FORMATS = new Set([...STRUCTURE_FORMATS, ...MAP_FORMATS, ...HYBRID_FORMATS]);
 const FORMAT_ALIASES = new Map([['mmcif', 'cif']]);
 const inFlightPdbIds = new Set();
 
@@ -13,9 +17,18 @@ function success(name, model, modelIndex, message) {
   return { ok: true, code: 'loaded', name, model, modelIndex, message };
 }
 
+function mapSuccess(name, mapName, map, message) {
+  return { ok: true, code: 'loaded_map', name, mapName, map, message };
+}
+
+function hybridSuccess(name, model, modelIndex, mapName, map, message) {
+  return { ok: true, code: 'loaded_hybrid', name, model, modelIndex, mapName, map, message };
+}
+
 function getDeps(deps = {}) {
   return {
     addObject: deps.addObject || addObject,
+    createMap: deps.createMap || createMap,
     fetchImpl: deps.fetchImpl || globalThis.fetch,
     fetchPDB: deps.fetchPDB || fetchPDB,
     loadModelData: deps.loadModelData || loadModelData,
@@ -33,6 +46,14 @@ function validateFormat(format) {
     throw new Error(`Unsupported structure format "${format || ''}".`);
   }
   return normalized;
+}
+
+function isMapOnlyFormat(format) {
+  return MAP_FORMATS.has(format);
+}
+
+function isHybridFormat(format) {
+  return HYBRID_FORMATS.has(format);
 }
 
 function trimRequired(value, message) {
@@ -90,6 +111,13 @@ function validateStructureData(data) {
   return null;
 }
 
+function validateMapData(data) {
+  if (data instanceof ArrayBuffer && data.byteLength > 0) return null;
+  if (ArrayBuffer.isView(data) && data.byteLength > 0) return null;
+  if (typeof data === 'string' && data.trim() !== '') return null;
+  return failure('empty_data', 'Map data is empty.');
+}
+
 function validateHttpUrl(url) {
   try {
     const base = globalThis.location?.href || 'http://localhost/';
@@ -103,7 +131,7 @@ function validateHttpUrl(url) {
   }
 }
 
-async function fetchUrlData(url, deps) {
+async function fetchUrlData(url, deps, format) {
   const urlError = validateHttpUrl(url);
   if (urlError) return urlError;
 
@@ -112,8 +140,8 @@ async function fetchUrlData(url, deps) {
     return failure('fetch_failed', `Failed to fetch structure: ${response.status} ${response.statusText}`);
   }
 
-  const data = await response.text();
-  const dataError = validateStructureData(data);
+  const data = isMapOnlyFormat(format) ? await response.arrayBuffer() : await response.text();
+  const dataError = isMapOnlyFormat(format) ? validateMapData(data) : validateStructureData(data);
   if (dataError) return dataError;
   return { ok: true, data };
 }
@@ -124,6 +152,21 @@ function registerLoadedModel(request, data, options, deps) {
   const modelIndex = model.getID ? model.getID() : null;
   const name = deps.addObject(request.name, model, modelIndex);
   return success(name, model, modelIndex, `Loaded "${name}"`);
+}
+
+function registerLoadedMap(request, data, deps) {
+  const map = deps.createMap({ name: request.name, data, format: request.format });
+  return mapSuccess(map.name, map.name, map, `Loaded map "${map.name}"`);
+}
+
+function registerLoadedHybrid(request, data, options, deps) {
+  const loadOptions = options.loadOptions || {};
+  const model = deps.loadModelData(data, request.format, loadOptions);
+  const modelIndex = model.getID ? model.getID() : null;
+  const name = deps.addObject(request.name, model, modelIndex);
+  const mapName = `${name}_map`;
+  const map = deps.createMap({ name: mapName, data, format: request.format });
+  return hybridSuccess(name, model, modelIndex, map.name, map, `Loaded "${name}" and map "${map.name}"`);
 }
 
 async function loadPdb(request, deps) {
@@ -161,9 +204,27 @@ export async function loadStructure(request, options = {}) {
     }
 
     if (normalized.kind === 'url') {
-      const fetched = await fetchUrlData(normalized.url, deps);
+      const fetched = await fetchUrlData(normalized.url, deps, normalized.format);
       if (!fetched.ok) return fetched;
+      if (isMapOnlyFormat(normalized.format)) {
+        return registerLoadedMap(normalized, fetched.data, deps);
+      }
+      if (isHybridFormat(normalized.format)) {
+        return registerLoadedHybrid(normalized, fetched.data, options, deps);
+      }
       return registerLoadedModel(normalized, fetched.data, options, deps);
+    }
+
+    if (isMapOnlyFormat(normalized.format)) {
+      const dataError = validateMapData(normalized.data);
+      if (dataError) return dataError;
+      return registerLoadedMap(normalized, normalized.data, deps);
+    }
+
+    if (isHybridFormat(normalized.format)) {
+      const dataError = validateStructureData(normalized.data);
+      if (dataError) return dataError;
+      return registerLoadedHybrid(normalized, normalized.data, options, deps);
     }
 
     const dataError = validateStructureData(normalized.data);
@@ -183,6 +244,15 @@ function readFileText(file) {
   });
 }
 
+function readFileArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => resolve(ev.target.result);
+    reader.onerror = () => reject(reader.error || new Error('unknown error'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export async function loadStructureFile(file, options = {}) {
   if (!file) {
     return failure('missing_file', 'Choose a structure file to load.');
@@ -198,7 +268,9 @@ export async function loadStructureFile(file, options = {}) {
   }
 
   try {
-    const data = await readFileText(file);
+    const data = isMapOnlyFormat(format)
+      ? await readFileArrayBuffer(file)
+      : await readFileText(file);
     return loadStructure({ kind: 'inline', name, format, data }, options);
   } catch (e) {
     return failure('file_read_failed', `Error reading "${file.name}": ${e.message || 'unknown error'}`, e);

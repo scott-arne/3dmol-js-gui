@@ -185,6 +185,33 @@ describe('showLoadDialog', () => {
     expect(document.querySelector('.modal-overlay')).toBeNull();
   });
 
+  it('load button with file calls onLoadFile directly when provided', async () => {
+    const mockFileReader = {
+      readAsText: vi.fn(),
+      onload: null,
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+    callbacks.onLoadFile = vi.fn().mockResolvedValue({ ok: true });
+
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const loadBtn = filePanel.querySelector('.modal-btn');
+    const file = new File(['map data'], 'density.ccp4', { type: 'application/octet-stream' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+
+    loadBtn.click();
+
+    await vi.waitFor(() => expect(callbacks.onLoadFile).toHaveBeenCalledWith(file));
+    expect(mockFileReader.readAsText).not.toHaveBeenCalled();
+    expect(callbacks.onLoad).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(document.querySelector('.modal-overlay')).toBeNull());
+  });
+
   it('load button without file does nothing', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');
@@ -212,7 +239,7 @@ describe('showLoadDialog', () => {
     expect(callbacks.onLoad).not.toHaveBeenCalled();
     expect(status).not.toBeNull();
     expect(status.classList.contains('error')).toBe(true);
-    expect(status.textContent).toBe('Choose a structure file to load.');
+    expect(status.textContent).toBe('Choose a structure or map file to load.');
   });
 
   it('shows an inline error when the selected file is empty', () => {

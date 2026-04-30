@@ -17,6 +17,10 @@ function makeDeps(overrides = {}) {
     })),
     fetchPDB: vi.fn(async () => ({ getID: () => 7 })),
     loadModelData: vi.fn(() => ({ getID: () => 3 })),
+    createMap: vi.fn(({ name, format }) => ({
+      name,
+      format: format === 'map' || format === 'mrc' ? 'ccp4' : format,
+    })),
     ...overrides,
   };
 }
@@ -31,6 +35,13 @@ describe('structure-loader', () => {
     expect(getStructureFormatFromFilename('ligand.SDF')).toBe('sdf');
     expect(getStructureFormatFromFilename('map.cube')).toBe('cube');
     expect(getStructureFormatFromFilename('structure.mmcif')).toBe('cif');
+  });
+
+  it('classifies map and hybrid formats from filenames', () => {
+    expect(getStructureFormatFromFilename('density.ccp4')).toBe('ccp4');
+    expect(getStructureFormatFromFilename('density.map')).toBe('map');
+    expect(getStructureFormatFromFilename('density.mrc')).toBe('mrc');
+    expect(getStructureFormatFromFilename('orbital.cube')).toBe('cube');
   });
 
   it('rejects unsupported file extensions', () => {
@@ -72,6 +83,55 @@ describe('structure-loader', () => {
       {},
     );
     expect(deps.addObject).toHaveBeenCalledWith('protein', expect.anything(), 3);
+  });
+
+  it('loads inline ccp4 data as a map entry', async () => {
+    const deps = makeDeps();
+    const data = new ArrayBuffer(16);
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'density',
+      format: 'ccp4',
+      data,
+    }, { deps });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: 'loaded_map',
+      name: 'density',
+      mapName: 'density',
+      message: 'Loaded map "density"',
+    });
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'ccp4' });
+    expect(deps.loadModelData).not.toHaveBeenCalled();
+  });
+
+  it('loads cube data as a molecule and sibling map entry', async () => {
+    const deps = makeDeps({
+      addObject: vi.fn(() => 'orbital_2'),
+    });
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'orbital',
+      format: 'cube',
+      data: 'CUBE DATA',
+    }, { deps });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: 'loaded_hybrid',
+      name: 'orbital_2',
+      mapName: 'orbital_2_map',
+      message: 'Loaded "orbital_2" and map "orbital_2_map"',
+    });
+    expect(deps.loadModelData).toHaveBeenCalledWith('CUBE DATA', 'cube', {});
+    expect(deps.createMap).toHaveBeenCalledWith({
+      name: 'orbital_2_map',
+      data: 'CUBE DATA',
+      format: 'cube',
+    });
   });
 
   it('returns the actual unique object name from state registration', async () => {
@@ -183,6 +243,29 @@ describe('structure-loader', () => {
       'pdb',
       {},
     );
+  });
+
+  it('fetches binary URL data for map formats', async () => {
+    const data = new ArrayBuffer(8);
+    const deps = makeDeps({
+      fetchImpl: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => data,
+        text: async () => 'not used',
+      })),
+    });
+
+    const result = await loadStructure({
+      kind: 'url',
+      name: 'density',
+      format: 'map',
+      url: 'https://example.test/density.map',
+    }, { deps });
+
+    expect(result.ok).toBe(true);
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'map' });
   });
 
   it('rejects URL requests with unsupported protocols', async () => {

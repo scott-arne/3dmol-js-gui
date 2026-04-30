@@ -60,7 +60,7 @@ export function registerLoadingCommands(registry, options = {}) {
       const input = document.createElement('input');
       input.type = 'file';
       input.style.display = 'none';
-      input.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif';
+      input.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif,.ccp4,.map,.mrc';
       input.onchange = async (e) => {
         const file = e.target.files[0];
         const result = await loadStructureFile(file);
