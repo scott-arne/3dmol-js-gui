@@ -432,6 +432,20 @@ describe('Sidebar', () => {
       expect(callbacks.onShow).toHaveBeenCalledWith('1UBQ', 'cartoon');
     });
 
+    it('S button menu omits unsupported Surface representation', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      sidebar.refresh(makeState({ objects }));
+
+      const buttons = container.querySelectorAll('.sidebar-btn');
+      buttons[1].click();
+
+      const popup = document.querySelector('.popup-menu');
+      const labels = Array.from(
+        popup.querySelectorAll('.popup-menu-item'),
+      ).map((el) => el.textContent);
+      expect(labels).not.toContain('Surface');
+    });
+
     it('clicking S button view: prefixed item fires onView callback', () => {
       const objects = new Map([['1UBQ', makeObject()]]);
       sidebar.refresh(makeState({ objects }));
@@ -464,6 +478,20 @@ describe('Sidebar', () => {
       everythingItem.click();
 
       expect(callbacks.onHide).toHaveBeenCalledWith('1UBQ', 'everything');
+    });
+
+    it('H button menu omits unsupported Surface representation', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      sidebar.refresh(makeState({ objects }));
+
+      const buttons = container.querySelectorAll('.sidebar-btn');
+      buttons[2].click();
+
+      const popup = document.querySelector('.popup-menu');
+      const labels = Array.from(
+        popup.querySelectorAll('.popup-menu-item'),
+      ).map((el) => el.textContent);
+      expect(labels).not.toContain('Surface');
     });
 
     it('clicking L button item fires onLabel callback', () => {

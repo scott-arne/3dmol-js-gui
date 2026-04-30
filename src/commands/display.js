@@ -17,7 +17,6 @@ const REP_MAP = {
   lines: 'line',
   sphere: 'sphere',
   spheres: 'sphere',
-  surface: 'surface',
   cross: 'cross',
   crosses: 'cross',
   ribbon: 'ribbon',
@@ -173,7 +172,7 @@ export function registerDisplayCommands(registry) {
       );
     },
     usage: 'show <representation> [, selection]',
-    help: 'Show a representation (cartoon, stick, line, sphere, surface, cross, ribbon).',
+    help: 'Show a representation (cartoon, stick, line, sphere, cross, ribbon).',
   });
 
   registry.register('hide', {

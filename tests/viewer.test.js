@@ -124,7 +124,7 @@ describe('viewer.js', () => {
     });
 
     it('returns empty options for unknown rep names', () => {
-      expect(repStyle('surface')).toEqual({ surface: {} });
+      expect(repStyle('custom')).toEqual({ custom: {} });
     });
   });
 

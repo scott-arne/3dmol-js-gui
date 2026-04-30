@@ -311,8 +311,8 @@ describe('Context Menu', () => {
       expect(labels).toContain('Sticks');
       expect(labels).toContain('Lines');
       expect(labels).toContain('Spheres');
-      expect(labels).toContain('Surface');
       expect(labels).toContain('Cross');
+      expect(labels).not.toContain('Surface');
     });
 
     it('fires onShow with the representation value', () => {
@@ -377,8 +377,8 @@ describe('Context Menu', () => {
       expect(labels).toContain('Sticks');
       expect(labels).toContain('Lines');
       expect(labels).toContain('Spheres');
-      expect(labels).toContain('Surface');
       expect(labels).toContain('Cross');
+      expect(labels).not.toContain('Surface');
     });
   });
 

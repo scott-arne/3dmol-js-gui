@@ -49,7 +49,6 @@ vi.mock('../src/viewer.js', () => ({
     if (rep === 'stick') return { stick: { radius: 0.25 } };
     if (rep === 'cartoon') return { cartoon: {} };
     if (rep === 'sphere') return { sphere: {} };
-    if (rep === 'surface') return { surface: {} };
     if (rep === 'cross') return { cross: {} };
     if (rep === 'ribbon') return { ribbon: {} };
     return { [rep]: {} };
@@ -453,9 +452,8 @@ describe('display.js', () => {
       expect(terminal.lines[0].msg).toContain('sphere');
     });
 
-    it('shows surface representation', () => {
-      registry.execute('show surface', ctx);
-      expect(terminal.lines[0].msg).toContain('surface');
+    it('rejects unsupported surface representation', () => {
+      expect(() => registry.execute('show surface', ctx)).toThrow('Unknown representation');
     });
 
     it('shows cross representation', () => {
@@ -504,7 +502,7 @@ describe('display.js', () => {
     });
 
     it('throws on ambiguous prefix', () => {
-      // "s" matches stick, sticks, sphere, spheres, surface
+      // "s" matches stick, sticks, sphere, spheres
       expect(() => registry.execute('show s', ctx)).toThrow('Ambiguous representation');
     });
 
@@ -794,9 +792,8 @@ describe('display.js', () => {
       expect(terminal.lines[0].msg).toContain('cartoon');
     });
 
-    it('matches prefix with single key match "su" -> surface', () => {
-      registry.execute('show su', ctx);
-      expect(terminal.lines[0].msg).toContain('surface');
+    it('rejects unsupported surface prefix', () => {
+      expect(() => registry.execute('show su', ctx)).toThrow('Unknown representation');
     });
   });
 });
