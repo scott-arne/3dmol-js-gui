@@ -154,6 +154,14 @@ function isSurfaceEffectivelyVisible(surface) {
   return surface.visible !== false && surface.parentVisible !== false;
 }
 
+function isMapEffectivelyVisible(map) {
+  return map.visible !== false;
+}
+
+function isIsosurfaceEffectivelyVisible(iso) {
+  return iso.visible !== false && iso.parentVisible !== false;
+}
+
 function getDirectGroupedSurfaceNames(entries, state) {
   const groupedObjects = new Set(entries.objects);
   return entries.surfaces.filter((surfaceName) => {
@@ -166,6 +174,102 @@ function setDirectGroupedSurfaceVisibility(entries, state, visible) {
   for (const surfaceName of getDirectGroupedSurfaceNames(entries, state)) {
     surfaceService.setSurfaceVisibility(surfaceName, visible);
   }
+}
+
+function getDirectGroupedIsosurfaceNames(entries, state) {
+  const groupedMaps = new Set(entries.maps);
+  return entries.isosurfaces.filter((isoName) => {
+    const iso = state.isosurfaces.get(isoName);
+    return iso && !groupedMaps.has(iso.mapName);
+  });
+}
+
+function setGroupedMapVisibility(entries, state, visible) {
+  for (const mapName of entries.maps) {
+    if (state.maps.has(mapName)) {
+      mapService.setMapVisibility(mapName, visible);
+    }
+  }
+  for (const isoName of getDirectGroupedIsosurfaceNames(entries, state)) {
+    if (state.isosurfaces.has(isoName)) {
+      mapService.setIsosurfaceVisibility(isoName, visible);
+    }
+  }
+}
+
+function removeGroupedDensityEntries(entries, state) {
+  for (const mapName of entries.maps) {
+    if (state.maps.has(mapName)) {
+      mapService.removeMap(mapName);
+    }
+  }
+  for (const isoName of getDirectGroupedIsosurfaceNames(entries, state)) {
+    if (state.isosurfaces.has(isoName)) {
+      mapService.removeIsosurface(isoName);
+    }
+  }
+}
+
+function getBoundsView(bounds, { includeZoom = false } = {}) {
+  const viewer = getViewer();
+  if (
+    !bounds?.center ||
+    !Number.isFinite(bounds.center.x) ||
+    !Number.isFinite(bounds.center.y) ||
+    !Number.isFinite(bounds.center.z) ||
+    typeof viewer.getView !== 'function' ||
+    typeof viewer.setView !== 'function'
+  ) {
+    return null;
+  }
+
+  const view = viewer.getView();
+  if (!Array.isArray(view) || view.length < 8) {
+    return null;
+  }
+
+  const nextView = [...view];
+  nextView[0] = -bounds.center.x;
+  nextView[1] = -bounds.center.y;
+  nextView[2] = -bounds.center.z;
+
+  if (includeZoom) {
+    const dimensions = bounds.dimensions || {};
+    const diagonal = Math.hypot(
+      dimensions.w || 0,
+      dimensions.h || 0,
+      dimensions.d || 0,
+    );
+    const minDistance = viewer.config?.minimumZoomToDistance || 5;
+    const maxDistance = Math.max(diagonal, minDistance);
+    const fov = viewer.camera?.fov;
+    const cameraZ = viewer.CAMERA_Z;
+    if (Number.isFinite(fov) && Number.isFinite(cameraZ)) {
+      let zoomZ = -(
+        (maxDistance * 0.5) / Math.tan(Math.PI / 180 * fov / 2) -
+        cameraZ
+      );
+      if (typeof viewer.adjustZoomToLimits === 'function') {
+        zoomZ = viewer.adjustZoomToLimits(zoomZ);
+      }
+      nextView[3] = zoomZ;
+    }
+  }
+
+  return nextView;
+}
+
+function focusBounds(bounds, { zoom = false } = {}) {
+  const viewer = getViewer();
+  const view = getBoundsView(bounds, { includeZoom: zoom });
+  if (view) {
+    viewer.setView(view);
+  } else if (zoom) {
+    viewer.zoomTo();
+  } else {
+    viewer.center();
+  }
+  scheduleRender();
 }
 
 function resolveSidebarActionTarget(name, kind = 'object') {
@@ -443,9 +547,13 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   onToggleMapVisibility(name) {
     const map = getState().maps.get(name);
     if (!map) return;
-    const updated = mapService.setMapVisibility(name, !map.visible);
-    if (updated) {
-      terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} map "${name}"`, 'result');
+    try {
+      const updated = mapService.setMapVisibility(name, !map.visible);
+      if (updated) {
+        terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} map "${name}"`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
     }
   },
 
@@ -486,13 +594,11 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         });
         break;
       case 'center':
-        getViewer().center(map.bounds.center);
-        scheduleRender();
+        focusBounds(map.bounds);
         terminal.print(`Centered on map "${name}"`, 'result');
         break;
       case 'zoom':
-        getViewer().zoomTo();
-        scheduleRender();
+        focusBounds(map.bounds, { zoom: true });
         terminal.print(`Zoomed to map "${name}"`, 'result');
         break;
     }
@@ -506,26 +612,38 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         terminal.print(`Invalid map opacity "${rawValue}"`, 'error');
         return;
       }
-      const updated = mapService.setMapOpacity(name, opacity);
-      if (updated) {
-        terminal.print(`Set map "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+      try {
+        const updated = mapService.setMapOpacity(name, opacity);
+        if (updated) {
+          terminal.print(`Set map "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+        }
+      } catch (e) {
+        terminal.print(e.message, 'error');
       }
     }
   },
 
   onMapColor(name, color) {
-    const updated = mapService.setMapColor(name, color);
-    if (updated) {
-      terminal.print(`Colored map "${name}" ${color}`, 'result');
+    try {
+      const updated = mapService.setMapColor(name, color);
+      if (updated) {
+        terminal.print(`Colored map "${name}" ${color}`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
     }
   },
 
   onToggleIsosurfaceVisibility(name) {
     const iso = getState().isosurfaces.get(name);
     if (!iso) return;
-    const updated = mapService.setIsosurfaceVisibility(name, !iso.visible);
-    if (updated) {
-      terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} isosurface "${name}"`, 'result');
+    try {
+      const updated = mapService.setIsosurfaceVisibility(name, !iso.visible);
+      if (updated) {
+        terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} isosurface "${name}"`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
     }
   },
 
@@ -534,9 +652,13 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     if (!iso) return;
     if (action.startsWith('contour:')) {
       const level = Number(action.slice('contour:'.length));
-      const updated = mapService.setIsosurfaceLevel(name, level);
-      if (updated) {
-        terminal.print(`Set isosurface "${name}" contour to ${level > 0 ? `+${level}` : level}`, 'result');
+      try {
+        const updated = mapService.setIsosurfaceLevel(name, level);
+        if (updated) {
+          terminal.print(`Set isosurface "${name}" contour to ${level > 0 ? `+${level}` : level}`, 'result');
+        }
+      } catch (e) {
+        terminal.print(e.message, 'error');
       }
       return;
     }
@@ -559,13 +681,11 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         });
         break;
       case 'center':
-        getViewer().center(getState().maps.get(iso.mapName)?.bounds?.center);
-        scheduleRender();
+        focusBounds(getState().maps.get(iso.mapName)?.bounds);
         terminal.print(`Centered on isosurface "${name}"`, 'result');
         break;
       case 'zoom':
-        getViewer().zoomTo();
-        scheduleRender();
+        focusBounds(getState().maps.get(iso.mapName)?.bounds, { zoom: true });
         terminal.print(`Zoomed to isosurface "${name}"`, 'result');
         break;
     }
@@ -595,9 +715,13 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   },
 
   onIsosurfaceColor(name, color) {
-    const updated = mapService.setIsosurfaceColor(name, color);
-    if (updated) {
-      terminal.print(`Colored isosurface "${name}" ${color}`, 'result');
+    try {
+      const updated = mapService.setIsosurfaceColor(name, color);
+      if (updated) {
+        terminal.print(`Colored isosurface "${name}" ${color}`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
     }
   },
 
@@ -662,20 +786,42 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         }
       }
     }
-    const show = !anyVisible;
-    const viewer = getViewer();
-    for (const objName of entries.objects) {
-      const obj = state.objects.get(objName);
-      if (obj) {
-        obj.visible = show;
-        if (obj.visible) obj.model.show();
-        else obj.model.hide();
-        surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+    if (!anyVisible) {
+      for (const mapName of entries.maps) {
+        const map = state.maps.get(mapName);
+        if (map && isMapEffectivelyVisible(map)) {
+          anyVisible = true;
+          break;
+        }
       }
     }
-    setDirectGroupedSurfaceVisibility(entries, state, show);
-    scheduleRender();
-    notifyStateChange();
+    if (!anyVisible) {
+      for (const isoName of getDirectGroupedIsosurfaceNames(entries, state)) {
+        const iso = state.isosurfaces.get(isoName);
+        if (iso && isIsosurfaceEffectivelyVisible(iso)) {
+          anyVisible = true;
+          break;
+        }
+      }
+    }
+    const show = !anyVisible;
+    try {
+      for (const objName of entries.objects) {
+        const obj = state.objects.get(objName);
+        if (obj) {
+          obj.visible = show;
+          if (obj.visible) obj.model.show();
+          else obj.model.hide();
+          surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+        }
+      }
+      setDirectGroupedSurfaceVisibility(entries, state, show);
+      setGroupedMapVisibility(entries, state, show);
+      scheduleRender();
+      notifyStateChange();
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
   },
 
   onGroupAction(name, action) {
@@ -687,19 +833,23 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         const found = findTreeNode(state.entryTree, name, 'group');
         if (!found) return;
         const entries = collectEntryNames(found.node);
-        const viewer = getViewer();
-        for (const objName of entries.objects) {
-          const obj = state.objects.get(objName);
-          if (obj) {
-            obj.visible = show;
-            if (show) obj.model.show();
-            else obj.model.hide();
-            surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+        try {
+          for (const objName of entries.objects) {
+            const obj = state.objects.get(objName);
+            if (obj) {
+              obj.visible = show;
+              if (show) obj.model.show();
+              else obj.model.hide();
+              surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+            }
           }
+          setDirectGroupedSurfaceVisibility(entries, state, show);
+          setGroupedMapVisibility(entries, state, show);
+          scheduleRender();
+          notifyStateChange();
+        } catch (e) {
+          terminal.print(e.message, 'error');
         }
-        setDirectGroupedSurfaceVisibility(entries, state, show);
-        scheduleRender();
-        notifyStateChange();
         break;
       }
       case 'delete': {
@@ -708,6 +858,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         const entries = collectEntryNames(found.node);
         const viewer = getViewer();
         const allRemovedIndices = [];
+        try {
+          removeGroupedDensityEntries(entries, state);
+        } catch (e) {
+          terminal.print(e.message, 'error');
+          return;
+        }
         for (const objName of entries.objects) {
           const obj = state.objects.get(objName);
           if (obj) {

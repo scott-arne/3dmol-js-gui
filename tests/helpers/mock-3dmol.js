@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 export function createMockViewer() {
   const atoms = [];
   let nextSurfaceId = 1;
+  let view = [0, 0, 0, 0, 0, 0, 0, 1];
 
   return {
     addModel: vi.fn(() => ({ getID: () => 0 })),
@@ -32,6 +33,14 @@ export function createMockViewer() {
     center: vi.fn(),
     zoomTo: vi.fn(),
     zoom: vi.fn(),
+    getView: vi.fn(() => [...view]),
+    setView: vi.fn((nextView) => {
+      view = [...nextView];
+    }),
+    camera: { fov: 20 },
+    CAMERA_Z: 150,
+    config: {},
+    adjustZoomToLimits: vi.fn((z) => z),
     rotate: vi.fn(),
     translate: vi.fn(),
     setSlab: vi.fn(),
