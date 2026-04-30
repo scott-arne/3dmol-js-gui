@@ -4,12 +4,17 @@ import {
   renameObject, renameSelection, toggleObjectVisibility,
   toggleSelectionVisibility, pruneSelections,
   setSelectionMode, onStateChange, notifyStateChange,
+  addSurfaceEntry, removeSurfaceEntry, renameSurfaceEntry,
+  toggleSurfaceVisibility, updateSurfaceEntry, setSurfaceHandle,
+  getNextSurfaceName, getChildSurfaceNames,
 } from '../src/state.js';
 
 function resetState() {
   const state = getState();
   state.objects.clear();
   state.selections.clear();
+  state.surfaces.clear();
+  state.entryTree.length = 0;
   state._listeners.length = 0;
   state.selectionMode = 'atoms';
 }
@@ -153,6 +158,149 @@ describe('toggleSelectionVisibility', () => {
 
   it('returns undefined for non-existent selection', () => {
     expect(toggleSelectionVisibility('nope')).toBeUndefined();
+  });
+});
+
+describe('surface entries', () => {
+  beforeEach(resetState);
+
+  it('adds a top-level surface entry', () => {
+    addSurfaceEntry({
+      name: 'ligand_surface',
+      selection: { resn: ['LIG'] },
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+    });
+
+    const surface = getState().surfaces.get('ligand_surface');
+    expect(surface).toMatchObject({
+      name: 'ligand_surface',
+      selection: { resn: ['LIG'] },
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+      handle: null,
+      pending: true,
+      visible: true,
+      parentVisible: true,
+      mode: 'surface',
+      opacity: 0.75,
+      color: '#FFFFFF',
+    });
+    expect(getState().entryTree).toEqual([{ type: 'surface', name: 'ligand_surface' }]);
+  });
+
+  it('nests a surface under its parent molecule', () => {
+    const model = {};
+    addObject('1UBQ', model, 0);
+    addSurfaceEntry({
+      name: '1UBQ_surface',
+      selection: { model },
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: '1UBQ',
+    });
+
+    expect(getState().entryTree[0]).toMatchObject({
+      type: 'object',
+      name: '1UBQ',
+      collapsed: false,
+      children: [{ type: 'surface', name: '1UBQ_surface' }],
+    });
+  });
+
+  it('replaces an existing surface with the same name without duplicating tree nodes', () => {
+    addSurfaceEntry({
+      name: 'surf',
+      selection: { resn: ['LIG'] },
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+      handle: 3,
+      pending: false,
+    });
+    addSurfaceEntry({
+      name: 'surf',
+      selection: { chain: 'A' },
+      type: 'sasa',
+      surfaceType: 'SAS',
+      parentName: null,
+    });
+
+    expect(getState().surfaces.get('surf')).toMatchObject({
+      selection: { chain: 'A' },
+      type: 'sasa',
+      surfaceType: 'SAS',
+      handle: null,
+      pending: true,
+    });
+    expect(getState().entryTree.filter(n => n.type === 'surface' && n.name === 'surf')).toHaveLength(1);
+  });
+
+  it('renames a surface map entry and tree node', () => {
+    addSurfaceEntry({
+      name: 'old_surface',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+    });
+
+    expect(renameSurfaceEntry('old_surface', 'new_surface')).toBe(true);
+    expect(getState().surfaces.has('old_surface')).toBe(false);
+    expect(getState().surfaces.has('new_surface')).toBe(true);
+    expect(getState().entryTree[0]).toEqual({ type: 'surface', name: 'new_surface' });
+  });
+
+  it('rejects duplicate surface rename targets', () => {
+    addSurfaceEntry({ name: 'a', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    addSurfaceEntry({ name: 'b', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    expect(() => renameSurfaceEntry('a', 'b')).toThrow(/surface named "b" already exists/);
+  });
+
+  it('toggles surface visibility independently', () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    expect(toggleSurfaceVisibility('surf').visible).toBe(false);
+    expect(toggleSurfaceVisibility('surf').visible).toBe(true);
+  });
+
+  it('updates handle and pending state when a surface resolves', () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    setSurfaceHandle('surf', 42);
+    expect(getState().surfaces.get('surf')).toMatchObject({ handle: 42, pending: false });
+  });
+
+  it('updates surface material metadata', () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    updateSurfaceEntry('surf', { opacity: 0.5, color: '#0000FF', mode: 'wireframe' });
+    expect(getState().surfaces.get('surf')).toMatchObject({
+      opacity: 0.5,
+      color: '#0000FF',
+      mode: 'wireframe',
+    });
+  });
+
+  it('finds the lowest generated surface name', () => {
+    addSurfaceEntry({ name: 'surface_1', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    addSurfaceEntry({ name: 'surface_3', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    expect(getNextSurfaceName()).toBe('surface_2');
+  });
+
+  it('removing a parent object removes child surface entries from state', () => {
+    addObject('parent', {}, 0);
+    addSurfaceEntry({
+      name: 'surface_1',
+      selection: { model: {} },
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: 'parent',
+    });
+
+    const removed = removeObject('parent');
+    expect(removed.surfaces).toEqual(['surface_1']);
+    expect(getState().surfaces.has('surface_1')).toBe(false);
   });
 });
 

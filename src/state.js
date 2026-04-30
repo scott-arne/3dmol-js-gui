@@ -6,9 +6,10 @@
  * mutated through the public API.
  *
  * The entryTree array describes the display order and nesting structure of all
- * objects, selections, and groups in the sidebar. Each node is one of:
+ * objects, surfaces, selections, and groups in the sidebar. Each node is one of:
  *
  *   { type: 'object', name }
+ *   { type: 'surface', name }
  *   { type: 'selection', name }
  *   { type: 'group', name, collapsed, children: [...] }
  *   { type: 'object', name, collapsed, children: [...] }   (hierarchy parent)
@@ -20,6 +21,9 @@ const state = {
 
   /** @type {Map<string, {expression: string, spec: object, atomCount: number, visible: boolean}>} name -> selection data */
   selections: new Map(),
+
+  /** @type {Map<string, {name: string, selection: object, type: string, surfaceType: string, parentName: string|null, handle: *, pending: boolean, visible: boolean, parentVisible: boolean, mode: string, opacity: number, color: string}>} */
+  surfaces: new Map(),
 
   /** @type {Array<object>} Ordered tree of display nodes. */
   entryTree: [],
@@ -47,7 +51,7 @@ const state = {
  *
  * @param {Array} tree - The tree to search.
  * @param {string} name - The name to find.
- * @param {string} [type] - Optional type filter ('object', 'selection', 'group').
+ * @param {string} [type] - Optional type filter ('object', 'surface', 'selection', 'group').
  * @param {object} [parent] - Internal recursion param.
  * @returns {{node: object, parent: Array, index: number}|null}
  */
@@ -100,15 +104,17 @@ export function renameTreeNode(tree, oldName, newName) {
 
 /**
  * Collect all leaf entry names within a subtree (recursively).
- * Returns object names and selection names separately.
+ * Returns object, selection, and surface names separately.
  *
  * @param {object} node - A tree node.
- * @returns {{objects: string[], selections: string[]}}
+ * @returns {{objects: string[], selections: string[], surfaces: string[]}}
  */
 export function collectEntryNames(node) {
-  const result = { objects: [], selections: [] };
+  const result = { objects: [], selections: [], surfaces: [] };
   if (node.type === 'object') {
     result.objects.push(node.name);
+  } else if (node.type === 'surface') {
+    result.surfaces.push(node.name);
   } else if (node.type === 'selection') {
     result.selections.push(node.name);
   }
@@ -117,6 +123,7 @@ export function collectEntryNames(node) {
       const sub = collectEntryNames(child);
       result.objects.push(...sub.objects);
       result.selections.push(...sub.selections);
+      result.surfaces.push(...sub.surfaces);
     }
   }
   return result;
@@ -126,14 +133,15 @@ export function collectEntryNames(node) {
  * Collect all leaf entry names from multiple tree nodes.
  *
  * @param {Array} nodes - Array of tree nodes.
- * @returns {{objects: string[], selections: string[]}}
+ * @returns {{objects: string[], selections: string[], surfaces: string[]}}
  */
 export function collectAllEntryNames(nodes) {
-  const result = { objects: [], selections: [] };
+  const result = { objects: [], selections: [], surfaces: [] };
   for (const node of nodes) {
     const sub = collectEntryNames(node);
     result.objects.push(...sub.objects);
     result.selections.push(...sub.selections);
+    result.surfaces.push(...sub.surfaces);
   }
   return result;
 }
@@ -149,6 +157,11 @@ export function buildDefaultTree(st) {
   const tree = [];
   for (const name of st.objects.keys()) {
     tree.push({ type: 'object', name });
+  }
+  if (st.surfaces) {
+    for (const [name, surface] of st.surfaces) {
+      insertSurfaceTreeNode(tree, name, surface.parentName);
+    }
   }
   for (const name of st.selections.keys()) {
     tree.push({ type: 'selection', name });
@@ -261,9 +274,23 @@ export function addObject(name, model, modelIndex) {
  * @param {string} name - The name of the object to remove.
  */
 export function removeObject(name) {
+  const removedSurfaceNames = [];
+  const removedNode = removeTreeNode(state.entryTree, name);
+  if (removedNode) {
+    removedSurfaceNames.push(...collectEntryNames(removedNode).surfaces);
+  }
+  for (const [surfaceName, surface] of state.surfaces) {
+    if (surface.parentName === name && !removedSurfaceNames.includes(surfaceName)) {
+      removedSurfaceNames.push(surfaceName);
+    }
+  }
+
   state.objects.delete(name);
-  removeTreeNode(state.entryTree, name);
+  for (const surfaceName of removedSurfaceNames) {
+    state.surfaces.delete(surfaceName);
+  }
   _notify();
+  return { surfaces: removedSurfaceNames };
 }
 
 /**
@@ -385,6 +412,184 @@ export function toggleSelectionVisibility(name) {
 }
 
 // ---------------------------------------------------------------------------
+// Surface management
+// ---------------------------------------------------------------------------
+
+const DEFAULT_SURFACE_ENTRY = {
+  parentName: null,
+  selection: {},
+  type: 'molecular',
+  surfaceType: 'MS',
+  handle: null,
+  pending: true,
+  visible: true,
+  parentVisible: true,
+  mode: 'surface',
+  opacity: 0.75,
+  color: '#FFFFFF',
+};
+
+/**
+ * Add or replace a surface state entry and corresponding tree node.
+ *
+ * @param {object} entry - Surface metadata.
+ * @returns {object} The stored surface entry.
+ */
+export function addSurfaceEntry(entry) {
+  const surface = {
+    ...DEFAULT_SURFACE_ENTRY,
+    ...entry,
+    name: entry.name,
+  };
+
+  state.surfaces.set(surface.name, surface);
+
+  // Re-insert to match the current parent relationship without duplicating.
+  removeTreeNode(state.entryTree, surface.name);
+  insertSurfaceTreeNode(state.entryTree, surface.name, surface.parentName);
+
+  _notify();
+  return surface;
+}
+
+/**
+ * Remove a surface from state and the display tree.
+ *
+ * @param {string} name - The surface name.
+ * @returns {object|undefined} The removed surface entry.
+ */
+export function removeSurfaceEntry(name) {
+  const surface = state.surfaces.get(name);
+  if (!surface) return undefined;
+  state.surfaces.delete(name);
+  removeTreeNode(state.entryTree, name);
+  _notify();
+  return surface;
+}
+
+/**
+ * Rename a surface state entry and matching tree node.
+ *
+ * @param {string} oldName - The current surface name.
+ * @param {string} newName - The new surface name.
+ * @returns {boolean} True if renamed.
+ */
+export function renameSurfaceEntry(oldName, newName) {
+  const surface = state.surfaces.get(oldName);
+  if (!surface) return false;
+  if (state.surfaces.has(newName)) {
+    throw new Error(`A surface named "${newName}" already exists`);
+  }
+  state.surfaces.delete(oldName);
+  surface.name = newName;
+  state.surfaces.set(newName, surface);
+  renameTreeNode(state.entryTree, oldName, newName);
+  _notify();
+  return true;
+}
+
+/**
+ * Update a surface entry with a metadata patch.
+ *
+ * @param {string} name - The surface name.
+ * @param {object} patch - Partial surface metadata.
+ * @returns {object|undefined} The updated surface entry.
+ */
+export function updateSurfaceEntry(name, patch) {
+  const surface = state.surfaces.get(name);
+  if (!surface) return undefined;
+  Object.assign(surface, patch);
+  _notify();
+  return surface;
+}
+
+/**
+ * Store the resolved 3Dmol surface handle and clear pending state.
+ *
+ * @param {string} name - The surface name.
+ * @param {*} handle - The 3Dmol surface handle.
+ * @returns {object|undefined} The updated surface entry.
+ */
+export function setSurfaceHandle(name, handle) {
+  return updateSurfaceEntry(name, { handle, pending: false });
+}
+
+/**
+ * Toggle the visibility flag on a surface.
+ *
+ * @param {string} name - The surface name.
+ * @returns {object|undefined} The updated surface entry.
+ */
+export function toggleSurfaceVisibility(name) {
+  const surface = state.surfaces.get(name);
+  if (surface) {
+    surface.visible = !surface.visible;
+    _notify();
+  }
+  return surface;
+}
+
+/**
+ * Get the lowest available generated surface name for a prefix.
+ *
+ * @param {string} [prefix='surface'] - Name prefix.
+ * @returns {string} The next available surface name.
+ */
+export function getNextSurfaceName(prefix = 'surface') {
+  let counter = 1;
+  while (state.surfaces.has(`${prefix}_${counter}`)) {
+    counter++;
+  }
+  return `${prefix}_${counter}`;
+}
+
+/**
+ * Return surface names parented under a molecule.
+ *
+ * @param {string} parentName - Parent object name.
+ * @returns {string[]} Child surface names.
+ */
+export function getChildSurfaceNames(parentName) {
+  const names = [];
+  for (const [name, surface] of state.surfaces) {
+    if (surface.parentName === parentName) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Insert a surface node under its parent object or before top-level selections.
+ *
+ * @param {Array} tree - Tree to mutate.
+ * @param {string} name - Surface name.
+ * @param {string|null} parentName - Optional parent object name.
+ */
+function insertSurfaceTreeNode(tree, name, parentName) {
+  const node = { type: 'surface', name };
+
+  if (parentName) {
+    const parentFound = findTreeNode(tree, parentName, 'object');
+    if (parentFound) {
+      if (!parentFound.node.children) {
+        parentFound.node.children = [];
+        parentFound.node.collapsed = false;
+      }
+      parentFound.node.children.push(node);
+      return;
+    }
+  }
+
+  const selIdx = tree.findIndex(n => n.type === 'selection');
+  if (selIdx >= 0) {
+    tree.splice(selIdx, 0, node);
+  } else {
+    tree.push(node);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Selection pruning
 // ---------------------------------------------------------------------------
 
@@ -480,10 +685,10 @@ export function addGroup(name, memberNames) {
 
 /**
  * Remove a group and all its contents from state.
- * Also removes all objects and selections contained within from the Maps.
+ * Also removes all objects, surfaces, and selections contained within from the Maps.
  *
  * @param {string} name - The group name to remove.
- * @returns {{objects: string[], selections: string[]}} Names of removed entries.
+ * @returns {{objects: string[], selections: string[], surfaces: string[]}} Names of removed entries.
  */
 export function removeGroup(name) {
   const found = findTreeNode(state.entryTree, name, 'group');
@@ -499,6 +704,9 @@ export function removeGroup(name) {
   }
   for (const selName of entries.selections) {
     state.selections.delete(selName);
+  }
+  for (const surfaceName of entries.surfaces) {
+    state.surfaces.delete(surfaceName);
   }
 
   // Remove group node from tree

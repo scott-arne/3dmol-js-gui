@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getState, addObject, removeObject, addSelection, removeSelection,
+  addSurfaceEntry,
   renameObject, renameSelection, addGroup, removeGroup, ungroupGroup,
   renameGroup, toggleCollapsed, reparentEntry, unparentEntry,
   findTreeNode, removeTreeNode, renameTreeNode,
@@ -11,6 +12,7 @@ function resetState() {
   const state = getState();
   state.objects.clear();
   state.selections.clear();
+  state.surfaces.clear();
   state.entryTree.length = 0;
   state._listeners.length = 0;
   state.selectionMode = 'atoms';
@@ -178,7 +180,7 @@ describe('renameTreeNode', () => {
 describe('collectEntryNames', () => {
   it('collects from simple object', () => {
     const result = collectEntryNames({ type: 'object', name: 'A' });
-    expect(result).toEqual({ objects: ['A'], selections: [] });
+    expect(result).toEqual({ objects: ['A'], selections: [], surfaces: [] });
   });
 
   it('collects from group with mixed children', () => {
@@ -216,6 +218,43 @@ describe('collectAllEntryNames', () => {
     const result = collectAllEntryNames(nodes);
     expect(result.objects).toEqual(['A']);
     expect(result.selections).toEqual(['S']);
+  });
+});
+
+describe('surface tree integration', () => {
+  beforeEach(resetState);
+
+  it('collectEntryNames includes surfaces', () => {
+    const node = {
+      type: 'group',
+      name: 'grp',
+      children: [
+        { type: 'object', name: 'mol' },
+        { type: 'surface', name: 'surf' },
+        { type: 'selection', name: 'sel' },
+      ],
+    };
+
+    expect(collectEntryNames(node)).toEqual({
+      objects: ['mol'],
+      selections: ['sel'],
+      surfaces: ['surf'],
+    });
+  });
+
+  it('surface children make molecule nodes hierarchy parents', () => {
+    addObject('mol', {}, 0);
+    addSurfaceEntry({
+      name: 'mol_surface',
+      selection: { model: {} },
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: 'mol',
+    });
+
+    const parent = getState().entryTree[0];
+    expect(parent.children).toEqual([{ type: 'surface', name: 'mol_surface' }]);
+    expect(parent.collapsed).toBe(false);
   });
 });
 
