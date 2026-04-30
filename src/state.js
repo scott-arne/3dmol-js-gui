@@ -484,7 +484,7 @@ export function renameSurfaceEntry(oldName, newName) {
   state.surfaces.delete(oldName);
   surface.name = newName;
   state.surfaces.set(newName, surface);
-  renameTreeNode(state.entryTree, oldName, newName);
+  renameSurfaceTreeNode(oldName, newName);
   _notify();
   return true;
 }
@@ -610,11 +610,44 @@ function insertSurfaceTreeNode(tree, name, parentName) {
  */
 function removeSurfaceTreeNode(name) {
   const parentNode = _findParentNode(state.entryTree, name);
-  const removed = removeTreeNode(state.entryTree, name);
+  const removed = removeTypedTreeNode(state.entryTree, name, 'surface');
   if (removed && parentNode && parentNode.type === 'object') {
     normalizeHierarchyParent(parentNode);
   }
   return removed;
+}
+
+/**
+ * Rename only a surface node in the tree.
+ *
+ * @param {string} oldName - Current surface name.
+ * @param {string} newName - New surface name.
+ * @returns {boolean} True if found and renamed.
+ */
+function renameSurfaceTreeNode(oldName, newName) {
+  const found = findTreeNode(state.entryTree, oldName, 'surface');
+  if (found) {
+    found.node.name = newName;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Remove a tree node by both name and type.
+ *
+ * @param {Array} tree - The tree to search.
+ * @param {string} name - The node name.
+ * @param {string} type - The node type.
+ * @returns {object|null} The removed node, or null if not found.
+ */
+function removeTypedTreeNode(tree, name, type) {
+  const found = findTreeNode(tree, name, type);
+  if (found) {
+    found.parent.splice(found.index, 1);
+    return found.node;
+  }
+  return null;
 }
 
 /**

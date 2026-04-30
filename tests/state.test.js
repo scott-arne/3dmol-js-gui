@@ -238,6 +238,19 @@ describe('surface entries', () => {
     expect(getState().entryTree.filter(n => n.type === 'surface' && n.name === 'surf')).toHaveLength(1);
   });
 
+  it('replacing a surface does not remove a selection with the same name', () => {
+    addSelection('same', 'test', {}, 5);
+    addSurfaceEntry({ name: 'same', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    addSurfaceEntry({ name: 'same', selection: { chain: 'A' }, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    expect(getState().entryTree).toEqual([
+      { type: 'surface', name: 'same' },
+      { type: 'selection', name: 'same' },
+    ]);
+    expect(getState().selections.has('same')).toBe(true);
+    expect(getState().surfaces.get('same').selection).toEqual({ chain: 'A' });
+  });
+
   it('renames a surface map entry and tree node', () => {
     addSurfaceEntry({
       name: 'old_surface',
@@ -251,6 +264,23 @@ describe('surface entries', () => {
     expect(getState().surfaces.has('old_surface')).toBe(false);
     expect(getState().surfaces.has('new_surface')).toBe(true);
     expect(getState().entryTree[0]).toEqual({ type: 'surface', name: 'new_surface' });
+  });
+
+  it('renames only the surface tree node when another entry has the same name', () => {
+    addObject('same', {}, 0);
+    addSelection('same', 'test', {}, 5);
+    addSurfaceEntry({ name: 'same', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    expect(renameSurfaceEntry('same', 'surface_only')).toBe(true);
+
+    expect(getState().entryTree).toEqual([
+      { type: 'object', name: 'same' },
+      { type: 'surface', name: 'surface_only' },
+      { type: 'selection', name: 'same' },
+    ]);
+    expect(getState().objects.has('same')).toBe(true);
+    expect(getState().selections.has('same')).toBe(true);
+    expect(getState().surfaces.has('surface_only')).toBe(true);
   });
 
   it('rejects duplicate surface rename targets', () => {
@@ -272,6 +302,28 @@ describe('surface entries', () => {
     expect(removeSurfaceEntry('surf')).toMatchObject({ name: 'surf' });
     expect(getState().surfaces.has('surf')).toBe(false);
     expect(getState().entryTree).toEqual([]);
+  });
+
+  it('removes only the surface tree node when an object has the same name', () => {
+    addObject('same', {}, 0);
+    addSurfaceEntry({ name: 'same', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    removeSurfaceEntry('same');
+
+    expect(getState().entryTree).toEqual([{ type: 'object', name: 'same' }]);
+    expect(getState().objects.has('same')).toBe(true);
+    expect(getState().surfaces.has('same')).toBe(false);
+  });
+
+  it('removes only the surface tree node when a selection has the same name', () => {
+    addSelection('same', 'test', {}, 5);
+    addSurfaceEntry({ name: 'same', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    removeSurfaceEntry('same');
+
+    expect(getState().entryTree).toEqual([{ type: 'selection', name: 'same' }]);
+    expect(getState().selections.has('same')).toBe(true);
+    expect(getState().surfaces.has('same')).toBe(false);
   });
 
   it('cleans up an empty parent object when removing its only surface child', () => {
