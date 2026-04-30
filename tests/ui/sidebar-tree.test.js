@@ -513,7 +513,8 @@ describe('Sidebar tree-based rendering', () => {
       const secondRow = container.querySelector('[data-kind="surface"][data-name="surfaceA"]');
       expect(secondRow).toBe(firstRow);
       expect(secondRow.classList.contains('dimmed')).toBe(true);
-      expect(secondRow.querySelector('.sidebar-object-status').classList.contains('active')).toBe(false);
+      expect(secondRow.querySelector('.sidebar-object-status')).toBeNull();
+      expect(secondRow.querySelector('.sidebar-surface-icon').classList.contains('active')).toBe(false);
     });
 
     it('adding an entry inserts without destroying existing rows', () => {

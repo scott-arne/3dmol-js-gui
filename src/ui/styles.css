@@ -396,6 +396,43 @@ body {
   white-space: nowrap;
 }
 
+.sidebar-entry-icon {
+  flex: 0 0 auto;
+  margin-right: 6px;
+}
+
+.sidebar-surface-icon {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  color: var(--inactive);
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.sidebar-surface-icon.active {
+  color: var(--accent);
+}
+
+.sidebar-surface-icon::before,
+.sidebar-surface-icon::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border-top: 1px solid currentColor;
+  opacity: 0.7;
+}
+
+.sidebar-surface-icon::before {
+  top: 4px;
+}
+
+.sidebar-surface-icon::after {
+  bottom: 4px;
+}
+
 .sidebar-object-status {
   width: 10px;
   height: 10px;
@@ -415,6 +452,10 @@ body {
 
 .sidebar-object.dimmed .sidebar-object-name {
   color: var(--inactive);
+}
+
+.sidebar-object.dimmed .sidebar-entry-icon {
+  opacity: 0.45;
 }
 
 /* Sidebar Separator (between objects and selections) */

@@ -289,6 +289,15 @@ describe('Sidebar', () => {
       expect(row.dataset.kind).toBe('selection');
       expect(row.dataset.name).toBe('sele1');
     });
+
+    it('does not render entry-type icons for molecule or selection rows', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      const selections = new Map([['sele1', makeSelection()]]);
+      sidebar.refresh(makeState({ objects, selections }));
+
+      expect(container.querySelector('[data-kind="object"] .sidebar-entry-icon')).toBeNull();
+      expect(container.querySelector('[data-kind="selection"] .sidebar-entry-icon')).toBeNull();
+    });
   });
 
   describe('surface rendering', () => {
@@ -301,8 +310,7 @@ describe('Sidebar', () => {
       expect(row.classList.contains('sidebar-object')).toBe(true);
       expect(row.classList.contains('sidebar-surface')).toBe(true);
 
-      const status = row.querySelector('.sidebar-object-status');
-      expect(status.classList.contains('active')).toBe(true);
+      expect(row.querySelector('.sidebar-object-status')).toBeNull();
 
       const nameEl = row.querySelector('.sidebar-object-name');
       expect(nameEl.textContent).toBe('surface_1');
@@ -310,6 +318,21 @@ describe('Sidebar', () => {
       const buttons = row.querySelectorAll('.sidebar-btn');
       const labels = Array.from(buttons).map((b) => b.textContent);
       expect(labels).toEqual(['A', 'S', 'C']);
+    });
+
+    it('renders a labeled surface icon before the surface name', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"][data-name="surface_1"]');
+      const icon = row.querySelector('.sidebar-entry-icon.sidebar-surface-icon');
+      const nameEl = row.querySelector('.sidebar-object-name');
+
+      expect(icon).not.toBeNull();
+      expect(icon.getAttribute('aria-label')).toBe('Surface');
+      expect(icon.getAttribute('title')).toBe('Surface');
+      expect(icon.classList.contains('active')).toBe(true);
+      expect(icon.nextSibling).toBe(nameEl);
     });
 
     it('surface non-button click toggles surface visibility', () => {
@@ -422,8 +445,10 @@ describe('Sidebar', () => {
 
       for (const name of ['hidden_self', 'hidden_parent']) {
         const row = container.querySelector(`[data-kind="surface"][data-name="${name}"]`);
+        const icon = row.querySelector('.sidebar-surface-icon');
         expect(row.classList.contains('dimmed')).toBe(true);
-        expect(row.querySelector('.sidebar-object-status').classList.contains('active')).toBe(false);
+        expect(row.querySelector('.sidebar-object-status')).toBeNull();
+        expect(icon.classList.contains('active')).toBe(false);
       }
     });
 

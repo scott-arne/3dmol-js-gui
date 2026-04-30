@@ -857,12 +857,15 @@ export function createSidebar(container, callbacks) {
       }
     });
 
-    const status = document.createElement('div');
-    status.className = 'sidebar-object-status';
+    const icon = document.createElement('span');
+    icon.className = 'sidebar-entry-icon sidebar-surface-icon';
     if (visible) {
-      status.classList.add('active');
+      icon.classList.add('active');
     }
-    row.appendChild(status);
+    icon.setAttribute('role', 'img');
+    icon.setAttribute('aria-label', 'Surface');
+    icon.title = 'Surface';
+    row.appendChild(icon);
 
     const nameEl = document.createElement('span');
     nameEl.className = 'sidebar-object-name';
@@ -1093,13 +1096,13 @@ export function createSidebar(container, callbacks) {
   }
 
   /**
-   * Update an existing surface row in place (visibility + status).
+   * Update an existing surface row in place (visibility + glyph state).
    */
   function updateSurfaceRow(row, surface) {
     const visible = isSurfaceVisible(surface);
     row.classList.toggle('dimmed', !visible);
-    const status = row.querySelector('.sidebar-object-status');
-    if (status) status.classList.toggle('active', visible);
+    const icon = row.querySelector('.sidebar-surface-icon');
+    if (icon) icon.classList.toggle('active', visible);
   }
 
   /**
