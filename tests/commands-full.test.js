@@ -1104,6 +1104,40 @@ describe('surface.js', () => {
     });
   });
 
+  it('keeps comma-containing selection text when no explicit type is provided', async () => {
+    const selectionResult = { spec: { resn: ['ALA'], chain: 'A' } };
+    const selectionSpec = { resn: ['ALA'], chain: 'A' };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+
+    await registry.execute('surface pocket, resn ALA, chain A', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('resn ALA, chain A');
+    expect(surfaceService.createSurface).toHaveBeenCalledWith({
+      name: 'pocket',
+      selection: selectionSpec,
+      type: 'molecular',
+      parentName: null,
+    });
+  });
+
+  it('consumes explicit molecular type after comma-containing selection text', async () => {
+    const selectionResult = { spec: { resn: ['ALA'], chain: 'A' } };
+    const selectionSpec = { resn: ['ALA'], chain: 'A' };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+
+    await registry.execute('surface pocket, resn ALA, chain A, molecular', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('resn ALA, chain A');
+    expect(surfaceService.createSurface).toHaveBeenCalledWith({
+      name: 'pocket',
+      selection: selectionSpec,
+      type: 'molecular',
+      parentName: null,
+    });
+  });
+
   it('creates a named top-level surface when a selection has no single parent', async () => {
     const selectionSpec = { hetflag: false };
     getSelSpec.mockReturnValueOnce(selectionSpec);
@@ -1127,8 +1161,8 @@ describe('surface.js', () => {
   it('rejects an unknown parent-form type before creating a surface', async () => {
     mockState.objects.set('1UBQ', { model: {} });
 
-    await expect(registry.execute('surface 1UBQ, mesh', ctx))
-      .rejects.toThrow('Unknown surface type "mesh"');
+    await expect(registry.execute('surface 1UBQ, vdw', ctx))
+      .rejects.toThrow('Unknown surface type "vdw"');
 
     expect(surfaceService.createSurface).not.toHaveBeenCalled();
   });
@@ -1305,6 +1339,7 @@ describe('editing.js', () => {
         visible: true,
         representations: new Set(),
       });
+      getChildSurfaceNames.mockReturnValueOnce(['mol_surface']);
 
       registry.execute('delete mol', ctx);
 
@@ -1328,6 +1363,9 @@ describe('editing.js', () => {
         visible: true,
         representations: new Set(),
       });
+      getChildSurfaceNames
+        .mockReturnValueOnce(['parent_surface'])
+        .mockReturnValueOnce(['child_surface']);
       mockState.entryTree.push({
         type: 'object',
         name: 'parent',
@@ -1340,6 +1378,22 @@ describe('editing.js', () => {
       expect(surfaceService.removeSurfacesForParent).toHaveBeenCalledWith('child');
       expect(mockViewer.removeModel).toHaveBeenCalledWith(parentModel);
       expect(mockViewer.removeModel).toHaveBeenCalledWith(childModel);
+    });
+
+    it('requires surface service before object deletion when child surfaces exist', () => {
+      const modelRef = {};
+      mockState.objects.set('mol', {
+        model: modelRef,
+        visible: true,
+        representations: new Set(),
+      });
+      getChildSurfaceNames.mockReturnValueOnce(['mol_surface']);
+
+      expect(() => registry.execute('delete mol', ctx))
+        .toThrow('Surface service is unavailable');
+
+      expect(mockViewer.removeModel).not.toHaveBeenCalled();
+      expect(removeObject).not.toHaveBeenCalled();
     });
 
     it('removes grouped object surfaces and grouped direct surfaces before deleting a group', () => {
@@ -1368,6 +1422,40 @@ describe('editing.js', () => {
       expect(surfaceService.removeSurface.mock.invocationCallOrder[0])
         .toBeLessThan(removeGroup.mock.invocationCallOrder[0]);
       expect(removeGroup).toHaveBeenCalledWith('grp');
+    });
+
+    it('requires surface service before group deletion when grouped surfaces exist', () => {
+      mockState.surfaces.set('free_surface', { name: 'free_surface' });
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [{ type: 'surface', name: 'free_surface' }],
+      });
+
+      expect(() => registry.execute('delete grp', ctx))
+        .toThrow('Surface service is unavailable');
+
+      expect(removeGroup).not.toHaveBeenCalled();
+    });
+
+    it('requires surface service before group deletion when grouped objects have child surfaces', () => {
+      mockState.objects.set('mol', {
+        model: {},
+        visible: true,
+        representations: new Set(),
+      });
+      getChildSurfaceNames.mockReturnValueOnce(['mol_surface']);
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [{ type: 'object', name: 'mol' }],
+      });
+
+      expect(() => registry.execute('delete grp', ctx))
+        .toThrow('Surface service is unavailable');
+
+      expect(mockViewer.removeModel).not.toHaveBeenCalled();
+      expect(removeGroup).not.toHaveBeenCalled();
     });
 
     it('clears highlight after delete when no sele is visible', () => {

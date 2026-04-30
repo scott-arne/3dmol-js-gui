@@ -24,6 +24,23 @@ function requireSurfaceService(ctx) {
   return ctx.surfaceService;
 }
 
+function collectChildSurfaceNames(objectNames) {
+  const surfaceNamesByParent = new Map();
+  for (const objectName of objectNames) {
+    surfaceNamesByParent.set(objectName, getChildSurfaceNames(objectName));
+  }
+  return surfaceNamesByParent;
+}
+
+function hasChildSurfaces(surfaceNamesByParent) {
+  for (const surfaceNames of surfaceNamesByParent.values()) {
+    if (surfaceNames.length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Register the editing commands (remove, delete) into the given command
  * registry.
@@ -94,6 +111,10 @@ export function registerEditingCommands(registry) {
       const groupFound = findTreeNode(state.entryTree, name, 'group');
       if (groupFound) {
         const entries = collectEntryNames(groupFound.node);
+        const surfaceNamesByParent = collectChildSurfaceNames(entries.objects);
+        const surfaceService = entries.surfaces.length > 0 || hasChildSurfaces(surfaceNamesByParent)
+          ? requireSurfaceService(ctx)
+          : ctx.surfaceService;
         const viewer = getViewer();
         const allRemovedIndices = [];
 
@@ -102,12 +123,14 @@ export function registerEditingCommands(registry) {
           if (obj) {
             const modelAtoms = viewer.selectedAtoms({ model: obj.model });
             allRemovedIndices.push(...modelAtoms.map(a => a.index));
-            ctx.surfaceService?.removeSurfacesForParent(objName);
+            if (surfaceService) {
+              surfaceService.removeSurfacesForParent(objName);
+            }
             viewer.removeModel(obj.model);
           }
         }
         for (const surfaceName of entries.surfaces) {
-          requireSurfaceService(ctx).removeSurface(surfaceName);
+          surfaceService.removeSurface(surfaceName);
         }
 
         scheduleRender();
@@ -141,15 +164,23 @@ export function registerEditingCommands(registry) {
       // If this object has hierarchy children, collect all their atoms too
       const treeNode = findTreeNode(state.entryTree, name, 'object');
       const allRemovedIndices = [];
+      const objectNames = treeNode && treeNode.node.children && treeNode.node.children.length > 0
+        ? collectEntryNames(treeNode.node).objects
+        : [name];
+      const surfaceNamesByParent = collectChildSurfaceNames(objectNames);
+      const surfaceService = hasChildSurfaces(surfaceNamesByParent)
+        ? requireSurfaceService(ctx)
+        : ctx.surfaceService;
 
       if (treeNode && treeNode.node.children && treeNode.node.children.length > 0) {
-        const entries = collectEntryNames(treeNode.node);
-        for (const objName of entries.objects) {
+        for (const objName of objectNames) {
           const childObj = state.objects.get(objName);
           if (childObj) {
             const modelAtoms = viewer.selectedAtoms({ model: childObj.model });
             allRemovedIndices.push(...modelAtoms.map(a => a.index));
-            ctx.surfaceService?.removeSurfacesForParent(objName);
+            if (surfaceService) {
+              surfaceService.removeSurfacesForParent(objName);
+            }
             viewer.removeModel(childObj.model);
             state.objects.delete(objName);
           }
@@ -158,7 +189,9 @@ export function registerEditingCommands(registry) {
         // Simple object deletion
         const modelAtoms = viewer.selectedAtoms({ model: obj.model });
         allRemovedIndices.push(...modelAtoms.map(a => a.index));
-        ctx.surfaceService?.removeSurfacesForParent(name);
+        if (surfaceService) {
+          surfaceService.removeSurfacesForParent(name);
+        }
         viewer.removeModel(obj.model);
       }
 
