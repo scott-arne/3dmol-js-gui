@@ -81,6 +81,7 @@ export async function createSurface({
   mode = 'surface',
 }) {
   validateSurfaceMode(mode);
+  const normalized = normalizeSurfaceType(type);
 
   const viewer = getViewer();
   const existing = getState().surfaces.get(name);
@@ -88,7 +89,6 @@ export async function createSurface({
     removeViewerSurface(existing.handle);
   }
 
-  const normalized = normalizeSurfaceType(type);
   const parentVisible = parentName
     ? (getState().objects.get(parentName)?.visible !== false)
     : true;
@@ -120,14 +120,15 @@ export async function createSurface({
     );
     const resolved = await surfacePromise;
     const handle = resolveSurfaceHandle(surfacePromise, resolved);
+    const currentName = getPendingSurfaceName(requestToken);
 
-    if (pendingSurfaceRequests.get(name) !== requestToken) {
+    if (!currentName) {
       removeViewerSurface(handle);
       return getState().surfaces.get(name);
     }
 
-    pendingSurfaceRequests.delete(name);
-    const finalized = setSurfaceHandle(name, handle);
+    pendingSurfaceRequests.delete(currentName);
+    const finalized = setSurfaceHandle(currentName, handle);
     if (!finalized) {
       removeViewerSurface(handle);
       return undefined;
@@ -135,9 +136,10 @@ export async function createSurface({
     applySurfaceMaterial(finalized);
     return finalized;
   } catch (error) {
-    if (pendingSurfaceRequests.get(name) === requestToken) {
-      pendingSurfaceRequests.delete(name);
-      removeSurfaceEntry(name);
+    const currentName = getPendingSurfaceName(requestToken);
+    if (currentName) {
+      pendingSurfaceRequests.delete(currentName);
+      removeSurfaceEntry(currentName);
     }
 
     const partialHandle = surfacePromise ? resolveSurfaceHandle(surfacePromise) : null;
@@ -169,7 +171,13 @@ export function removeSurface(name) {
  * @returns {boolean} True when the surface was renamed.
  */
 export function renameSurface(oldName, newName) {
-  return renameSurfaceEntry(oldName, newName);
+  const renamed = renameSurfaceEntry(oldName, newName);
+  if (renamed && pendingSurfaceRequests.has(oldName)) {
+    const requestToken = pendingSurfaceRequests.get(oldName);
+    pendingSurfaceRequests.delete(oldName);
+    pendingSurfaceRequests.set(newName, requestToken);
+  }
+  return renamed;
 }
 
 /**
@@ -309,6 +317,15 @@ function resolveSurfaceHandle(surfacePromise, resolved) {
     return resolved.surfid;
   }
   return resolved;
+}
+
+function getPendingSurfaceName(requestToken) {
+  for (const [name, token] of pendingSurfaceRequests) {
+    if (token === requestToken) {
+      return name;
+    }
+  }
+  return null;
 }
 
 function validateSurfaceMode(mode) {

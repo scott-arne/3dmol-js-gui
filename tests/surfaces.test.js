@@ -187,6 +187,36 @@ describe('surface service', () => {
     });
   });
 
+  it('keeps an existing same-name surface intact when replacement type is invalid', async () => {
+    addSurfaceEntry({
+      name: 'surf',
+      selection: { chain: 'A' },
+      type: 'molecular',
+      surfaceType: 'MS',
+      handle: 7,
+      pending: false,
+      color: '#123456',
+      opacity: 0.4,
+    });
+
+    await expect(
+      createSurface({ name: 'surf', selection: { chain: 'B' }, type: 'mesh' }),
+    ).rejects.toThrow('Unknown surface type "mesh"');
+
+    expect(mockViewer.removeSurface).not.toHaveBeenCalled();
+    expect(mockViewer.addSurface).not.toHaveBeenCalled();
+    expect(getState().surfaces.get('surf')).toMatchObject({
+      name: 'surf',
+      selection: { chain: 'A' },
+      type: 'molecular',
+      surfaceType: 'MS',
+      handle: 7,
+      pending: false,
+      color: '#123456',
+      opacity: 0.4,
+    });
+  });
+
   it('removes pending state and propagates addSurface rejection', async () => {
     const error = new Error('surface failed');
     const pending = deferredSurface(44);
@@ -384,6 +414,34 @@ describe('surface service', () => {
     expect(renameSurface('old', 'new')).toBe(true);
     expect(getState().surfaces.has('old')).toBe(false);
     expect(getState().surfaces.get('new')).toMatchObject({ name: 'new', handle: 1 });
+  });
+
+  it('finalizes a pending surface under its renamed state entry', async () => {
+    const pending = deferredSurface();
+    mockViewer.addSurface.mockReturnValue(pending.promise);
+
+    const createPromise = createSurface({
+      name: 'old_pending',
+      selection: { chain: 'A' },
+      color: '#00AAFF',
+    });
+
+    expect(renameSurface('old_pending', 'new_pending')).toBe(true);
+    pending.resolve({ surfid: 41 });
+    const surface = await createPromise;
+
+    expect(surface).toMatchObject({
+      name: 'new_pending',
+      handle: 41,
+      pending: false,
+    });
+    expect(getState().surfaces.has('old_pending')).toBe(false);
+    expect(getState().surfaces.get('new_pending')).toMatchObject({
+      name: 'new_pending',
+      handle: 41,
+      pending: false,
+    });
+    expect(mockViewer.removeSurface).not.toHaveBeenCalled();
   });
 
   it('finds a single surface parent and returns null for multiple or no matches', () => {
