@@ -140,6 +140,7 @@ export function createMap({
   format,
   color = '#38BDF8',
   opacity = 1,
+  render = true,
 }) {
   const normalized = normalizeVolumeFormat(format);
   const volumeData = new globalThis.$3Dmol.VolumeData(data, normalized.format);
@@ -157,7 +158,7 @@ export function createMap({
   });
 
   try {
-    return redrawMapBox(map);
+    return redrawMapBox(map, { render });
   } catch (error) {
     removeMapEntry(map.name);
     throw error;
@@ -403,13 +404,13 @@ export function setIsosurfaceLevel(name, level) {
   return updateAndRedrawIsosurface(name, { level });
 }
 
-function redrawMapBox(map) {
+function redrawMapBox(map, { render = true } = {}) {
   if (!map) return undefined;
 
   if (map.visible === false) {
     const removedShape = removeViewerShapes(map.handles);
     const updated = updateMapEntry(map.name, { handles: [] });
-    if (removedShape) {
+    if (removedShape && render) {
       scheduleRender();
     }
     return updated;
@@ -418,7 +419,9 @@ function redrawMapBox(map) {
   const oldHandles = [...(map.handles || [])];
   const handle = getViewer().addBox(buildMapBoxSpec(map));
   removeViewerShapes(oldHandles);
-  scheduleRender();
+  if (render) {
+    scheduleRender();
+  }
   return updateMapEntry(map.name, { handles: [handle] });
 }
 

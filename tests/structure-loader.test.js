@@ -107,8 +107,30 @@ describe('structure-loader', () => {
       mapName: 'density',
       message: 'Loaded map "density"',
     });
-    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'ccp4' });
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'ccp4', render: true });
     expect(deps.loadModelData).not.toHaveBeenCalled();
+  });
+
+  it('passes render false to map-only loads when requested', async () => {
+    const deps = makeDeps();
+    const data = new ArrayBuffer(16);
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'density',
+      format: 'ccp4',
+      data,
+    }, {
+      deps,
+      loadOptions: { render: false },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: 'loaded_map',
+      name: 'density',
+    });
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'ccp4', render: false });
   });
 
   it('loads cube data as a molecule and sibling map entry', async () => {
@@ -138,6 +160,7 @@ describe('structure-loader', () => {
       name: 'orbital_2_map',
       data: 'CUBE DATA',
       format: 'cube',
+      render: false,
     });
     expect(deps.zoomTo).toHaveBeenCalledTimes(1);
     expect(deps.scheduleRender).toHaveBeenCalledTimes(1);
@@ -168,6 +191,12 @@ describe('structure-loader', () => {
       zoom: false,
       render: false,
     });
+    expect(deps.createMap).toHaveBeenCalledWith({
+      name: 'orbital_2_map',
+      data: 'CUBE DATA',
+      format: 'cube',
+      render: false,
+    });
     expect(deps.zoomTo).not.toHaveBeenCalled();
     expect(deps.scheduleRender).not.toHaveBeenCalled();
   });
@@ -196,6 +225,12 @@ describe('structure-loader', () => {
     });
     expect(deps.removeObject).toHaveBeenCalledWith('orbital_2');
     expect(deps.removeModel).toHaveBeenCalledWith(model);
+    expect(deps.createMap).toHaveBeenCalledWith({
+      name: 'orbital_2_map',
+      data: 'CUBE DATA',
+      format: 'cube',
+      render: false,
+    });
     expect(deps.zoomTo).not.toHaveBeenCalled();
     expect(deps.scheduleRender).not.toHaveBeenCalled();
   });
@@ -356,7 +391,7 @@ describe('structure-loader', () => {
     }, { deps });
 
     expect(result.ok).toBe(true);
-    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'map' });
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'map', render: true });
   });
 
   it('rejects URL requests with unsupported protocols', async () => {
@@ -414,7 +449,7 @@ describe('structure-loader', () => {
       name: 'density',
       mapName: 'density',
     });
-    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'map' });
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'map', render: true });
   });
 
   it('returns structured failures for missing files', async () => {

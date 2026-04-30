@@ -137,6 +137,26 @@ describe('map viewer service', () => {
     expect(scheduleRender).toHaveBeenCalled();
   });
 
+  it('creates the initial map box without rendering when render is false', () => {
+    const boxHandle = { box: true };
+    mockViewer.addBox.mockReturnValue(boxHandle);
+
+    const map = createMap({
+      name: 'density',
+      data: 'map data',
+      format: 'ccp4',
+      render: false,
+    });
+
+    expect(getState().maps.get('density')).toBe(map);
+    expect(mockViewer.addBox).toHaveBeenCalledWith(expect.objectContaining({
+      center: { x: 3, y: 3.5, z: 5 },
+      dimensions: { w: 4, h: 3, d: 4 },
+    }));
+    expect(map.handles).toEqual([boxHandle]);
+    expect(scheduleRender).not.toHaveBeenCalled();
+  });
+
   it('updates map visibility, color, and opacity by rebuilding box handles', () => {
     const handles = [{ id: 'box-1' }, { id: 'box-2' }, { id: 'box-3' }];
     mockViewer.addBox

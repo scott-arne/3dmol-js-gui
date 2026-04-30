@@ -158,8 +158,9 @@ function registerLoadedModel(request, data, options, deps) {
   return success(name, model, modelIndex, `Loaded "${name}"`);
 }
 
-function registerLoadedMap(request, data, deps) {
-  const map = deps.createMap({ name: request.name, data, format: request.format });
+function registerLoadedMap(request, data, options, deps) {
+  const render = options.loadOptions?.render !== false;
+  const map = deps.createMap({ name: request.name, data, format: request.format, render });
   return mapSuccess(map.name, map.name, map, `Loaded map "${map.name}"`);
 }
 
@@ -173,7 +174,7 @@ function registerLoadedHybrid(request, data, options, deps) {
   const name = deps.addObject(request.name, model, modelIndex);
   const mapName = `${name}_map`;
   try {
-    const map = deps.createMap({ name: mapName, data, format: request.format });
+    const map = deps.createMap({ name: mapName, data, format: request.format, render: false });
     if (shouldZoom) deps.zoomTo();
     if (shouldRender) deps.scheduleRender();
     return hybridSuccess(name, model, modelIndex, map.name, map, `Loaded "${name}" and map "${map.name}"`);
@@ -230,7 +231,7 @@ export async function loadStructure(request, options = {}) {
       const fetched = await fetchUrlData(normalized.url, deps, normalized.format);
       if (!fetched.ok) return fetched;
       if (isMapOnlyFormat(normalized.format)) {
-        return registerLoadedMap(normalized, fetched.data, deps);
+        return registerLoadedMap(normalized, fetched.data, options, deps);
       }
       if (isHybridFormat(normalized.format)) {
         return registerLoadedHybrid(normalized, fetched.data, options, deps);
@@ -241,7 +242,7 @@ export async function loadStructure(request, options = {}) {
     if (isMapOnlyFormat(normalized.format)) {
       const dataError = validateMapData(normalized.data);
       if (dataError) return dataError;
-      return registerLoadedMap(normalized, normalized.data, deps);
+      return registerLoadedMap(normalized, normalized.data, options, deps);
     }
 
     if (isHybridFormat(normalized.format)) {
