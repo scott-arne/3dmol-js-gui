@@ -554,9 +554,40 @@ describe('Sidebar', () => {
       expect(callbacks.onMapColor).toHaveBeenCalledWith('density', '#0000FF');
     });
 
+    it('map action menu routes normal actions through onMapAction', () => {
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const aButton = container.querySelector('[data-kind="map"] .sidebar-btn');
+      aButton.click();
+      document.querySelector('[data-value="center"]').click();
+
+      expect(callbacks.onMapAction).toHaveBeenCalledWith('density', 'center');
+      expect(callbacks.onCreateIsosurface).not.toHaveBeenCalled();
+    });
+
+    it('isosurface row click toggles visibility but action button clicks do not', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface()]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      row.click();
+      expect(callbacks.onToggleIsosurfaceVisibility).toHaveBeenCalledWith('isosurface_1');
+
+      for (const button of row.querySelectorAll('.sidebar-btn')) {
+        callbacks.onToggleIsosurfaceVisibility.mockClear();
+        button.click();
+        expect(callbacks.onToggleIsosurfaceVisibility).not.toHaveBeenCalled();
+      }
+    });
+
     it('renders isosurface rows with contour, style, and color menus', () => {
       const maps = new Map([['density', makeMap()]]);
-      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ level: 1 })]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ level: -3 })]]);
       const entryTree = [
         { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
       ];
@@ -569,12 +600,41 @@ describe('Sidebar', () => {
 
       const buttons = row.querySelectorAll('.sidebar-btn');
       buttons[0].click();
+      expect(Array.from(
+        document.querySelectorAll('[data-value^="contour:"]'),
+      ).map((item) => item.querySelector('span:last-child').textContent)).toEqual([
+        '-10',
+        '-5',
+        '-4',
+        '-3',
+        '-2',
+        '-1',
+        '+1',
+        '+2',
+        '+3',
+        '+4',
+        '+5',
+        '+10',
+      ]);
+      expect(document.querySelector('[data-value="contour:-3"]').classList.contains('checked')).toBe(true);
+      for (const value of ['rename', 'delete', 'center', 'zoom']) {
+        expect(document.querySelector(`[data-value="${value}"]`)).not.toBeNull();
+      }
       document.querySelector('[data-value="contour:-3"]').click();
       expect(callbacks.onIsosurfaceAction).toHaveBeenCalledWith('isosurface_1', 'contour:-3');
 
+      buttons[0].click();
+      document.querySelector('[data-value="delete"]').click();
+      expect(callbacks.onIsosurfaceAction).toHaveBeenCalledWith('isosurface_1', 'delete');
+
       buttons[1].click();
+      expect(document.querySelector('[data-value="representation:mesh"]').classList.contains('checked')).toBe(true);
       document.querySelector('[data-value="representation:surface"]').click();
       expect(callbacks.onIsosurfaceStyle).toHaveBeenCalledWith('isosurface_1', 'representation:surface');
+
+      buttons[1].click();
+      document.querySelector('[data-value="opacity:0.25"]').click();
+      expect(callbacks.onIsosurfaceStyle).toHaveBeenCalledWith('isosurface_1', 'opacity:0.25');
 
       buttons[2].click();
       document.querySelector('.swatch-cell').click();
