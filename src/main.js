@@ -24,6 +24,7 @@ import {
   getState,
   onStateChange,
   toggleObjectVisibility,
+  getNextSurfaceName,
   setSelectionMode,
   removeObject,
   addSelection,
@@ -53,6 +54,18 @@ import {
 } from './actions.js';
 import { applyPreset } from './presets.js';
 import { resolveSelection, getSelSpec } from './commands/resolve-selection.js';
+import {
+  createSurface,
+  removeSurface,
+  renameSurface,
+  setSurfaceVisibility,
+  setSurfaceMode,
+  setSurfaceOpacity,
+  setSurfaceColor,
+  setSurfaceParentVisibility,
+  removeSurfacesForParent,
+  findSingleSurfaceParent,
+} from './surfaces.js';
 
 // Guard: ensure 3Dmol.js is loaded
 if (typeof $3Dmol === 'undefined') {
@@ -88,6 +101,19 @@ function refreshClickableModels() {
 // --- Create the terminal ---
 const terminal = createTerminal(document.getElementById('terminal-container'));
 
+const surfaceService = {
+  createSurface,
+  removeSurface,
+  renameSurface,
+  setSurfaceVisibility,
+  setSurfaceMode,
+  setSurfaceOpacity,
+  setSurfaceColor,
+  setSurfaceParentVisibility,
+  removeSurfacesForParent,
+  findSingleSurfaceParent,
+};
+
 // --- Create the sidebar with callbacks ---
 const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   onToggleVisibility(name) {
@@ -98,6 +124,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       } else {
         obj.model.hide();
       }
+      surfaceService.setSurfaceParentVisibility(name, obj.visible);
       scheduleRender();
       sidebar.refresh(getState());
     }
@@ -127,6 +154,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       case 'delete': {
         const modelAtoms = viewer.selectedAtoms({ model: obj.model });
         const removedIndices = modelAtoms.map(a => a.index);
+        surfaceService.removeSurfacesForParent(name);
         viewer.removeModel(obj.model);
         scheduleRender();
         removeObject(name);
@@ -152,6 +180,102 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         });
         break;
       }
+    }
+  },
+
+  async onCreateSurface(name, type) {
+    const obj = getState().objects.get(name);
+    if (!obj) {
+      terminal.print(`Cannot create surface: "${name}" not found`, 'error');
+      return;
+    }
+
+    const surfaceName = getNextSurfaceName();
+    try {
+      const surface = await surfaceService.createSurface({
+        name: surfaceName,
+        selection: { model: obj.model },
+        type,
+        parentName: name,
+      });
+      if (surface) {
+        terminal.print(`Created ${type} surface "${surface.name}" for "${name}"`, 'result');
+      }
+    } catch (e) {
+      terminal.print(`Failed to create surface for "${name}": ${e.message}`, 'error');
+    }
+  },
+
+  onToggleSurfaceVisibility(name) {
+    const surface = getState().surfaces.get(name);
+    if (!surface) return;
+    const updated = surfaceService.setSurfaceVisibility(name, !surface.visible);
+    if (updated) {
+      terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} surface "${name}"`, 'result');
+    }
+  },
+
+  onSurfaceAction(name, action) {
+    const surface = getState().surfaces.get(name);
+    if (!surface) return;
+
+    switch (action) {
+      case 'delete':
+        if (surfaceService.removeSurface(name)) {
+          terminal.print(`Deleted surface "${name}"`, 'result');
+        }
+        break;
+      case 'rename':
+        showRenameDialog(name, (newName) => {
+          try {
+            if (surfaceService.renameSurface(name, newName)) {
+              terminal.print(`Renamed surface "${name}" to "${newName}"`, 'result');
+            }
+          } catch (e) {
+            terminal.print(e.message, 'error');
+          }
+        });
+        break;
+      case 'center':
+        getViewer().center(surface.selection);
+        scheduleRender();
+        terminal.print(`Centered on surface "${name}"`, 'result');
+        break;
+      case 'zoom':
+        getViewer().zoomTo(surface.selection);
+        scheduleRender();
+        terminal.print(`Zoomed to surface "${name}"`, 'result');
+        break;
+    }
+  },
+
+  onSurfaceStyle(name, value) {
+    const [kind, rawValue] = String(value).split(':');
+    try {
+      if (kind === 'mode') {
+        const updated = surfaceService.setSurfaceMode(name, rawValue);
+        if (updated) {
+          terminal.print(`Set surface "${name}" mode to ${rawValue}`, 'result');
+        }
+      } else if (kind === 'opacity') {
+        const opacity = Number(rawValue);
+        if (!Number.isFinite(opacity)) {
+          throw new Error(`Invalid surface opacity "${rawValue}"`);
+        }
+        const updated = surfaceService.setSurfaceOpacity(name, opacity);
+        if (updated) {
+          terminal.print(`Set surface "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+        }
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  onSurfaceColor(name, color) {
+    const updated = surfaceService.setSurfaceColor(name, color);
+    if (updated) {
+      terminal.print(`Colored surface "${name}" ${color}`, 'result');
     }
   },
 
@@ -305,6 +429,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         obj.visible = !anyVisible;
         if (obj.visible) obj.model.show();
         else obj.model.hide();
+        surfaceService.setSurfaceParentVisibility(objName, obj.visible);
       }
     }
     scheduleRender();
@@ -327,6 +452,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
             obj.visible = show;
             if (show) obj.model.show();
             else obj.model.hide();
+            surfaceService.setSurfaceParentVisibility(objName, obj.visible);
           }
         }
         scheduleRender();
@@ -344,6 +470,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
           if (obj) {
             const modelAtoms = viewer.selectedAtoms({ model: obj.model });
             allRemovedIndices.push(...modelAtoms.map(a => a.index));
+            surfaceService.removeSurfacesForParent(objName);
             viewer.removeModel(obj.model);
           }
         }
@@ -763,6 +890,7 @@ const ctx = createCommandContext({
   terminal,
   sidebar,
   state: getState(),
+  surfaceService,
 });
 registerAllCommands(registry, { remoteLoading });
 
