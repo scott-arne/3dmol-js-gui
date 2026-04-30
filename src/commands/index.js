@@ -8,6 +8,7 @@ import { registerEditingCommands } from './editing.js';
 import { registerExportCommands } from './export.js';
 import { registerPresetCommands } from './preset.js';
 import { registerGroupingCommands } from './grouping.js';
+import { registerSurfaceCommands } from './surface.js';
 
 /**
  * Register all available commands into the given command registry.
@@ -23,6 +24,7 @@ export function registerAllCommands(registry, options = {}) {
   registerSelectionCommands(registry);
   registerLabelingCommands(registry);
   registerEditingCommands(registry);
+  registerSurfaceCommands(registry);
   registerExportCommands(registry);
   registerPresetCommands(registry);
   registerGroupingCommands(registry);

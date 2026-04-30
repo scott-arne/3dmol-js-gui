@@ -1,8 +1,28 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
 import { getViewer, scheduleRender } from '../viewer.js';
-import { getState, removeObject, removeSelection, renameSelection, renameObject, renameGroup, pruneSelections, findTreeNode, removeGroup, collectEntryNames } from '../state.js';
+import {
+  getState,
+  removeObject,
+  removeSelection,
+  renameSelection,
+  renameObject,
+  renameGroup,
+  pruneSelections,
+  findTreeNode,
+  removeGroup,
+  collectEntryNames,
+  getChildSurfaceNames,
+  updateSurfaceEntry,
+} from '../state.js';
 import { renderHighlight, clearHighlight } from '../highlight.js';
+
+function requireSurfaceService(ctx) {
+  if (!ctx.surfaceService) {
+    throw new Error('Surface service is unavailable');
+  }
+  return ctx.surfaceService;
+}
 
 /**
  * Register the editing commands (remove, delete) into the given command
@@ -82,8 +102,12 @@ export function registerEditingCommands(registry) {
           if (obj) {
             const modelAtoms = viewer.selectedAtoms({ model: obj.model });
             allRemovedIndices.push(...modelAtoms.map(a => a.index));
+            ctx.surfaceService?.removeSurfacesForParent(objName);
             viewer.removeModel(obj.model);
           }
+        }
+        for (const surfaceName of entries.surfaces) {
+          requireSurfaceService(ctx).removeSurface(surfaceName);
         }
 
         scheduleRender();
@@ -98,6 +122,12 @@ export function registerEditingCommands(registry) {
         }
 
         ctx.terminal.print(`Deleted group "${name}" (${entries.objects.length} objects, ${entries.selections.length} selections)`, 'result');
+        return;
+      }
+
+      if (state.surfaces.has(name)) {
+        requireSurfaceService(ctx).removeSurface(name);
+        ctx.terminal.print(`Deleted surface "${name}"`, 'result');
         return;
       }
 
@@ -119,6 +149,7 @@ export function registerEditingCommands(registry) {
           if (childObj) {
             const modelAtoms = viewer.selectedAtoms({ model: childObj.model });
             allRemovedIndices.push(...modelAtoms.map(a => a.index));
+            ctx.surfaceService?.removeSurfacesForParent(objName);
             viewer.removeModel(childObj.model);
             state.objects.delete(objName);
           }
@@ -127,6 +158,7 @@ export function registerEditingCommands(registry) {
         // Simple object deletion
         const modelAtoms = viewer.selectedAtoms({ model: obj.model });
         allRemovedIndices.push(...modelAtoms.map(a => a.index));
+        ctx.surfaceService?.removeSurfacesForParent(name);
         viewer.removeModel(obj.model);
       }
 
@@ -165,8 +197,15 @@ export function registerEditingCommands(registry) {
       } else if (findTreeNode(state.entryTree, oldName, 'group')) {
         renameGroup(oldName, newName);
         ctx.terminal.print(`Renamed group "${oldName}" to "${newName}"`, 'result');
+      } else if (state.surfaces.has(oldName)) {
+        requireSurfaceService(ctx).renameSurface(oldName, newName);
+        ctx.terminal.print(`Renamed surface "${oldName}" to "${newName}"`, 'result');
       } else if (state.objects.has(oldName)) {
+        const childSurfaceNames = getChildSurfaceNames(oldName);
         renameObject(oldName, newName);
+        for (const surfaceName of childSurfaceNames) {
+          updateSurfaceEntry(surfaceName, { parentName: newName });
+        }
         ctx.terminal.print(`Renamed "${oldName}" to "${newName}"`, 'result');
       } else {
         throw new Error(`"${oldName}" not found`);

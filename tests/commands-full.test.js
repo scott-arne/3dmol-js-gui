@@ -29,6 +29,7 @@ const mockViewer = {
 const mockState = {
   objects: new Map(),
   selections: new Map(),
+  surfaces: new Map(),
   selectionMode: 'atoms',
   settings: {
     bgColor: '#000000',
@@ -78,10 +79,12 @@ vi.mock('../src/state.js', async (importOriginal) => {
     renameSelection: vi.fn(),
     renameObject: vi.fn(),
     renameGroup: vi.fn(),
+    getChildSurfaceNames: vi.fn(() => []),
+    updateSurfaceEntry: vi.fn(),
     pruneSelections: vi.fn(),
     notifyStateChange: vi.fn(),
     addGroup: vi.fn(),
-    removeGroup: vi.fn(() => ({ objects: [], selections: [] })),
+    removeGroup: vi.fn(() => ({ objects: [], selections: [], surfaces: [] })),
     ungroupGroup: vi.fn(),
     reparentEntry: vi.fn(),
     unparentEntry: vi.fn(),
@@ -183,12 +186,29 @@ import { registerLoadingCommands } from '../src/commands/loading.js';
 import { registerStylingCommands } from '../src/commands/styling.js';
 import { registerPresetCommands } from '../src/commands/preset.js';
 import { registerGroupingCommands } from '../src/commands/grouping.js';
+import { registerSurfaceCommands } from '../src/commands/surface.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
 import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, loadModelData, scheduleRender } from '../src/viewer.js';
 import { loadStructure, loadStructureFile } from '../src/loading/structure-loader.js';
 import { renderHighlight, clearHighlight as hlClearHighlight } from '../src/highlight.js';
-import { addObject, removeObject, addSelection, removeSelection, renameSelection, renameObject, pruneSelections, notifyStateChange, addGroup, ungroupGroup, reparentEntry, unparentEntry } from '../src/state.js';
+import {
+  addObject,
+  removeObject,
+  addSelection,
+  removeSelection,
+  renameSelection,
+  renameObject,
+  pruneSelections,
+  notifyStateChange,
+  addGroup,
+  removeGroup,
+  ungroupGroup,
+  reparentEntry,
+  unparentEntry,
+  getChildSurfaceNames,
+  updateSurfaceEntry,
+} from '../src/state.js';
 import { resolveSelection, getSelSpec, resolveSelectionByEntry } from '../src/commands/resolve-selection.js';
 import { parse } from '../src/parser/selection.pegjs';
 import { toAtomSelectionSpec, evaluate } from '../src/parser/evaluator.js';
@@ -208,14 +228,26 @@ function makeTerminal() {
   };
 }
 
-function makeCtx(terminal) {
-  return { terminal };
+function makeSurfaceService(overrides = {}) {
+  return {
+    createSurface: vi.fn(async (options) => ({ ...options })),
+    findSingleSurfaceParent: vi.fn(() => null),
+    removeSurface: vi.fn(() => true),
+    removeSurfacesForParent: vi.fn(() => []),
+    renameSurface: vi.fn(() => true),
+    ...overrides,
+  };
+}
+
+function makeCtx(terminal, surfaceService) {
+  return { terminal, surfaceService };
 }
 
 function resetMocks() {
   vi.clearAllMocks();
   mockState.objects.clear();
   mockState.selections.clear();
+  mockState.surfaces.clear();
   mockState.entryTree.length = 0;
   mockState.selectionMode = 'atoms';
   mockState.settings = {
@@ -993,6 +1025,136 @@ describe('selection.js', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Surface Commands
+// ---------------------------------------------------------------------------
+
+describe('surface.js', () => {
+  let registry, terminal, ctx, surfaceService;
+
+  beforeEach(() => {
+    resetMocks();
+    registry = createCommandRegistry();
+    registerSurfaceCommands(registry);
+    terminal = makeTerminal();
+    surfaceService = makeSurfaceService();
+    ctx = makeCtx(terminal, surfaceService);
+  });
+
+  it('throws usage when no arguments are provided', async () => {
+    await expect(registry.execute('surface', ctx)).rejects.toThrow('Usage: surface');
+  });
+
+  it('creates a default molecular surface from a parent object', async () => {
+    const modelRef = {};
+    mockState.objects.set('1UBQ', { model: modelRef });
+
+    await registry.execute('surface 1UBQ', ctx);
+
+    expect(surfaceService.createSurface).toHaveBeenCalledWith({
+      name: '1UBQ_surface',
+      selection: { model: modelRef },
+      type: 'molecular',
+      parentName: '1UBQ',
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Created molecular surface "1UBQ_surface" for "1UBQ"',
+      type: 'result',
+    });
+  });
+
+  it('creates a sasa surface from a parent object', async () => {
+    const modelRef = {};
+    mockState.objects.set('1UBQ', { model: modelRef });
+
+    await registry.execute('surface 1UBQ, sasa', ctx);
+
+    expect(surfaceService.createSurface).toHaveBeenCalledWith({
+      name: '1UBQ_surface',
+      selection: { model: modelRef },
+      type: 'sasa',
+      parentName: '1UBQ',
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Created sasa surface "1UBQ_surface" for "1UBQ"',
+      type: 'result',
+    });
+  });
+
+  it('creates a named surface from a selection with one parent', async () => {
+    const selectionResult = { spec: { resn: ['LIG'] } };
+    const selectionSpec = { resn: ['LIG'] };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+    surfaceService.findSingleSurfaceParent.mockReturnValueOnce('1UBQ');
+
+    await registry.execute('surface ligand_surface, resn LIG, sasa', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('resn LIG');
+    expect(getSelSpec).toHaveBeenCalledWith(selectionResult);
+    expect(surfaceService.findSingleSurfaceParent).toHaveBeenCalledWith(selectionSpec);
+    expect(surfaceService.createSurface).toHaveBeenCalledWith({
+      name: 'ligand_surface',
+      selection: selectionSpec,
+      type: 'sasa',
+      parentName: '1UBQ',
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Created sasa surface "ligand_surface"',
+      type: 'result',
+    });
+  });
+
+  it('creates a named top-level surface when a selection has no single parent', async () => {
+    const selectionSpec = { hetflag: false };
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+    surfaceService.findSingleSurfaceParent.mockReturnValueOnce(null);
+
+    await registry.execute('surface protein_surface, protein', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('protein');
+    expect(surfaceService.createSurface).toHaveBeenCalledWith({
+      name: 'protein_surface',
+      selection: selectionSpec,
+      type: 'molecular',
+      parentName: null,
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Created molecular surface "protein_surface"',
+      type: 'result',
+    });
+  });
+
+  it('rejects an unknown parent-form type before creating a surface', async () => {
+    mockState.objects.set('1UBQ', { model: {} });
+
+    await expect(registry.execute('surface 1UBQ, mesh', ctx))
+      .rejects.toThrow('Unknown surface type "mesh"');
+
+    expect(surfaceService.createSurface).not.toHaveBeenCalled();
+  });
+
+  it('throws when the surface service is unavailable', async () => {
+    mockState.objects.set('1UBQ', { model: {} });
+    ctx = makeCtx(terminal);
+
+    await expect(registry.execute('surface 1UBQ', ctx))
+      .rejects.toThrow('Surface service is unavailable');
+  });
+
+  it('lets resolveSelection report empty named-form selections', async () => {
+    resolveSelection.mockImplementationOnce((selection) => {
+      expect(selection).toBe('');
+      throw new Error('Selection cannot be empty');
+    });
+
+    await expect(registry.execute('surface ligand_surface, ', ctx))
+      .rejects.toThrow('Selection cannot be empty');
+
+    expect(surfaceService.createSurface).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Editing Commands
 // ---------------------------------------------------------------------------
 
@@ -1090,6 +1252,21 @@ describe('editing.js', () => {
       expect(terminal.lines[0].msg).toContain('mol');
     });
 
+    it('deletes a surface through the surface service', () => {
+      const surfaceService = makeSurfaceService();
+      ctx = makeCtx(terminal, surfaceService);
+      mockState.surfaces.set('surf', { name: 'surf' });
+
+      registry.execute('delete surf', ctx);
+
+      expect(surfaceService.removeSurface).toHaveBeenCalledWith('surf');
+      expect(removeObject).not.toHaveBeenCalled();
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Deleted surface "surf"',
+        type: 'result',
+      });
+    });
+
     it('throws when name not found as selection or object', () => {
       expect(() => registry.execute('delete nonexistent', ctx)).toThrow('"nonexistent" not found');
     });
@@ -1105,6 +1282,92 @@ describe('editing.js', () => {
       registry.execute('delete dup', ctx);
       expect(removeSelection).toHaveBeenCalledWith('dup');
       expect(removeObject).not.toHaveBeenCalled();
+    });
+
+    it('prefers selection over surface when name exists in both', () => {
+      const surfaceService = makeSurfaceService();
+      ctx = makeCtx(terminal, surfaceService);
+      mockState.selections.set('dup', { spec: {}, atomCount: 3 });
+      mockState.surfaces.set('dup', { name: 'dup' });
+
+      registry.execute('delete dup', ctx);
+
+      expect(removeSelection).toHaveBeenCalledWith('dup');
+      expect(surfaceService.removeSurface).not.toHaveBeenCalled();
+    });
+
+    it('removes child surfaces before deleting an object', () => {
+      const surfaceService = makeSurfaceService();
+      ctx = makeCtx(terminal, surfaceService);
+      const modelRef = {};
+      mockState.objects.set('mol', {
+        model: modelRef,
+        visible: true,
+        representations: new Set(),
+      });
+
+      registry.execute('delete mol', ctx);
+
+      expect(surfaceService.removeSurfacesForParent).toHaveBeenCalledWith('mol');
+      expect(surfaceService.removeSurfacesForParent.mock.invocationCallOrder[0])
+        .toBeLessThan(removeObject.mock.invocationCallOrder[0]);
+    });
+
+    it('removes child surfaces for every object removed from a hierarchy', () => {
+      const surfaceService = makeSurfaceService();
+      ctx = makeCtx(terminal, surfaceService);
+      const parentModel = {};
+      const childModel = {};
+      mockState.objects.set('parent', {
+        model: parentModel,
+        visible: true,
+        representations: new Set(),
+      });
+      mockState.objects.set('child', {
+        model: childModel,
+        visible: true,
+        representations: new Set(),
+      });
+      mockState.entryTree.push({
+        type: 'object',
+        name: 'parent',
+        children: [{ type: 'object', name: 'child' }],
+      });
+
+      registry.execute('delete parent', ctx);
+
+      expect(surfaceService.removeSurfacesForParent).toHaveBeenCalledWith('parent');
+      expect(surfaceService.removeSurfacesForParent).toHaveBeenCalledWith('child');
+      expect(mockViewer.removeModel).toHaveBeenCalledWith(parentModel);
+      expect(mockViewer.removeModel).toHaveBeenCalledWith(childModel);
+    });
+
+    it('removes grouped object surfaces and grouped direct surfaces before deleting a group', () => {
+      const surfaceService = makeSurfaceService();
+      ctx = makeCtx(terminal, surfaceService);
+      const modelRef = {};
+      mockState.objects.set('mol', {
+        model: modelRef,
+        visible: true,
+        representations: new Set(),
+      });
+      mockState.surfaces.set('free_surface', { name: 'free_surface' });
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [
+          { type: 'object', name: 'mol' },
+          { type: 'surface', name: 'free_surface' },
+        ],
+      });
+
+      registry.execute('delete grp', ctx);
+
+      expect(surfaceService.removeSurfacesForParent).toHaveBeenCalledWith('mol');
+      expect(surfaceService.removeSurface).toHaveBeenCalledWith('free_surface');
+      expect(surfaceService.removeSurface.mock.invocationCallOrder[0])
+        .toBeLessThan(removeGroup.mock.invocationCallOrder[0]);
+      expect(removeGroup).toHaveBeenCalledWith('grp');
     });
 
     it('clears highlight after delete when no sele is visible', () => {
@@ -1146,6 +1409,21 @@ describe('editing.js', () => {
       expect(terminal.lines[0].msg).toContain('newObj');
     });
 
+    it('renames a surface through the surface service', () => {
+      const surfaceService = makeSurfaceService();
+      ctx = makeCtx(terminal, surfaceService);
+      mockState.surfaces.set('oldSurf', { name: 'oldSurf' });
+
+      registry.execute('set_name oldSurf, newSurf', ctx);
+
+      expect(surfaceService.renameSurface).toHaveBeenCalledWith('oldSurf', 'newSurf');
+      expect(renameObject).not.toHaveBeenCalled();
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Renamed surface "oldSurf" to "newSurf"',
+        type: 'result',
+      });
+    });
+
     it('prefers selection over object when name exists in both', () => {
       mockState.selections.set('dup', { spec: {} });
       mockState.objects.set('dup', { model: {} });
@@ -1153,6 +1431,21 @@ describe('editing.js', () => {
       registry.execute('set_name dup, newName', ctx);
       expect(renameSelection).toHaveBeenCalledWith('dup', 'newName');
       expect(renameObject).not.toHaveBeenCalled();
+    });
+
+    it('reparents child surfaces after an object is renamed', () => {
+      mockState.objects.set('oldObj', { model: {}, visible: true, representations: new Set() });
+      getChildSurfaceNames.mockReturnValueOnce(['surface_a', 'surface_b']);
+      renameObject.mockReturnValueOnce(true);
+
+      registry.execute('set_name oldObj, newObj', ctx);
+
+      expect(getChildSurfaceNames).toHaveBeenCalledWith('oldObj');
+      expect(renameObject).toHaveBeenCalledWith('oldObj', 'newObj');
+      expect(updateSurfaceEntry).toHaveBeenCalledWith('surface_a', { parentName: 'newObj' });
+      expect(updateSurfaceEntry).toHaveBeenCalledWith('surface_b', { parentName: 'newObj' });
+      expect(renameObject.mock.invocationCallOrder[0])
+        .toBeLessThan(updateSurfaceEntry.mock.invocationCallOrder[0]);
     });
 
     it('throws when old name not found', () => {
@@ -2488,6 +2781,9 @@ describe('index.js', () => {
     expect(registry.has('delete')).toBe(true);
     expect(registry.has('set_name')).toBe(true);
 
+    // Surface commands
+    expect(registry.has('surface')).toBe(true);
+
     // Export commands
     expect(registry.has('png')).toBe(true);
     expect(registry.has('help')).toBe(true);
@@ -2518,8 +2814,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 9 camera + 4 display + 4 selection + 3 editing + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 39
-    expect(commands.length).toBe(39);
+    // 9 camera + 4 display + 4 selection + 3 editing + 1 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 40
+    expect(commands.length).toBe(40);
   });
 
   it('all registered commands have help text', () => {
