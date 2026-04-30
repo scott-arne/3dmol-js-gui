@@ -288,6 +288,7 @@ export function removeObject(name) {
   state.objects.delete(name);
   for (const surfaceName of removedSurfaceNames) {
     state.surfaces.delete(surfaceName);
+    removeSurfaceTreeNode(surfaceName);
   }
   _notify();
   return { surfaces: removedSurfaceNames };
@@ -445,7 +446,7 @@ export function addSurfaceEntry(entry) {
   state.surfaces.set(surface.name, surface);
 
   // Re-insert to match the current parent relationship without duplicating.
-  removeTreeNode(state.entryTree, surface.name);
+  removeSurfaceTreeNode(surface.name);
   insertSurfaceTreeNode(state.entryTree, surface.name, surface.parentName);
 
   _notify();
@@ -462,7 +463,7 @@ export function removeSurfaceEntry(name) {
   const surface = state.surfaces.get(name);
   if (!surface) return undefined;
   state.surfaces.delete(name);
-  removeTreeNode(state.entryTree, name);
+  removeSurfaceTreeNode(name);
   _notify();
   return surface;
 }
@@ -498,7 +499,19 @@ export function renameSurfaceEntry(oldName, newName) {
 export function updateSurfaceEntry(name, patch) {
   const surface = state.surfaces.get(name);
   if (!surface) return undefined;
+  const parentNameChanged = Object.prototype.hasOwnProperty.call(patch, 'parentName') &&
+    patch.parentName !== surface.parentName;
+
+  if (parentNameChanged) {
+    removeSurfaceTreeNode(name);
+  }
+
   Object.assign(surface, patch);
+
+  if (parentNameChanged) {
+    insertSurfaceTreeNode(state.entryTree, name, surface.parentName);
+  }
+
   _notify();
   return surface;
 }
@@ -586,6 +599,33 @@ function insertSurfaceTreeNode(tree, name, parentName) {
     tree.splice(selIdx, 0, node);
   } else {
     tree.push(node);
+  }
+}
+
+/**
+ * Remove a surface node from the tree and clean up an empty hierarchy parent.
+ *
+ * @param {string} name - Surface name.
+ * @returns {object|null} The removed tree node, or null if not found.
+ */
+function removeSurfaceTreeNode(name) {
+  const parentNode = _findParentNode(state.entryTree, name);
+  const removed = removeTreeNode(state.entryTree, name);
+  if (removed && parentNode && parentNode.type === 'object') {
+    normalizeHierarchyParent(parentNode);
+  }
+  return removed;
+}
+
+/**
+ * Remove hierarchy-only fields from an object node with no remaining children.
+ *
+ * @param {object} node - Object tree node.
+ */
+function normalizeHierarchyParent(node) {
+  if (node.children && node.children.length === 0) {
+    delete node.children;
+    delete node.collapsed;
   }
 }
 
@@ -848,8 +888,7 @@ export function unparentEntry(childName) {
 
   // If parent's children are now empty, remove the children array
   if (parentNode.children.length === 0) {
-    delete parentNode.children;
-    delete parentNode.collapsed;
+    normalizeHierarchyParent(parentNode);
   }
 
   // Insert next to the parent in the tree

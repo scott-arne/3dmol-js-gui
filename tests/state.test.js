@@ -274,6 +274,15 @@ describe('surface entries', () => {
     expect(getState().entryTree).toEqual([]);
   });
 
+  it('cleans up an empty parent object when removing its only surface child', () => {
+    addObject('parent', {}, 0);
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: 'parent' });
+
+    removeSurfaceEntry('surf');
+
+    expect(getState().entryTree[0]).toEqual({ type: 'object', name: 'parent' });
+  });
+
   it('updates handle and pending state when a surface resolves', () => {
     addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
     setSurfaceHandle('surf', 42);
@@ -288,6 +297,38 @@ describe('surface entries', () => {
       color: '#0000FF',
       mode: 'wireframe',
     });
+  });
+
+  it('reparents a top-level surface when parentName changes to an object', () => {
+    addObject('parent', {}, 0);
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    updateSurfaceEntry('surf', { parentName: 'parent' });
+
+    expect(getState().entryTree).toEqual([{
+      type: 'object',
+      name: 'parent',
+      collapsed: false,
+      children: [{ type: 'surface', name: 'surf' }],
+    }]);
+  });
+
+  it('reparents a surface between object parents when parentName changes', () => {
+    addObject('first', {}, 0);
+    addObject('second', {}, 1);
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: 'first' });
+
+    updateSurfaceEntry('surf', { parentName: 'second' });
+
+    expect(getState().entryTree).toEqual([
+      { type: 'object', name: 'first' },
+      {
+        type: 'object',
+        name: 'second',
+        collapsed: false,
+        children: [{ type: 'surface', name: 'surf' }],
+      },
+    ]);
   });
 
   it('finds the lowest generated surface name', () => {
@@ -318,6 +359,90 @@ describe('surface entries', () => {
     const removed = removeObject('parent');
     expect(removed.surfaces).toEqual(['surface_1']);
     expect(getState().surfaces.has('surface_1')).toBe(false);
+  });
+
+  it('removing an object removes stale top-level surface nodes parented to it', () => {
+    addObject('parent', {}, 0);
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    getState().surfaces.get('surf').parentName = 'parent';
+
+    const removed = removeObject('parent');
+
+    expect(removed.surfaces).toEqual(['surf']);
+    expect(getState().surfaces.has('surf')).toBe(false);
+    expect(getState().entryTree).toEqual([]);
+  });
+});
+
+describe('surface entry notifications', () => {
+  beforeEach(resetState);
+
+  async function expectMutationNotifies(mutate) {
+    const listener = vi.fn();
+    onStateChange(listener);
+
+    mutate();
+
+    expect(listener).toHaveBeenCalledTimes(0);
+    await new Promise(r => queueMicrotask(r));
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(getState());
+  }
+
+  it('notifies when adding a surface', async () => {
+    await expectMutationNotifies(() => {
+      addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    });
+  });
+
+  it('notifies when removing a surface', async () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    await new Promise(r => queueMicrotask(r));
+    getState()._listeners.length = 0;
+
+    await expectMutationNotifies(() => {
+      removeSurfaceEntry('surf');
+    });
+  });
+
+  it('notifies when renaming a surface', async () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    await new Promise(r => queueMicrotask(r));
+    getState()._listeners.length = 0;
+
+    await expectMutationNotifies(() => {
+      renameSurfaceEntry('surf', 'renamed');
+    });
+  });
+
+  it('notifies when updating a surface', async () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    await new Promise(r => queueMicrotask(r));
+    getState()._listeners.length = 0;
+
+    await expectMutationNotifies(() => {
+      updateSurfaceEntry('surf', { opacity: 0.4 });
+    });
+  });
+
+  it('notifies when setting a surface handle', async () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    await new Promise(r => queueMicrotask(r));
+    getState()._listeners.length = 0;
+
+    await expectMutationNotifies(() => {
+      setSurfaceHandle('surf', 7);
+    });
+  });
+
+  it('notifies when toggling surface visibility', async () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    await new Promise(r => queueMicrotask(r));
+    getState()._listeners.length = 0;
+
+    await expectMutationNotifies(() => {
+      toggleSurfaceVisibility('surf');
+    });
   });
 });
 
