@@ -481,6 +481,35 @@ describe('map viewer service', () => {
     );
   });
 
+  it('rolls back map visibility cascade when a child isosurface redraw fails', () => {
+    const oldMapHandle = { id: 'box-old' };
+    const newMapHandle = { id: 'box-new' };
+    const oldIsoHandle = { id: 'iso-old' };
+    mockViewer.addBox.mockReturnValueOnce(oldMapHandle);
+    mockViewer.addIsosurface.mockReturnValueOnce(oldIsoHandle);
+    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    createIsosurface({ name: 'mesh', mapName: 'density' });
+    mockViewer.removeShape.mockClear();
+    mockViewer.addBox.mockReturnValueOnce(newMapHandle);
+    mockViewer.addIsosurface.mockImplementationOnce(() => {
+      throw new Error('isosurface failed');
+    });
+
+    expect(() => setMapVisibility('density', true)).toThrow('isosurface failed');
+
+    expect(getState().maps.get('density')).toMatchObject({
+      visible: true,
+      handles: [oldMapHandle],
+    });
+    expect(getState().isosurfaces.get('mesh')).toMatchObject({
+      parentVisible: true,
+      handle: oldIsoHandle,
+    });
+    expect(mockViewer.removeShape).not.toHaveBeenCalledWith(oldMapHandle);
+    expect(mockViewer.removeShape).not.toHaveBeenCalledWith(oldIsoHandle);
+    expect(mockViewer.removeShape).toHaveBeenCalledWith(newMapHandle);
+  });
+
   it('removes map boxes and child isosurface handles with their state entries', () => {
     const mapHandle = { id: 'map-box' };
     const isoHandle = { id: 'iso' };

@@ -207,19 +207,62 @@ export function renameMap(oldName, newName) {
  * @returns {object|undefined} Updated map entry.
  */
 export function setMapVisibility(name, visible) {
-  const redrawn = updateAndRedrawMap(name, { visible });
-  if (!redrawn) return undefined;
+  const map = getState().maps.get(name);
+  if (!map) return undefined;
 
-  const childNames = [];
-  for (const [isoName, iso] of getState().isosurfaces) {
+  const previousMap = snapshotMapEntry(map);
+  const previousChildren = [];
+  for (const iso of getState().isosurfaces.values()) {
     if (iso.mapName === name) {
-      childNames.push(isoName);
+      previousChildren.push(snapshotIsosurfaceEntry(iso));
     }
   }
-  for (const isoName of childNames) {
-    updateAndRedrawIsosurface(isoName, { parentVisible: visible !== false });
+
+  const stagedHandles = [];
+  let nextMapHandles = [];
+  const nextChildren = [];
+
+  try {
+    const nextMap = { ...previousMap, visible };
+    if (visible !== false) {
+      const handle = getViewer().addBox(buildMapBoxSpec(nextMap));
+      stagedHandles.push(handle);
+      nextMapHandles = [handle];
+    }
+
+    for (const previousChild of previousChildren) {
+      const nextChild = { ...previousChild, parentVisible: visible !== false };
+      const handle = getViewer().addIsosurface(
+        previousMap.volumeData,
+        buildIsosurfaceSpec(nextChild),
+      );
+      stagedHandles.push(handle);
+      nextChildren.push({ ...nextChild, handle });
+    }
+  } catch (error) {
+    removeViewerShapes(stagedHandles);
+    restoreMapEntry(previousMap);
+    for (const previousChild of previousChildren) {
+      restoreIsosurfaceEntry(previousChild);
+    }
+    throw error;
   }
-  return redrawn;
+
+  updateMapEntry(name, { visible, handles: nextMapHandles });
+  for (const nextChild of nextChildren) {
+    updateIsosurfaceEntry(nextChild.name, {
+      parentVisible: nextChild.parentVisible,
+      handle: nextChild.handle,
+    });
+  }
+
+  removeViewerShapes(previousMap.handles);
+  for (const previousChild of previousChildren) {
+    removeViewerShape(previousChild.handle);
+  }
+  scheduleRender();
+
+  return getState().maps.get(name);
 }
 
 /**
