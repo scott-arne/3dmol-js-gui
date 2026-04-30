@@ -95,6 +95,16 @@ describe('showLoadDialog', () => {
     expect(panels[1].classList.contains('hidden')).toBe(true);
   });
 
+  it('local file input accepts density map extensions', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const fileInput = overlay.querySelectorAll('.modal-panel')[1].querySelector('input[type="file"]');
+
+    expect(fileInput.accept).toContain('.ccp4');
+    expect(fileInput.accept).toContain('.map');
+    expect(fileInput.accept).toContain('.mrc');
+  });
+
   it('fetch button calls onFetch with uppercase PDB ID for 4-char input', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');

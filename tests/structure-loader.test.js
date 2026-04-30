@@ -235,6 +235,35 @@ describe('structure-loader', () => {
     expect(deps.scheduleRender).not.toHaveBeenCalled();
   });
 
+  it('uses quiet default model removal during cube rollback', async () => {
+    const model = { getID: () => 6 };
+    const viewer = { removeModel: vi.fn() };
+    const deps = makeDeps({
+      addObject: vi.fn(() => 'orbital_2'),
+      getViewer: vi.fn(() => viewer),
+      loadModelData: vi.fn(() => model),
+      removeModel: undefined,
+      createMap: vi.fn(() => {
+        throw new Error('Map parse failed');
+      }),
+    });
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'orbital',
+      format: 'cube',
+      data: 'CUBE DATA',
+    }, { deps });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'load_failed',
+      message: 'Failed to load structure: Map parse failed',
+    });
+    expect(viewer.removeModel).toHaveBeenCalledWith(model);
+    expect(deps.scheduleRender).not.toHaveBeenCalled();
+  });
+
   it('does not attempt cube rollback before model registration exists', async () => {
     const deps = makeDeps({
       loadModelData: vi.fn(() => {

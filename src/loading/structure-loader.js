@@ -1,4 +1,4 @@
-import { fetchPDB, getViewer, loadModelData, removeModel, scheduleRender } from '../viewer.js';
+import { fetchPDB, getViewer, loadModelData, scheduleRender } from '../viewer.js';
 import { addObject, removeObject } from '../state.js';
 import { createMap } from '../maps.js';
 
@@ -26,16 +26,18 @@ function hybridSuccess(name, model, modelIndex, mapName, map, message) {
 }
 
 function getDeps(deps = {}) {
+  const getViewerImpl = deps.getViewer || getViewer;
   return {
     addObject: deps.addObject || addObject,
     createMap: deps.createMap || createMap,
     fetchImpl: deps.fetchImpl || globalThis.fetch,
     fetchPDB: deps.fetchPDB || fetchPDB,
+    getViewer: getViewerImpl,
     loadModelData: deps.loadModelData || loadModelData,
-    removeModel: deps.removeModel || removeModel,
+    removeModel: deps.removeModel || ((model) => getViewerImpl().removeModel(model)),
     removeObject: deps.removeObject || removeObject,
     scheduleRender: deps.scheduleRender || scheduleRender,
-    zoomTo: deps.zoomTo || (() => getViewer().zoomTo()),
+    zoomTo: deps.zoomTo || (() => getViewerImpl().zoomTo()),
   };
 }
 

@@ -164,12 +164,15 @@ describe('map viewer service', () => {
       .mockReturnValueOnce(handles[1])
       .mockReturnValueOnce(handles[2]);
     createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    scheduleRender.mockClear();
 
     setMapVisibility('density', false);
     expect(mockViewer.removeShape).toHaveBeenLastCalledWith(handles[0]);
     expect(getState().maps.get('density').handles).toEqual([]);
     expect(mockViewer.addBox).toHaveBeenCalledTimes(1);
+    expect(scheduleRender).toHaveBeenCalledTimes(1);
 
+    scheduleRender.mockClear();
     setMapColor('density', '#FF0000');
     expect(mockViewer.addBox).toHaveBeenCalledTimes(1);
     expect(getState().maps.get('density')).toMatchObject({
@@ -184,7 +187,9 @@ describe('map viewer service', () => {
       opacity: 1,
     }));
     expect(getState().maps.get('density').handles).toEqual([handles[1]]);
+    expect(scheduleRender).toHaveBeenCalledTimes(1);
 
+    scheduleRender.mockClear();
     setMapOpacity('density', 0.25);
     expect(mockViewer.removeShape).toHaveBeenLastCalledWith(handles[1]);
     expect(mockViewer.addBox).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -192,6 +197,7 @@ describe('map viewer service', () => {
       opacity: 0.25,
     }));
     expect(getState().maps.get('density').handles).toEqual([handles[2]]);
+    expect(scheduleRender).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the existing visible map handle when addBox throws during redraw', () => {

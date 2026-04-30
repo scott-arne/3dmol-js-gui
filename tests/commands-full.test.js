@@ -1881,6 +1881,9 @@ describe('loading.js', () => {
       expect(input.accept).toContain('.pdb');
       expect(input.accept).toContain('.sdf');
       expect(input.accept).toContain('.mol2');
+      expect(input.accept).toContain('.ccp4');
+      expect(input.accept).toContain('.map');
+      expect(input.accept).toContain('.mrc');
 
       vi.restoreAllMocks();
     });
