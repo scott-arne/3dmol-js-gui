@@ -25,6 +25,8 @@ import {
   onStateChange,
   toggleObjectVisibility,
   getNextSurfaceName,
+  getChildSurfaceNames,
+  updateSurfaceEntry,
   setSelectionMode,
   removeObject,
   addSelection,
@@ -114,6 +116,24 @@ const surfaceService = {
   findSingleSurfaceParent,
 };
 
+function isSurfaceEffectivelyVisible(surface) {
+  return surface.visible !== false && surface.parentVisible !== false;
+}
+
+function getDirectGroupedSurfaceNames(entries, state) {
+  const groupedObjects = new Set(entries.objects);
+  return entries.surfaces.filter((surfaceName) => {
+    const surface = state.surfaces.get(surfaceName);
+    return surface && (!surface.parentName || !groupedObjects.has(surface.parentName));
+  });
+}
+
+function setDirectGroupedSurfaceVisibility(entries, state, visible) {
+  for (const surfaceName of getDirectGroupedSurfaceNames(entries, state)) {
+    surfaceService.setSurfaceVisibility(surfaceName, visible);
+  }
+}
+
 // --- Create the sidebar with callbacks ---
 const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   onToggleVisibility(name) {
@@ -172,7 +192,11 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       case 'rename': {
         showRenameDialog(name, (newName) => {
           try {
+            const childSurfaceNames = getChildSurfaceNames(name);
             renameObject(name, newName);
+            for (const surfaceName of childSurfaceNames) {
+              updateSurfaceEntry(surfaceName, { parentName: newName });
+            }
             terminal.print(`Renamed "${name}" to "${newName}"`, 'result');
           } catch (e) {
             terminal.print(e.message, 'error');
@@ -422,16 +446,27 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       const obj = state.objects.get(objName);
       if (obj && obj.visible) { anyVisible = true; break; }
     }
+    if (!anyVisible) {
+      for (const surfaceName of getDirectGroupedSurfaceNames(entries, state)) {
+        const surface = state.surfaces.get(surfaceName);
+        if (surface && isSurfaceEffectivelyVisible(surface)) {
+          anyVisible = true;
+          break;
+        }
+      }
+    }
+    const show = !anyVisible;
     const viewer = getViewer();
     for (const objName of entries.objects) {
       const obj = state.objects.get(objName);
       if (obj) {
-        obj.visible = !anyVisible;
+        obj.visible = show;
         if (obj.visible) obj.model.show();
         else obj.model.hide();
         surfaceService.setSurfaceParentVisibility(objName, obj.visible);
       }
     }
+    setDirectGroupedSurfaceVisibility(entries, state, show);
     scheduleRender();
     notifyStateChange();
   },
@@ -455,6 +490,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
             surfaceService.setSurfaceParentVisibility(objName, obj.visible);
           }
         }
+        setDirectGroupedSurfaceVisibility(entries, state, show);
         scheduleRender();
         notifyStateChange();
         break;
@@ -473,6 +509,9 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
             surfaceService.removeSurfacesForParent(objName);
             viewer.removeModel(obj.model);
           }
+        }
+        for (const surfaceName of entries.surfaces) {
+          surfaceService.removeSurface(surfaceName);
         }
         scheduleRender();
         removeGroup(name);

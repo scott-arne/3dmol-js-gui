@@ -19,6 +19,28 @@ function installFixtureDom(html) {
   window.__C3D_INIT__ = getInitPayload(html);
 }
 
+async function bootFixtureApp() {
+  const html = readFileSync(fixturePath, 'utf8');
+  const mockViewer = createMockViewer();
+
+  installFixtureDom(html);
+  installMock3Dmol(mockViewer);
+
+  await import('../src/main.js');
+  const state = await import('../src/state.js');
+
+  return { mockViewer, ...state };
+}
+
+async function flushStateUpdates() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function clickPopupItem(value) {
+  document.querySelector(`[data-value="${value}"]`).click();
+}
+
 describe('static offline smoke fixture', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -71,13 +93,7 @@ describe('static offline smoke fixture', () => {
   });
 
   it('boots the app from the fixture payload without fetches', async () => {
-    const html = readFileSync(fixturePath, 'utf8');
-    const mockViewer = createMockViewer();
-
-    installFixtureDom(html);
-    installMock3Dmol(mockViewer);
-
-    await import('../src/main.js');
+    const { mockViewer } = await bootFixtureApp();
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(mockViewer.addModel).toHaveBeenCalledWith(
@@ -87,5 +103,116 @@ describe('static offline smoke fixture', () => {
     );
     expect(mockViewer.zoomTo).toHaveBeenCalled();
     expect(mockViewer.render).toHaveBeenCalled();
+  });
+
+  it('group visibility toggles direct grouped surfaces', async () => {
+    const { mockViewer, addSurfaceEntry, addGroup, getState } = await bootFixtureApp();
+
+    addSurfaceEntry({
+      name: 'direct_surface',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+      handle: 101,
+      pending: false,
+      visible: true,
+      parentVisible: true,
+    });
+    addGroup('surface_group', ['direct_surface']);
+    await flushStateUpdates();
+    mockViewer.setSurfaceMaterialStyle.mockClear();
+
+    document
+      .querySelector('.sidebar-group-header[data-name="surface_group"] .sidebar-zone-toggle')
+      .click();
+
+    expect(getState().surfaces.get('direct_surface').visible).toBe(false);
+    expect(mockViewer.setSurfaceMaterialStyle).toHaveBeenCalledWith(
+      101,
+      { color: '#FFFFFF', opacity: 0, wireframe: false },
+    );
+  });
+
+  it('group enable and disable actions update direct grouped surfaces', async () => {
+    const { mockViewer, addSurfaceEntry, addGroup, getState } = await bootFixtureApp();
+
+    addSurfaceEntry({
+      name: 'direct_surface',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+      handle: 102,
+      pending: false,
+      visible: true,
+      parentVisible: true,
+    });
+    addGroup('surface_group', ['direct_surface']);
+    await flushStateUpdates();
+    mockViewer.setSurfaceMaterialStyle.mockClear();
+
+    document.querySelector('.sidebar-group-header[data-name="surface_group"] [data-btn="A"]').click();
+    clickPopupItem('disable_all');
+
+    expect(getState().surfaces.get('direct_surface').visible).toBe(false);
+    expect(mockViewer.setSurfaceMaterialStyle).toHaveBeenCalledWith(
+      102,
+      { color: '#FFFFFF', opacity: 0, wireframe: false },
+    );
+
+    mockViewer.setSurfaceMaterialStyle.mockClear();
+    document.querySelector('.sidebar-group-header[data-name="surface_group"] [data-btn="A"]').click();
+    clickPopupItem('enable_all');
+
+    expect(getState().surfaces.get('direct_surface').visible).toBe(true);
+    expect(mockViewer.setSurfaceMaterialStyle).toHaveBeenCalledWith(
+      102,
+      { color: '#FFFFFF', opacity: 0.75, wireframe: false },
+    );
+  });
+
+  it('group deletion removes direct grouped surface viewer handles', async () => {
+    const { mockViewer, addSurfaceEntry, addGroup, getState } = await bootFixtureApp();
+
+    addSurfaceEntry({
+      name: 'direct_surface',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+      handle: 103,
+      pending: false,
+    });
+    addGroup('surface_group', ['direct_surface']);
+    await flushStateUpdates();
+
+    document.querySelector('.sidebar-group-header[data-name="surface_group"] [data-btn="A"]').click();
+    clickPopupItem('delete');
+
+    expect(mockViewer.removeSurface).toHaveBeenCalledWith(103);
+    expect(getState().surfaces.has('direct_surface')).toBe(false);
+  });
+
+  it('object rename reparents child surfaces to the new object name', async () => {
+    const { addSurfaceEntry, getState } = await bootFixtureApp();
+
+    addSurfaceEntry({
+      name: 'child_surface',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: 'static-water',
+      handle: 104,
+      pending: false,
+    });
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="object"][data-name="static-water"] [data-btn="A"]').click();
+    clickPopupItem('rename');
+    document.querySelector('.modal-input').value = 'renamed-water';
+    document.querySelector('.modal-btn').click();
+
+    expect(getState().surfaces.get('child_surface').parentName).toBe('renamed-water');
   });
 });
