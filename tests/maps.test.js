@@ -174,6 +174,37 @@ describe('map viewer service', () => {
     expect(getState().maps.get('density').handles).toEqual([handles[2]]);
   });
 
+  it('keeps the existing visible map handle when addBox throws during redraw', () => {
+    const oldHandle = { id: 'box-old' };
+    mockViewer.addBox.mockReturnValue(oldHandle);
+    createMap({ name: 'density', data: 'map data', format: 'ccp4', opacity: 1 });
+    mockViewer.removeShape.mockClear();
+    mockViewer.addBox.mockImplementationOnce(() => {
+      throw new Error('box failed');
+    });
+
+    expect(() => setMapOpacity('density', 0.25)).toThrow('box failed');
+
+    expect(mockViewer.removeShape).not.toHaveBeenCalled();
+    expect(getState().maps.get('density')).toMatchObject({
+      handles: [oldHandle],
+      opacity: 1,
+    });
+  });
+
+  it('removes a partial map entry when initial box creation fails', () => {
+    mockViewer.addBox.mockImplementationOnce(() => {
+      throw new Error('box failed');
+    });
+
+    expect(() => createMap({ name: 'density', data: 'map data', format: 'ccp4' })).toThrow(
+      'box failed',
+    );
+
+    expect(getState().maps.has('density')).toBe(false);
+    expect(getState().entryTree).toEqual([]);
+  });
+
   it('builds isosurface specs for representations, visibility, selection, and buffer', () => {
     expect(buildIsosurfaceSpec({
       level: 1.5,
@@ -314,6 +345,140 @@ describe('map viewer service', () => {
     expect(removed.name).toBe('mesh');
     expect(mockViewer.removeShape).toHaveBeenLastCalledWith(isoHandles[5]);
     expect(getState().isosurfaces.has('mesh')).toBe(false);
+  });
+
+  it('keeps the existing isosurface handle when addIsosurface throws during redraw', () => {
+    const oldHandle = { id: 'iso-old' };
+    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    mockViewer.addIsosurface.mockReturnValue(oldHandle);
+    createIsosurface({ name: 'mesh', mapName: 'density', level: 1.2 });
+    mockViewer.removeShape.mockClear();
+    mockViewer.addIsosurface.mockImplementationOnce(() => {
+      throw new Error('isosurface failed');
+    });
+
+    expect(() => setIsosurfaceLevel('mesh', 2.5)).toThrow('isosurface failed');
+
+    expect(mockViewer.removeShape).not.toHaveBeenCalled();
+    expect(getState().isosurfaces.get('mesh')).toMatchObject({
+      handle: oldHandle,
+      level: 1.2,
+    });
+  });
+
+  it('removes a partial new isosurface entry when initial isosurface creation fails', () => {
+    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    mockViewer.addIsosurface.mockImplementationOnce(() => {
+      throw new Error('isosurface failed');
+    });
+
+    expect(() => createIsosurface({ name: 'mesh', mapName: 'density' })).toThrow(
+      'isosurface failed',
+    );
+
+    expect(getState().isosurfaces.has('mesh')).toBe(false);
+    expect(getState().entryTree[0].children).toEqual([]);
+  });
+
+  it('removes the previous same-name isosurface handle only after replacement succeeds', () => {
+    const oldHandle = { id: 'iso-old' };
+    const newHandle = { id: 'iso-new' };
+    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    mockViewer.addIsosurface.mockReturnValueOnce(oldHandle);
+    createIsosurface({
+      name: 'mesh',
+      mapName: 'density',
+      level: 1,
+      color: '#111111',
+    });
+    mockViewer.removeShape.mockClear();
+    mockViewer.addIsosurface.mockImplementationOnce(() => {
+      expect(mockViewer.removeShape).not.toHaveBeenCalled();
+      return newHandle;
+    });
+
+    const replaced = createIsosurface({
+      name: 'mesh',
+      mapName: 'density',
+      level: 2,
+      color: '#222222',
+    });
+
+    expect(mockViewer.removeShape).toHaveBeenCalledWith(oldHandle);
+    expect(replaced).toMatchObject({
+      handle: newHandle,
+      level: 2,
+      color: '#222222',
+    });
+  });
+
+  it('restores the previous same-name isosurface when replacement creation fails', () => {
+    const oldHandle = { id: 'iso-old' };
+    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    mockViewer.addIsosurface.mockReturnValueOnce(oldHandle);
+    createIsosurface({
+      name: 'mesh',
+      mapName: 'density',
+      level: 1,
+      color: '#111111',
+    });
+    mockViewer.removeShape.mockClear();
+    mockViewer.addIsosurface.mockImplementationOnce(() => {
+      throw new Error('replacement failed');
+    });
+
+    expect(() => createIsosurface({
+      name: 'mesh',
+      mapName: 'density',
+      level: 2,
+      color: '#222222',
+    })).toThrow('replacement failed');
+
+    expect(mockViewer.removeShape).not.toHaveBeenCalled();
+    expect(getState().isosurfaces.get('mesh')).toMatchObject({
+      handle: oldHandle,
+      level: 1,
+      color: '#111111',
+    });
+  });
+
+  it('cascades map visibility to child isosurfaces and redraws them', () => {
+    const boxHandles = [{ id: 'box-1' }, { id: 'box-2' }];
+    const isoHandles = [{ id: 'iso-1' }, { id: 'iso-2' }, { id: 'iso-3' }];
+    mockViewer.addBox
+      .mockReturnValueOnce(boxHandles[0])
+      .mockReturnValueOnce(boxHandles[1]);
+    mockViewer.addIsosurface
+      .mockReturnValueOnce(isoHandles[0])
+      .mockReturnValueOnce(isoHandles[1])
+      .mockReturnValueOnce(isoHandles[2]);
+    const map = createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    createIsosurface({
+      name: 'mesh',
+      mapName: 'density',
+      level: 1,
+      opacity: 0.5,
+    });
+
+    setMapVisibility('density', false);
+    expect(getState().isosurfaces.get('mesh')).toMatchObject({
+      parentVisible: false,
+      handle: isoHandles[1],
+    });
+    expect(mockViewer.addIsosurface).toHaveBeenLastCalledWith(
+      map.volumeData,
+      expect.objectContaining({ opacity: 0 }),
+    );
+
+    setMapVisibility('density', true);
+    expect(getState().isosurfaces.get('mesh')).toMatchObject({
+      parentVisible: true,
+      handle: isoHandles[2],
+    });
+    expect(mockViewer.addIsosurface).toHaveBeenLastCalledWith(
+      map.volumeData,
+      expect.objectContaining({ opacity: 0.5 }),
+    );
   });
 
   it('removes map boxes and child isosurface handles with their state entries', () => {

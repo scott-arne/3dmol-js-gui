@@ -156,7 +156,12 @@ export function createMap({
     handles: [],
   });
 
-  return redrawMapBox(map);
+  try {
+    return redrawMapBox(map);
+  } catch (error) {
+    removeMapEntry(map.name);
+    throw error;
+  }
 }
 
 /**
@@ -202,13 +207,17 @@ export function renameMap(oldName, newName) {
  * @returns {object|undefined} Updated map entry.
  */
 export function setMapVisibility(name, visible) {
-  const map = updateMapEntry(name, { visible });
-  if (!map) return undefined;
-  const redrawn = redrawMapBox(map);
-  for (const iso of getState().isosurfaces.values()) {
+  const redrawn = updateAndRedrawMap(name, { visible });
+  if (!redrawn) return undefined;
+
+  const childNames = [];
+  for (const [isoName, iso] of getState().isosurfaces) {
     if (iso.mapName === name) {
-      redrawIsosurface(updateIsosurfaceEntry(iso.name, { parentVisible: visible !== false }));
+      childNames.push(isoName);
     }
+  }
+  for (const isoName of childNames) {
+    updateAndRedrawIsosurface(isoName, { parentVisible: visible !== false });
   }
   return redrawn;
 }
@@ -221,8 +230,7 @@ export function setMapVisibility(name, visible) {
  * @returns {object|undefined} Updated map entry.
  */
 export function setMapColor(name, color) {
-  const map = updateMapEntry(name, { color });
-  return redrawMapBox(map);
+  return updateAndRedrawMap(name, { color });
 }
 
 /**
@@ -233,8 +241,7 @@ export function setMapColor(name, color) {
  * @returns {object|undefined} Updated map entry.
  */
 export function setMapOpacity(name, opacity) {
-  const map = updateMapEntry(name, { opacity });
-  return redrawMapBox(map);
+  return updateAndRedrawMap(name, { opacity });
 }
 
 /**
@@ -250,16 +257,24 @@ export function createIsosurface(options) {
     throw new Error(`Map "${options.mapName}" not found`);
   }
 
-  const existing = getState().isosurfaces.get(options.name);
-  removeViewerShape(existing?.handle);
+  const previous = snapshotIsosurfaceEntry(getState().isosurfaces.get(options.name));
 
   const iso = addIsosurfaceEntry({
     ...options,
     representation,
     parentVisible: map.visible !== false,
-    handle: null,
+    handle: previous?.handle ?? null,
   });
-  return redrawIsosurface(iso);
+  try {
+    return redrawIsosurface(iso);
+  } catch (error) {
+    if (previous) {
+      restoreIsosurfaceEntry(previous);
+    } else {
+      removeIsosurfaceEntry(iso.name);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -348,8 +363,8 @@ export function setIsosurfaceLevel(name, level) {
 function redrawMapBox(map) {
   if (!map) return undefined;
 
-  const removedShape = removeViewerShapes(map.handles);
   if (map.visible === false) {
+    const removedShape = removeViewerShapes(map.handles);
     const updated = updateMapEntry(map.name, { handles: [] });
     if (removedShape) {
       scheduleRender();
@@ -357,7 +372,9 @@ function redrawMapBox(map) {
     return updated;
   }
 
+  const oldHandles = [...(map.handles || [])];
   const handle = getViewer().addBox(buildMapBoxSpec(map));
+  removeViewerShapes(oldHandles);
   scheduleRender();
   return updateMapEntry(map.name, { handles: [handle] });
 }
@@ -373,23 +390,64 @@ function buildMapBoxSpec(map) {
 }
 
 function updateAndRedrawIsosurface(name, patch) {
+  const previous = snapshotIsosurfaceEntry(getState().isosurfaces.get(name));
+  if (!previous) return undefined;
   const iso = updateIsosurfaceEntry(name, patch);
-  return redrawIsosurface(iso);
+  try {
+    return redrawIsosurface(iso);
+  } catch (error) {
+    restoreIsosurfaceEntry(previous);
+    throw error;
+  }
 }
 
 function redrawIsosurface(iso) {
   if (!iso) return undefined;
 
-  removeViewerShape(iso.handle);
   const map = getState().maps.get(iso.mapName);
   if (!map) {
-    updateIsosurfaceEntry(iso.name, { handle: null });
     throw new Error(`Map "${iso.mapName}" not found`);
   }
 
+  const oldHandle = iso.handle;
   const handle = getViewer().addIsosurface(map.volumeData, buildIsosurfaceSpec(iso));
+  removeViewerShape(oldHandle);
   scheduleRender();
   return updateIsosurfaceEntry(iso.name, { handle });
+}
+
+function updateAndRedrawMap(name, patch) {
+  const previous = snapshotMapEntry(getState().maps.get(name));
+  if (!previous) return undefined;
+  const map = updateMapEntry(name, patch);
+  try {
+    return redrawMapBox(map);
+  } catch (error) {
+    restoreMapEntry(previous);
+    throw error;
+  }
+}
+
+function snapshotMapEntry(map) {
+  if (!map) return null;
+  return {
+    ...map,
+    handles: [...(map.handles || [])],
+  };
+}
+
+function restoreMapEntry(map) {
+  const { name, handles, ...metadata } = map;
+  updateMapEntry(name, { ...metadata, handles: [...handles] });
+}
+
+function snapshotIsosurfaceEntry(iso) {
+  if (!iso) return null;
+  return { ...iso };
+}
+
+function restoreIsosurfaceEntry(iso) {
+  addIsosurfaceEntry(iso);
 }
 
 function normalizeIsosurfaceRepresentation(value) {
