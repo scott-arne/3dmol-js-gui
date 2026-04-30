@@ -23,6 +23,8 @@ export function createMockViewer() {
     setClickable: vi.fn(),
     selectedAtoms: vi.fn(() => atoms),
     addSphere: vi.fn(() => ({})),
+    addBox: vi.fn(() => ({})),
+    addIsosurface: vi.fn(() => ({})),
     removeShape: vi.fn(),
     removeAllShapes: vi.fn(),
     addLabel: vi.fn(),
