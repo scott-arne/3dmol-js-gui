@@ -619,6 +619,28 @@ describe('Sidebar', () => {
       expect(callbacks.onAction).not.toHaveBeenCalledWith('1UBQ', 'surface:molecular');
     });
 
+    it('object Action menu omits surface creation items when no handler is provided', () => {
+      delete callbacks.onCreateSurface;
+      const objects = new Map([['1UBQ', makeObject()]]);
+      sidebar.refresh(makeState({ objects }));
+
+      const aBtn = container.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const labels = Array.from(
+        popup.querySelectorAll('.popup-menu-item, .popup-menu-submenu-item'),
+      ).map((el) => el.textContent);
+      const values = Array.from(
+        popup.querySelectorAll('[data-value]'),
+      ).map((el) => el.dataset.value);
+
+      expect(labels.some((label) => label.includes('Create Surface'))).toBe(false);
+      expect(labels).not.toContain('Solvent Accessible');
+      expect(labels).not.toContain('Molecular');
+      expect(values.some((value) => value.startsWith('surface:'))).toBe(false);
+    });
+
     it('clicking S button item fires onShow callback', () => {
       const objects = new Map([['1UBQ', makeObject()]]);
       sidebar.refresh(makeState({ objects }));

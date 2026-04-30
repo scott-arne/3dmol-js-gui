@@ -475,6 +475,17 @@ const SELECTION_CALLBACK_MAP = {
   C: 'onSelectionColor',
 };
 
+const CREATE_SURFACE_MENU_ITEMS = [
+  { separator: true },
+  {
+    label: 'Create Surface',
+    children: [
+      { label: 'Solvent Accessible', value: 'surface:sasa' },
+      { label: 'Molecular', value: 'surface:molecular' },
+    ],
+  },
+];
+
 function buildSurfaceStyleMenu(surface = {}) {
   const mode = surface.mode || 'surface';
   const opacity = surface.opacity ?? 0.75;
@@ -506,14 +517,6 @@ const BUTTON_MENUS = {
       { label: 'Center', value: 'center' },
       { label: 'Orient', value: 'orient' },
       { label: 'Zoom', value: 'zoom' },
-      { separator: true },
-      {
-        label: 'Create Surface',
-        children: [
-          { label: 'Solvent Accessible', value: 'surface:sasa' },
-          { label: 'Molecular', value: 'surface:molecular' },
-        ],
-      },
     ],
   },
   S: {
@@ -624,12 +627,13 @@ export function createSidebar(container, callbacks) {
     // Route to the appropriate popup menu and callback
     if (kind === 'object') {
       const menuDef = BUTTON_MENUS[label];
-      createPopupMenu(btn, menuDef.items, (value) => {
+      const items = label === 'A' && callbacks.onCreateSurface
+        ? [...menuDef.items, ...CREATE_SURFACE_MENU_ITEMS]
+        : menuDef.items;
+      createPopupMenu(btn, items, (value) => {
         if (value.startsWith('surface:')) {
           if (callbacks.onCreateSurface) {
             callbacks.onCreateSurface(name, value.slice(8));
-          } else if (callbacks[menuDef.callbackKey]) {
-            callbacks[menuDef.callbackKey](name, value);
           }
         } else if (value.startsWith('view:') && callbacks.onView) {
           callbacks.onView(name, value.slice(5));
