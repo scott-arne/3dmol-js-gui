@@ -623,6 +623,30 @@ describe('map and isosurface entries', () => {
     ]);
   });
 
+  it('rejects duplicate map and isosurface rename targets', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addMapEntry({
+      name: 'otherMap',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'iso', mapName: 'density' });
+    addIsosurfaceEntry({ name: 'iso2', mapName: 'density' });
+
+    expect(() => renameMapEntry('density', 'otherMap')).toThrow(/map named "otherMap" already exists/);
+    expect(() => renameIsosurfaceEntry('iso', 'iso2')).toThrow(/isosurface named "iso2" already exists/);
+    expect(getState().maps.has('density')).toBe(true);
+    expect(getState().isosurfaces.has('iso')).toBe(true);
+  });
+
   it('updates visibility and generated isosurface names', () => {
     addMapEntry({
       name: 'density',
@@ -640,6 +664,101 @@ describe('map and isosurface entries', () => {
     expect(updateMapEntry('density', { opacity: 0.5 })).toMatchObject({ opacity: 0.5 });
     expect(updateIsosurfaceEntry('isosurface_1', { level: -2 })).toMatchObject({ level: -2 });
     expect(getChildIsosurfaceNames('density')).toEqual(['isosurface_1', 'isosurface_3']);
+  });
+
+  it('throws and leaves state unchanged when reparenting an isosurface to a missing map', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'iso', mapName: 'density' });
+
+    expect(() => updateIsosurfaceEntry('iso', { mapName: 'missing' })).toThrow(/Map "missing" not found/);
+    expect(getState().isosurfaces.get('iso').mapName).toBe('density');
+    expect(getState().entryTree).toEqual([
+      {
+        type: 'map',
+        name: 'density',
+        collapsed: false,
+        children: [{ type: 'isosurface', name: 'iso' }],
+      },
+    ]);
+  });
+
+  it('reparents an isosurface to another existing map', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addMapEntry({
+      name: 'otherMap',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'iso', mapName: 'density' });
+
+    expect(updateIsosurfaceEntry('iso', { mapName: 'otherMap' })).toMatchObject({ mapName: 'otherMap' });
+    expect(getState().entryTree).toEqual([
+      { type: 'map', name: 'density', collapsed: false, children: [] },
+      {
+        type: 'map',
+        name: 'otherMap',
+        collapsed: false,
+        children: [{ type: 'isosurface', name: 'iso' }],
+      },
+    ]);
+  });
+
+  it('rejects map name patches and leaves the key, tree, and entry unchanged', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+
+    expect(() => updateMapEntry('density', { name: 'other' })).toThrow(/Use renameMapEntry to rename maps/);
+    expect(getState().maps.has('density')).toBe(true);
+    expect(getState().maps.has('other')).toBe(false);
+    expect(getState().maps.get('density').name).toBe('density');
+    expect(getState().entryTree).toEqual([
+      { type: 'map', name: 'density', collapsed: false, children: [] },
+    ]);
+  });
+
+  it('rejects isosurface name patches and leaves the key, tree, and entry unchanged', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'iso', mapName: 'density' });
+
+    expect(() => updateIsosurfaceEntry('iso', { name: 'other' })).toThrow(
+      /Use renameIsosurfaceEntry to rename isosurfaces/,
+    );
+    expect(getState().isosurfaces.has('iso')).toBe(true);
+    expect(getState().isosurfaces.has('other')).toBe(false);
+    expect(getState().isosurfaces.get('iso').name).toBe('iso');
+    expect(getState().entryTree).toEqual([
+      {
+        type: 'map',
+        name: 'density',
+        collapsed: false,
+        children: [{ type: 'isosurface', name: 'iso' }],
+      },
+    ]);
   });
 });
 

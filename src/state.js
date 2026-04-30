@@ -811,6 +811,9 @@ export function renameMapEntry(oldName, newName) {
 export function updateMapEntry(name, patch) {
   const map = state.maps.get(name);
   if (!map) return undefined;
+  if (Object.prototype.hasOwnProperty.call(patch, 'name')) {
+    throw new Error('Use renameMapEntry to rename maps');
+  }
   Object.assign(map, patch);
   _notify();
   return map;
@@ -896,8 +899,14 @@ export function renameIsosurfaceEntry(oldName, newName) {
 export function updateIsosurfaceEntry(name, patch) {
   const iso = state.isosurfaces.get(name);
   if (!iso) return undefined;
+  if (Object.prototype.hasOwnProperty.call(patch, 'name')) {
+    throw new Error('Use renameIsosurfaceEntry to rename isosurfaces');
+  }
   const mapNameChanged = Object.prototype.hasOwnProperty.call(patch, 'mapName') &&
     patch.mapName !== iso.mapName;
+  if (mapNameChanged && !state.maps.has(patch.mapName)) {
+    throw new Error(`Map "${patch.mapName}" not found`);
+  }
   if (mapNameChanged) {
     removeIsosurfaceTreeNode(name);
   }
