@@ -266,6 +266,14 @@ describe('surface entries', () => {
     expect(toggleSurfaceVisibility('surf').visible).toBe(true);
   });
 
+  it('removes a surface map entry and tree node', () => {
+    addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+
+    expect(removeSurfaceEntry('surf')).toMatchObject({ name: 'surf' });
+    expect(getState().surfaces.has('surf')).toBe(false);
+    expect(getState().entryTree).toEqual([]);
+  });
+
   it('updates handle and pending state when a surface resolves', () => {
     addSurfaceEntry({ name: 'surf', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
     setSurfaceHandle('surf', 42);
@@ -286,6 +294,15 @@ describe('surface entries', () => {
     addSurfaceEntry({ name: 'surface_1', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
     addSurfaceEntry({ name: 'surface_3', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
     expect(getNextSurfaceName()).toBe('surface_2');
+  });
+
+  it('finds surface names parented under a molecule', () => {
+    addSurfaceEntry({ name: 'parent_surface_1', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: 'parent' });
+    addSurfaceEntry({ name: 'other_surface', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: 'other' });
+    addSurfaceEntry({ name: 'top_surface', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: null });
+    addSurfaceEntry({ name: 'parent_surface_2', selection: {}, type: 'molecular', surfaceType: 'MS', parentName: 'parent' });
+
+    expect(getChildSurfaceNames('parent')).toEqual(['parent_surface_1', 'parent_surface_2']);
   });
 
   it('removing a parent object removes child surface entries from state', () => {

@@ -256,6 +256,22 @@ describe('surface tree integration', () => {
     expect(parent.children).toEqual([{ type: 'surface', name: 'mol_surface' }]);
     expect(parent.collapsed).toBe(false);
   });
+
+  it('inserts top-level surfaces before top-level selections', () => {
+    addSelection('sel', 'test', {}, 5);
+    addSurfaceEntry({
+      name: 'surf',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+    });
+
+    expect(getState().entryTree).toEqual([
+      { type: 'surface', name: 'surf' },
+      { type: 'selection', name: 'sel' },
+    ]);
+  });
 });
 
 describe('buildDefaultTree / getDisplayTree', () => {
@@ -268,6 +284,29 @@ describe('buildDefaultTree / getDisplayTree', () => {
     };
     const tree = buildDefaultTree(st);
     expect(tree.map(n => n.name)).toEqual(['A', 'B', 'sele']);
+  });
+
+  it('buildDefaultTree includes surfaces from the surface map', () => {
+    const st = {
+      objects: new Map([['mol', {}]]),
+      surfaces: new Map([
+        ['mol_surface', { parentName: 'mol' }],
+        ['top_surface', { parentName: null }],
+      ]),
+      selections: new Map([['sel', {}]]),
+    };
+
+    const tree = buildDefaultTree(st);
+    expect(tree).toEqual([
+      {
+        type: 'object',
+        name: 'mol',
+        collapsed: false,
+        children: [{ type: 'surface', name: 'mol_surface' }],
+      },
+      { type: 'surface', name: 'top_surface' },
+      { type: 'selection', name: 'sel' },
+    ]);
   });
 
   it('getDisplayTree returns entryTree when non-empty', () => {
@@ -379,6 +418,21 @@ describe('removeGroup', () => {
     addGroup('grp', ['A', 'sele']);
     removeGroup('grp');
     expect(getState().selections.size).toBe(0);
+  });
+
+  it('removes contained surfaces from state', () => {
+    addSurfaceEntry({
+      name: 'surf',
+      selection: {},
+      type: 'molecular',
+      surfaceType: 'MS',
+      parentName: null,
+    });
+    addGroup('grp', ['surf']);
+
+    const removed = removeGroup('grp');
+    expect(removed.surfaces).toEqual(['surf']);
+    expect(getState().surfaces.has('surf')).toBe(false);
   });
 });
 
