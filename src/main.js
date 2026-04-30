@@ -578,8 +578,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
 
     switch (action) {
       case 'delete':
-        if (mapService.removeMap(name)) {
-          terminal.print(`Deleted map "${name}"`, 'result');
+        try {
+          if (mapService.removeMap(name)) {
+            terminal.print(`Deleted map "${name}"`, 'result');
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
         }
         break;
       case 'rename':
@@ -665,8 +669,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
 
     switch (action) {
       case 'delete':
-        if (mapService.removeIsosurface(name)) {
-          terminal.print(`Deleted isosurface "${name}"`, 'result');
+        try {
+          if (mapService.removeIsosurface(name)) {
+            terminal.print(`Deleted isosurface "${name}"`, 'result');
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
         }
         break;
       case 'rename':
