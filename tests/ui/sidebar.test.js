@@ -11,8 +11,15 @@ vi.mock('../../src/ui/color-swatches.js', () => ({
 /**
  * Build a mock application state object.
  */
-function makeState({ objects = new Map(), selections = new Map(), surfaces = new Map() } = {}) {
-  return { objects, selections, surfaces };
+function makeState({
+  objects = new Map(),
+  selections = new Map(),
+  surfaces = new Map(),
+  maps = new Map(),
+  isosurfaces = new Map(),
+  entryTree,
+} = {}) {
+  return { objects, selections, surfaces, maps, isosurfaces, entryTree };
 }
 
 /**
@@ -50,6 +57,30 @@ function makeSurface(overrides = {}) {
   };
 }
 
+function makeMap(overrides = {}) {
+  return {
+    name: 'density',
+    visible: true,
+    color: '#38BDF8',
+    opacity: 1,
+    ...overrides,
+  };
+}
+
+function makeIsosurface(overrides = {}) {
+  return {
+    name: 'isosurface_1',
+    mapName: 'density',
+    visible: true,
+    parentVisible: true,
+    level: 1,
+    representation: 'mesh',
+    opacity: 0.75,
+    color: '#FFFFFF',
+    ...overrides,
+  };
+}
+
 describe('Sidebar', () => {
   let container;
   let callbacks;
@@ -74,6 +105,15 @@ describe('Sidebar', () => {
       onSurfaceStyle: vi.fn(),
       onSurfaceColor: vi.fn(),
       onCreateSurface: vi.fn(),
+      onToggleMapVisibility: vi.fn(),
+      onMapAction: vi.fn(),
+      onMapStyle: vi.fn(),
+      onMapColor: vi.fn(),
+      onCreateIsosurface: vi.fn(),
+      onToggleIsosurfaceVisibility: vi.fn(),
+      onIsosurfaceAction: vi.fn(),
+      onIsosurfaceStyle: vi.fn(),
+      onIsosurfaceColor: vi.fn(),
     };
 
     sidebar = createSidebar(container, callbacks);
@@ -467,6 +507,78 @@ describe('Sidebar', () => {
       expect(objIdx).toBeLessThan(surfIdx);
       expect(surfIdx).toBeLessThan(sepIdx);
       expect(sepIdx).toBeLessThan(selIdx);
+    });
+  });
+
+  describe('map and isosurface rendering', () => {
+    it('renders map rows with A, S, C buttons and a map glyph', () => {
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const row = container.querySelector('[data-kind="map"][data-name="density"]');
+      expect(row).not.toBeNull();
+      expect(row.querySelector('.sidebar-map-icon')).not.toBeNull();
+      expect(row.querySelector('.sidebar-object-name').textContent).toBe('density');
+      expect(Array.from(row.querySelectorAll('.sidebar-btn')).map(btn => btn.textContent)).toEqual(['A', 'S', 'C']);
+    });
+
+    it('map row click toggles map visibility but action button click does not', () => {
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const row = container.querySelector('[data-kind="map"]');
+      row.click();
+      expect(callbacks.onToggleMapVisibility).toHaveBeenCalledWith('density');
+
+      callbacks.onToggleMapVisibility.mockClear();
+      row.querySelector('.sidebar-btn').click();
+      expect(callbacks.onToggleMapVisibility).not.toHaveBeenCalled();
+    });
+
+    it('map menus expose create isosurface, opacity, and solid color callbacks', () => {
+      const maps = new Map([['density', makeMap({ opacity: 0.5 })]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const buttons = container.querySelectorAll('[data-kind="map"] .sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="create_isosurface"]').click();
+      expect(callbacks.onCreateIsosurface).toHaveBeenCalledWith('density');
+
+      buttons[1].click();
+      expect(document.querySelector('[data-value="opacity:0.5"]').classList.contains('checked')).toBe(true);
+      document.querySelector('[data-value="opacity:0.25"]').click();
+      expect(callbacks.onMapStyle).toHaveBeenCalledWith('density', 'opacity:0.25');
+
+      buttons[2].click();
+      document.querySelector('.swatch-cell').click();
+      expect(callbacks.onMapColor).toHaveBeenCalledWith('density', '#0000FF');
+    });
+
+    it('renders isosurface rows with contour, style, and color menus', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ level: 1 })]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      expect(row).not.toBeNull();
+      expect(row.querySelector('.sidebar-isosurface-icon')).not.toBeNull();
+      expect(Array.from(row.querySelectorAll('.sidebar-btn')).map(btn => btn.textContent)).toEqual(['A', 'S', 'C']);
+
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="contour:-3"]').click();
+      expect(callbacks.onIsosurfaceAction).toHaveBeenCalledWith('isosurface_1', 'contour:-3');
+
+      buttons[1].click();
+      document.querySelector('[data-value="representation:surface"]').click();
+      expect(callbacks.onIsosurfaceStyle).toHaveBeenCalledWith('isosurface_1', 'representation:surface');
+
+      buttons[2].click();
+      document.querySelector('.swatch-cell').click();
+      expect(callbacks.onIsosurfaceColor).toHaveBeenCalledWith('isosurface_1', '#0000FF');
     });
   });
 
