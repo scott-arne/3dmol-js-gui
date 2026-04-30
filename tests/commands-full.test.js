@@ -30,6 +30,8 @@ const mockState = {
   objects: new Map(),
   selections: new Map(),
   surfaces: new Map(),
+  maps: new Map(),
+  isosurfaces: new Map(),
   selectionMode: 'atoms',
   settings: {
     bgColor: '#000000',
@@ -187,6 +189,7 @@ import { registerStylingCommands } from '../src/commands/styling.js';
 import { registerPresetCommands } from '../src/commands/preset.js';
 import { registerGroupingCommands } from '../src/commands/grouping.js';
 import { registerSurfaceCommands } from '../src/commands/surface.js';
+import { registerIsosurfaceCommands, splitIsosurfaceArgs } from '../src/commands/isosurface.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
 import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, loadModelData, scheduleRender } from '../src/viewer.js';
@@ -239,8 +242,14 @@ function makeSurfaceService(overrides = {}) {
   };
 }
 
-function makeCtx(terminal, surfaceService) {
-  return { terminal, surfaceService };
+function makeMapService() {
+  return {
+    createIsosurface: vi.fn(async (entry) => ({ ...entry })),
+  };
+}
+
+function makeCtx(terminal, surfaceService, mapService) {
+  return { terminal, surfaceService, mapService };
 }
 
 function resetMocks() {
@@ -248,6 +257,8 @@ function resetMocks() {
   mockState.objects.clear();
   mockState.selections.clear();
   mockState.surfaces.clear();
+  mockState.maps.clear();
+  mockState.isosurfaces.clear();
   mockState.entryTree.length = 0;
   mockState.selectionMode = 'atoms';
   mockState.settings = {
@@ -1192,6 +1203,89 @@ describe('surface.js', () => {
       .rejects.toThrow('Selection cannot be empty');
 
     expect(surfaceService.createSurface).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Isosurface Commands
+// ---------------------------------------------------------------------------
+
+describe('isosurface.js', () => {
+  let registry, terminal, ctx, mapService;
+
+  beforeEach(() => {
+    resetMocks();
+    registry = createCommandRegistry();
+    registerIsosurfaceCommands(registry);
+    terminal = makeTerminal();
+    mapService = makeMapService();
+    ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+    mockState.maps.set('density', { name: 'density' });
+  });
+
+  it('splits quoted comma arguments', () => {
+    expect(splitIsosurfaceArgs('mesh1, density, 1.5, "chain A, resn LIG", 3, 2, mesh')).toEqual([
+      'mesh1',
+      'density',
+      '1.5',
+      'chain A, resn LIG',
+      '3',
+      '2',
+      'mesh',
+    ]);
+  });
+
+  it('creates a default mesh isosurface from a map', async () => {
+    await registry.execute('isosurface mesh1, density', ctx);
+
+    expect(mapService.createIsosurface).toHaveBeenCalledWith({
+      name: 'mesh1',
+      mapName: 'density',
+      level: 1,
+      selectionText: null,
+      selection: null,
+      buffer: null,
+      carve: null,
+      representation: 'mesh',
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Created mesh isosurface "mesh1" from map "density" at +1',
+      type: 'result',
+    });
+  });
+
+  it('creates an isosurface with selection, buffer, carve, and representation', async () => {
+    const selectionResult = { spec: { resn: ['LIG'] } };
+    const selectionSpec = { resn: ['LIG'] };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+
+    await registry.execute('isosurface ligand_mesh, density, 2.5, "chain A, resn LIG", 3, 1.5, surface', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('chain A, resn LIG');
+    expect(mapService.createIsosurface).toHaveBeenCalledWith({
+      name: 'ligand_mesh',
+      mapName: 'density',
+      level: 2.5,
+      selectionText: 'chain A, resn LIG',
+      selection: selectionSpec,
+      buffer: 3,
+      carve: 1.5,
+      representation: 'surface',
+    });
+  });
+
+  it('rejects missing maps, bad numbers, bad representation, and unbalanced quotes', async () => {
+    await expect(registry.execute('isosurface mesh1, missing', ctx))
+      .rejects.toThrow('Map "missing" not found');
+    await expect(registry.execute('isosurface mesh1, density, no', ctx))
+      .rejects.toThrow('Invalid isosurface level "no"');
+    await expect(registry.execute('isosurface mesh1, density, 1, protein, nope', ctx))
+      .rejects.toThrow('Invalid isosurface buffer "nope"');
+    await expect(registry.execute('isosurface mesh1, density, 1, protein, 2, 3, sticks', ctx))
+      .rejects.toThrow('Unknown isosurface representation "sticks"');
+    await expect(registry.execute('isosurface mesh1, density, 1, "chain A', ctx))
+      .rejects.toThrow('Usage: isosurface');
   });
 });
 
@@ -2881,6 +2975,7 @@ describe('index.js', () => {
 
     // Surface commands
     expect(registry.has('surface')).toBe(true);
+    expect(registry.has('isosurface')).toBe(true);
 
     // Export commands
     expect(registry.has('png')).toBe(true);
@@ -2912,8 +3007,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 9 camera + 4 display + 4 selection + 3 editing + 1 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 40
-    expect(commands.length).toBe(40);
+    // 9 camera + 4 display + 4 selection + 3 editing + 2 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 41
+    expect(commands.length).toBe(41);
   });
 
   it('all registered commands have help text', () => {

@@ -9,6 +9,7 @@ import { registerExportCommands } from './export.js';
 import { registerPresetCommands } from './preset.js';
 import { registerGroupingCommands } from './grouping.js';
 import { registerSurfaceCommands } from './surface.js';
+import { registerIsosurfaceCommands } from './isosurface.js';
 
 /**
  * Register all available commands into the given command registry.
@@ -25,6 +26,7 @@ export function registerAllCommands(registry, options = {}) {
   registerLabelingCommands(registry);
   registerEditingCommands(registry);
   registerSurfaceCommands(registry);
+  registerIsosurfaceCommands(registry);
   registerExportCommands(registry);
   registerPresetCommands(registry);
   registerGroupingCommands(registry);

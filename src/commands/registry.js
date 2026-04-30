@@ -56,6 +56,6 @@ export function createCommandRegistry() {
   };
 }
 
-export function createCommandContext({ viewer, terminal, sidebar, state, surfaceService }) {
-  return { viewer, terminal, sidebar, state, surfaceService };
+export function createCommandContext({ viewer, terminal, sidebar, state, surfaceService, mapService }) {
+  return { viewer, terminal, sidebar, state, surfaceService, mapService };
 }
