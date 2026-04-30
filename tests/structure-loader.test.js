@@ -19,6 +19,8 @@ function makeDeps(overrides = {}) {
     loadModelData: vi.fn(() => ({ getID: () => 3 })),
     removeModel: vi.fn(),
     removeObject: vi.fn(),
+    scheduleRender: vi.fn(),
+    zoomTo: vi.fn(),
     createMap: vi.fn(({ name, format }) => ({
       name,
       format: format === 'map' || format === 'mrc' ? 'ccp4' : format,
@@ -128,12 +130,46 @@ describe('structure-loader', () => {
       mapName: 'orbital_2_map',
       message: 'Loaded "orbital_2" and map "orbital_2_map"',
     });
-    expect(deps.loadModelData).toHaveBeenCalledWith('CUBE DATA', 'cube', {});
+    expect(deps.loadModelData).toHaveBeenCalledWith('CUBE DATA', 'cube', {
+      zoom: false,
+      render: false,
+    });
     expect(deps.createMap).toHaveBeenCalledWith({
       name: 'orbital_2_map',
       data: 'CUBE DATA',
       format: 'cube',
     });
+    expect(deps.zoomTo).toHaveBeenCalledTimes(1);
+    expect(deps.scheduleRender).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not run cube post-success hooks when caller suppresses zoom and render', async () => {
+    const deps = makeDeps({
+      addObject: vi.fn(() => 'orbital_2'),
+    });
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'orbital',
+      format: 'cube',
+      data: 'CUBE DATA',
+    }, {
+      deps,
+      loadOptions: { applyDefaultStyle: false, zoom: false, render: false },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: 'loaded_hybrid',
+      name: 'orbital_2',
+    });
+    expect(deps.loadModelData).toHaveBeenCalledWith('CUBE DATA', 'cube', {
+      applyDefaultStyle: false,
+      zoom: false,
+      render: false,
+    });
+    expect(deps.zoomTo).not.toHaveBeenCalled();
+    expect(deps.scheduleRender).not.toHaveBeenCalled();
   });
 
   it('rolls back cube molecule registration when sibling map creation fails', async () => {
@@ -160,6 +196,8 @@ describe('structure-loader', () => {
     });
     expect(deps.removeObject).toHaveBeenCalledWith('orbital_2');
     expect(deps.removeModel).toHaveBeenCalledWith(model);
+    expect(deps.zoomTo).not.toHaveBeenCalled();
+    expect(deps.scheduleRender).not.toHaveBeenCalled();
   });
 
   it('does not attempt cube rollback before model registration exists', async () => {

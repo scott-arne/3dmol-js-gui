@@ -1,4 +1,4 @@
-import { fetchPDB, loadModelData, removeModel } from '../viewer.js';
+import { fetchPDB, getViewer, loadModelData, removeModel, scheduleRender } from '../viewer.js';
 import { addObject, removeObject } from '../state.js';
 import { createMap } from '../maps.js';
 
@@ -34,6 +34,8 @@ function getDeps(deps = {}) {
     loadModelData: deps.loadModelData || loadModelData,
     removeModel: deps.removeModel || removeModel,
     removeObject: deps.removeObject || removeObject,
+    scheduleRender: deps.scheduleRender || scheduleRender,
+    zoomTo: deps.zoomTo || (() => getViewer().zoomTo()),
   };
 }
 
@@ -163,12 +165,17 @@ function registerLoadedMap(request, data, deps) {
 
 function registerLoadedHybrid(request, data, options, deps) {
   const loadOptions = options.loadOptions || {};
-  const model = deps.loadModelData(data, request.format, loadOptions);
+  const shouldZoom = loadOptions.zoom !== false;
+  const shouldRender = loadOptions.render !== false;
+  const stagingLoadOptions = { ...loadOptions, zoom: false, render: false };
+  const model = deps.loadModelData(data, request.format, stagingLoadOptions);
   const modelIndex = model.getID ? model.getID() : null;
   const name = deps.addObject(request.name, model, modelIndex);
   const mapName = `${name}_map`;
   try {
     const map = deps.createMap({ name: mapName, data, format: request.format });
+    if (shouldZoom) deps.zoomTo();
+    if (shouldRender) deps.scheduleRender();
     return hybridSuccess(name, model, modelIndex, map.name, map, `Loaded "${name}" and map "${map.name}"`);
   } catch (error) {
     try {

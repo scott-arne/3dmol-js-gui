@@ -19,7 +19,8 @@ const MAP_ONLY_FORMATS = new Set(['ccp4', 'map', 'mrc']);
  *   (data, format, filename). Map-only files pass ArrayBuffer data; other files
  *   pass text data.
  * @param {function} [callbacks.onLoadFile] - Preferred local-file callback
- *   called with a File object. May return {ok, message} to control dialog status.
+ *   called with a File object. Should return a structured {ok, message} result;
+ *   missing or falsy ok values are treated as load failures.
  * @param {function} [callbacks.onRemoteSource] - Called with configured source input.
  * @param {function} [callbacks.onLoadUrl] - Called with arbitrary URL input.
  * @param {object} [options] - Optional dialog configuration.
