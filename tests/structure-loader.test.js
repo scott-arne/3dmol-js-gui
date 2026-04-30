@@ -17,6 +17,8 @@ function makeDeps(overrides = {}) {
     })),
     fetchPDB: vi.fn(async () => ({ getID: () => 7 })),
     loadModelData: vi.fn(() => ({ getID: () => 3 })),
+    removeModel: vi.fn(),
+    removeObject: vi.fn(),
     createMap: vi.fn(({ name, format }) => ({
       name,
       format: format === 'map' || format === 'mrc' ? 'ccp4' : format,
@@ -132,6 +134,57 @@ describe('structure-loader', () => {
       data: 'CUBE DATA',
       format: 'cube',
     });
+  });
+
+  it('rolls back cube molecule registration when sibling map creation fails', async () => {
+    const model = { getID: () => 5 };
+    const deps = makeDeps({
+      addObject: vi.fn(() => 'orbital_2'),
+      loadModelData: vi.fn(() => model),
+      createMap: vi.fn(() => {
+        throw new Error('Map parse failed');
+      }),
+    });
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'orbital',
+      format: 'cube',
+      data: 'CUBE DATA',
+    }, { deps });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'load_failed',
+      message: 'Failed to load structure: Map parse failed',
+    });
+    expect(deps.removeObject).toHaveBeenCalledWith('orbital_2');
+    expect(deps.removeModel).toHaveBeenCalledWith(model);
+  });
+
+  it('does not attempt cube rollback before model registration exists', async () => {
+    const deps = makeDeps({
+      loadModelData: vi.fn(() => {
+        throw new Error('Cube parse failed');
+      }),
+    });
+
+    const result = await loadStructure({
+      kind: 'inline',
+      name: 'orbital',
+      format: 'cube',
+      data: 'CUBE DATA',
+    }, { deps });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'load_failed',
+      message: 'Failed to load structure: Cube parse failed',
+    });
+    expect(deps.addObject).not.toHaveBeenCalled();
+    expect(deps.createMap).not.toHaveBeenCalled();
+    expect(deps.removeObject).not.toHaveBeenCalled();
+    expect(deps.removeModel).not.toHaveBeenCalled();
   });
 
   it('returns the actual unique object name from state registration', async () => {
@@ -295,6 +348,35 @@ describe('structure-loader', () => {
       'pdb',
       {},
     );
+  });
+
+  it('loads a local map File object through binary FileReader data', async () => {
+    const deps = makeDeps();
+    const data = new ArrayBuffer(12);
+    const file = new File(['density'], 'density.map', { type: 'application/octet-stream' });
+    const mockFileReader = {
+      readAsArrayBuffer: vi.fn(),
+      readAsText: vi.fn(),
+      onload: null,
+      onerror: null,
+      error: null,
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+
+    const resultPromise = loadStructureFile(file, { deps });
+
+    expect(mockFileReader.readAsArrayBuffer).toHaveBeenCalledWith(file);
+    expect(mockFileReader.readAsText).not.toHaveBeenCalled();
+    mockFileReader.onload({ target: { result: data } });
+    const result = await resultPromise;
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: 'loaded_map',
+      name: 'density',
+      mapName: 'density',
+    });
+    expect(deps.createMap).toHaveBeenCalledWith({ name: 'density', data, format: 'map' });
   });
 
   it('returns structured failures for missing files', async () => {

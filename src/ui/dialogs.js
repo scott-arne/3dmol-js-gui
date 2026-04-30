@@ -8,13 +8,18 @@
 import { getViewer } from '../viewer.js';
 import { normalizeRemoteLoadingConfig } from '../loading/remote-loading.js';
 
+const MAP_ONLY_FORMATS = new Set(['ccp4', 'map', 'mrc']);
+
 /**
  * Show a Load dialog with local and optional remote loading tabs.
  *
  * @param {object} callbacks - Callback functions.
  * @param {function} callbacks.onFetch - Called with (pdbId).
- * @param {function} callbacks.onLoad - Called with (data, format, filename).
- * @param {function} [callbacks.onLoadFile] - Called with a local File object.
+ * @param {function} callbacks.onLoad - Fallback local-file callback called with
+ *   (data, format, filename). Map-only files pass ArrayBuffer data; other files
+ *   pass text data.
+ * @param {function} [callbacks.onLoadFile] - Preferred local-file callback
+ *   called with a File object. May return {ok, message} to control dialog status.
  * @param {function} [callbacks.onRemoteSource] - Called with configured source input.
  * @param {function} [callbacks.onLoadUrl] - Called with arbitrary URL input.
  * @param {object} [options] - Optional dialog configuration.
@@ -122,10 +127,16 @@ export function showLoadDialog(callbacks, options = {}) {
       return;
     }
     const format = file.name.split('.').pop().toLowerCase();
+    const isMapOnly = MAP_ONLY_FORMATS.has(format);
     const reader = new FileReader();
     reader.onload = (ev) => {
       const data = ev.target.result;
-      if (typeof data !== 'string' || data.trim() === '') {
+      if (isMapOnly) {
+        if (!(data instanceof ArrayBuffer) || data.byteLength === 0) {
+          setStatus(`"${file.name}" is empty.`, 'error');
+          return;
+        }
+      } else if (typeof data !== 'string' || data.trim() === '') {
         setStatus(`"${file.name}" is empty.`, 'error');
         return;
       }
@@ -138,7 +149,11 @@ export function showLoadDialog(callbacks, options = {}) {
         'error',
       );
     };
-    reader.readAsText(file);
+    if (isMapOnly) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
   });
   filePanel.appendChild(fileInput);
   filePanel.appendChild(loadBtn);

@@ -1,5 +1,5 @@
-import { fetchPDB, loadModelData } from '../viewer.js';
-import { addObject } from '../state.js';
+import { fetchPDB, loadModelData, removeModel } from '../viewer.js';
+import { addObject, removeObject } from '../state.js';
 import { createMap } from '../maps.js';
 
 const STRUCTURE_FORMATS = new Set(['pdb', 'sdf', 'mol2', 'xyz', 'pqr', 'gro', 'cif', 'mmcif']);
@@ -32,6 +32,8 @@ function getDeps(deps = {}) {
     fetchImpl: deps.fetchImpl || globalThis.fetch,
     fetchPDB: deps.fetchPDB || fetchPDB,
     loadModelData: deps.loadModelData || loadModelData,
+    removeModel: deps.removeModel || removeModel,
+    removeObject: deps.removeObject || removeObject,
   };
 }
 
@@ -165,8 +167,22 @@ function registerLoadedHybrid(request, data, options, deps) {
   const modelIndex = model.getID ? model.getID() : null;
   const name = deps.addObject(request.name, model, modelIndex);
   const mapName = `${name}_map`;
-  const map = deps.createMap({ name: mapName, data, format: request.format });
-  return hybridSuccess(name, model, modelIndex, map.name, map, `Loaded "${name}" and map "${map.name}"`);
+  try {
+    const map = deps.createMap({ name: mapName, data, format: request.format });
+    return hybridSuccess(name, model, modelIndex, map.name, map, `Loaded "${name}" and map "${map.name}"`);
+  } catch (error) {
+    try {
+      deps.removeObject(name);
+    } catch {
+      // Cleanup must not mask the original map creation failure.
+    }
+    try {
+      deps.removeModel(model);
+    } catch {
+      // Cleanup must not mask the original map creation failure.
+    }
+    throw error;
+  }
 }
 
 async function loadPdb(request, deps) {

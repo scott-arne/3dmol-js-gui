@@ -185,6 +185,37 @@ describe('showLoadDialog', () => {
     expect(document.querySelector('.modal-overlay')).toBeNull();
   });
 
+  it('load button fallback reads map files as binary and calls onLoad', async () => {
+    const data = new ArrayBuffer(16);
+    const mockFileReader = {
+      readAsArrayBuffer: vi.fn(),
+      readAsText: vi.fn(),
+      onload: null,
+      onerror: null,
+      error: null,
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const loadBtn = filePanel.querySelector('.modal-btn');
+    const file = new File(['map data'], 'density.map', { type: 'application/octet-stream' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+
+    loadBtn.click();
+
+    expect(mockFileReader.readAsArrayBuffer).toHaveBeenCalledWith(file);
+    expect(mockFileReader.readAsText).not.toHaveBeenCalled();
+    mockFileReader.onload({ target: { result: data } });
+    expect(callbacks.onLoad).toHaveBeenCalledWith(data, 'map', 'density.map');
+    expect(document.querySelector('.modal-overlay')).toBeNull();
+  });
+
   it('load button with file calls onLoadFile directly when provided', async () => {
     const mockFileReader = {
       readAsText: vi.fn(),
