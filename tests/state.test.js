@@ -7,6 +7,10 @@ import {
   addSurfaceEntry, removeSurfaceEntry, renameSurfaceEntry,
   toggleSurfaceVisibility, updateSurfaceEntry, setSurfaceHandle,
   getNextSurfaceName, getChildSurfaceNames,
+  addMapEntry, removeMapEntry, renameMapEntry, updateMapEntry,
+  toggleMapVisibility, addIsosurfaceEntry, removeIsosurfaceEntry,
+  renameIsosurfaceEntry, updateIsosurfaceEntry, toggleIsosurfaceVisibility,
+  getChildIsosurfaceNames, getNextIsosurfaceName,
 } from '../src/state.js';
 
 function resetState() {
@@ -14,6 +18,8 @@ function resetState() {
   state.objects.clear();
   state.selections.clear();
   state.surfaces.clear();
+  state.maps?.clear();
+  state.isosurfaces?.clear();
   state.entryTree.length = 0;
   state._listeners.length = 0;
   state.selectionMode = 'atoms';
@@ -495,6 +501,145 @@ describe('surface entry notifications', () => {
     await expectMutationNotifies(() => {
       toggleSurfaceVisibility('surf');
     });
+  });
+});
+
+describe('map and isosurface entries', () => {
+  beforeEach(resetState);
+
+  it('adds maps before selections and uniquifies duplicate map names', () => {
+    addSelection('sele1', 'protein', {}, 5);
+
+    const first = addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'map',
+      volumeData: { size: { x: 1, y: 1, z: 1 } },
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    const second = addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: { size: { x: 2, y: 2, z: 2 } },
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 2, y: 2, z: 2 } },
+    });
+
+    expect(first.name).toBe('density');
+    expect(second.name).toBe('density_2');
+    expect(getState().maps.get('density')).toMatchObject({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'map',
+      visible: true,
+      color: '#38BDF8',
+      opacity: 1,
+    });
+    expect(getState().entryTree).toEqual([
+      { type: 'map', name: 'density', collapsed: false, children: [] },
+      { type: 'map', name: 'density_2', collapsed: false, children: [] },
+      { type: 'selection', name: 'sele1' },
+    ]);
+  });
+
+  it('adds a child isosurface under its parent map and replaces the same name', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+
+    addIsosurfaceEntry({
+      name: 'isosurface_1',
+      mapName: 'density',
+      level: 1,
+      handle: 7,
+    });
+    addIsosurfaceEntry({
+      name: 'isosurface_1',
+      mapName: 'density',
+      level: 2,
+      handle: 8,
+    });
+
+    expect(getState().isosurfaces.get('isosurface_1')).toMatchObject({
+      name: 'isosurface_1',
+      mapName: 'density',
+      level: 2,
+      representation: 'mesh',
+      visible: true,
+      parentVisible: true,
+      color: '#FFFFFF',
+      opacity: 0.75,
+    });
+    expect(getState().entryTree[0].children).toEqual([
+      { type: 'isosurface', name: 'isosurface_1' },
+    ]);
+  });
+
+  it('removing a map returns and removes child isosurfaces', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'isosurface_1', mapName: 'density' });
+
+    const removed = removeMapEntry('density');
+
+    expect(removed.map.name).toBe('density');
+    expect(removed.isosurfaces.map(entry => entry.name)).toEqual(['isosurface_1']);
+    expect(getState().maps.has('density')).toBe(false);
+    expect(getState().isosurfaces.has('isosurface_1')).toBe(false);
+    expect(getState().entryTree).toEqual([]);
+  });
+
+  it('renames maps and isosurfaces in state and tree', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'isosurface_1', mapName: 'density' });
+
+    expect(renameMapEntry('density', 'density_map')).toBe(true);
+    expect(renameIsosurfaceEntry('isosurface_1', 'mesh_a')).toBe(true);
+
+    expect(getState().maps.has('density_map')).toBe(true);
+    expect(getState().isosurfaces.get('mesh_a').mapName).toBe('density_map');
+    expect(getState().entryTree).toEqual([
+      {
+        type: 'map',
+        name: 'density_map',
+        collapsed: false,
+        children: [{ type: 'isosurface', name: 'mesh_a' }],
+      },
+    ]);
+  });
+
+  it('updates visibility and generated isosurface names', () => {
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } },
+    });
+    addIsosurfaceEntry({ name: 'isosurface_1', mapName: 'density' });
+    addIsosurfaceEntry({ name: 'isosurface_3', mapName: 'density' });
+
+    expect(getNextIsosurfaceName()).toBe('isosurface_2');
+    expect(toggleMapVisibility('density').visible).toBe(false);
+    expect(toggleIsosurfaceVisibility('isosurface_1').visible).toBe(false);
+    expect(updateMapEntry('density', { opacity: 0.5 })).toMatchObject({ opacity: 0.5 });
+    expect(updateIsosurfaceEntry('isosurface_1', { level: -2 })).toMatchObject({ level: -2 });
+    expect(getChildIsosurfaceNames('density')).toEqual(['isosurface_1', 'isosurface_3']);
   });
 });
 
