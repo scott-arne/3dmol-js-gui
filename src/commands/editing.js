@@ -24,6 +24,13 @@ function requireSurfaceService(ctx) {
   return ctx.surfaceService;
 }
 
+function requireMapService(ctx) {
+  if (!ctx.mapService) {
+    throw new Error('Map service is unavailable');
+  }
+  return ctx.mapService;
+}
+
 function collectChildSurfaceNames(objectNames) {
   const surfaceNamesByParent = new Map();
   for (const objectName of objectNames) {
@@ -39,6 +46,33 @@ function hasChildSurfaces(surfaceNamesByParent) {
     }
   }
   return false;
+}
+
+function getDirectGroupedIsosurfaceNames(entries, state) {
+  const groupedMaps = new Set(entries.maps);
+  return entries.isosurfaces.filter((isoName) => {
+    const iso = state.isosurfaces.get(isoName);
+    return iso && !groupedMaps.has(iso.mapName);
+  });
+}
+
+function removeGroupedDensityEntries(entries, state, ctx) {
+  const directIsosurfaceNames = getDirectGroupedIsosurfaceNames(entries, state);
+  if (entries.maps.length === 0 && directIsosurfaceNames.length === 0) {
+    return;
+  }
+
+  const mapService = requireMapService(ctx);
+  for (const mapName of entries.maps) {
+    if (state.maps.has(mapName)) {
+      mapService.removeMap(mapName);
+    }
+  }
+  for (const isoName of directIsosurfaceNames) {
+    if (state.isosurfaces.has(isoName)) {
+      mapService.removeIsosurface(isoName);
+    }
+  }
 }
 
 /**
@@ -118,6 +152,8 @@ export function registerEditingCommands(registry) {
         const viewer = getViewer();
         const allRemovedIndices = [];
 
+        removeGroupedDensityEntries(entries, state, ctx);
+
         for (const objName of entries.objects) {
           const obj = state.objects.get(objName);
           if (obj) {
@@ -145,6 +181,18 @@ export function registerEditingCommands(registry) {
         }
 
         ctx.terminal.print(`Deleted group "${name}" (${entries.objects.length} objects, ${entries.selections.length} selections)`, 'result');
+        return;
+      }
+
+      if (state.maps.has(name)) {
+        requireMapService(ctx).removeMap(name);
+        ctx.terminal.print(`Deleted map "${name}"`, 'result');
+        return;
+      }
+
+      if (state.isosurfaces.has(name)) {
+        requireMapService(ctx).removeIsosurface(name);
+        ctx.terminal.print(`Deleted isosurface "${name}"`, 'result');
         return;
       }
 
@@ -211,7 +259,7 @@ export function registerEditingCommands(registry) {
       ctx.terminal.print(`Deleted object "${name}"`, 'result');
     },
     usage: 'delete <name>',
-    help: 'Delete a molecular object, named selection, or group.',
+    help: 'Delete an object, selection, group, surface, map, or isosurface.',
   });
 
   registry.register('set_name', {
@@ -233,6 +281,12 @@ export function registerEditingCommands(registry) {
       } else if (state.surfaces.has(oldName)) {
         requireSurfaceService(ctx).renameSurface(oldName, newName);
         ctx.terminal.print(`Renamed surface "${oldName}" to "${newName}"`, 'result');
+      } else if (state.maps.has(oldName)) {
+        requireMapService(ctx).renameMap(oldName, newName);
+        ctx.terminal.print(`Renamed map "${oldName}" to "${newName}"`, 'result');
+      } else if (state.isosurfaces.has(oldName)) {
+        requireMapService(ctx).renameIsosurface(oldName, newName);
+        ctx.terminal.print(`Renamed isosurface "${oldName}" to "${newName}"`, 'result');
       } else if (state.objects.has(oldName)) {
         const childSurfaceNames = getChildSurfaceNames(oldName);
         renameObject(oldName, newName);
@@ -245,6 +299,6 @@ export function registerEditingCommands(registry) {
       }
     },
     usage: 'set_name <old_name>, <new_name>',
-    help: 'Rename a molecular object or named selection.',
+    help: 'Rename an object, selection, group, surface, map, or isosurface.',
   });
 }

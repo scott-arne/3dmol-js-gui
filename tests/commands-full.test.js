@@ -245,6 +245,10 @@ function makeSurfaceService(overrides = {}) {
 function makeMapService() {
   return {
     createIsosurface: vi.fn(async (entry) => ({ ...entry })),
+    removeMap: vi.fn(),
+    removeIsosurface: vi.fn(),
+    renameMap: vi.fn(),
+    renameIsosurface: vi.fn(),
   };
 }
 
@@ -1576,6 +1580,56 @@ describe('editing.js', () => {
       expect(removeGroup).toHaveBeenCalledWith('grp');
     });
 
+    it('removes grouped maps and direct grouped isosurfaces before deleting a group', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.maps.set('density', { name: 'density' });
+      mockState.maps.set('other_density', { name: 'other_density' });
+      mockState.isosurfaces.set('child_mesh', {
+        name: 'child_mesh',
+        mapName: 'density',
+      });
+      mockState.isosurfaces.set('direct_mesh', {
+        name: 'direct_mesh',
+        mapName: 'other_density',
+      });
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [
+          {
+            type: 'map',
+            name: 'density',
+            children: [{ type: 'isosurface', name: 'child_mesh' }],
+          },
+          { type: 'isosurface', name: 'direct_mesh' },
+        ],
+      });
+
+      registry.execute('delete grp', ctx);
+
+      expect(mapService.removeMap).toHaveBeenCalledWith('density');
+      expect(mapService.removeIsosurface).toHaveBeenCalledWith('direct_mesh');
+      expect(mapService.removeIsosurface).not.toHaveBeenCalledWith('child_mesh');
+      expect(mapService.removeMap.mock.invocationCallOrder[0])
+        .toBeLessThan(removeGroup.mock.invocationCallOrder[0]);
+      expect(removeGroup).toHaveBeenCalledWith('grp');
+    });
+
+    it('requires map service before group deletion when grouped density entries exist', () => {
+      mockState.maps.set('density', { name: 'density' });
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [{ type: 'map', name: 'density' }],
+      });
+
+      expect(() => registry.execute('delete grp', ctx))
+        .toThrow('Map service is unavailable');
+
+      expect(removeGroup).not.toHaveBeenCalled();
+    });
+
     it('requires surface service before group deletion when grouped surfaces exist', () => {
       mockState.surfaces.set('free_surface', { name: 'free_surface' });
       mockState.entryTree.push({
@@ -1617,6 +1671,41 @@ describe('editing.js', () => {
 
       registry.execute('delete mol', ctx);
       expect(hlClearHighlight).toHaveBeenCalled();
+    });
+
+    it('deletes maps through map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.maps.set('density', { name: 'density' });
+
+      registry.execute('delete density', ctx);
+
+      expect(mapService.removeMap).toHaveBeenCalledWith('density');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Deleted map "density"',
+        type: 'result',
+      });
+    });
+
+    it('deletes isosurfaces through map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.isosurfaces.set('mesh', { name: 'mesh', mapName: 'density' });
+
+      registry.execute('delete mesh', ctx);
+
+      expect(mapService.removeIsosurface).toHaveBeenCalledWith('mesh');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Deleted isosurface "mesh"',
+        type: 'result',
+      });
+    });
+
+    it('requires map service before deleting maps', () => {
+      mockState.maps.set('density', { name: 'density' });
+
+      expect(() => registry.execute('delete density', ctx))
+        .toThrow('Map service is unavailable');
     });
   });
 
@@ -1660,6 +1749,34 @@ describe('editing.js', () => {
       expect(renameObject).not.toHaveBeenCalled();
       expect(terminal.lines[0]).toEqual({
         msg: 'Renamed surface "oldSurf" to "newSurf"',
+        type: 'result',
+      });
+    });
+
+    it('renames a map through the map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.maps.set('oldMap', { name: 'oldMap' });
+
+      registry.execute('set_name oldMap, newMap', ctx);
+
+      expect(mapService.renameMap).toHaveBeenCalledWith('oldMap', 'newMap');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Renamed map "oldMap" to "newMap"',
+        type: 'result',
+      });
+    });
+
+    it('renames an isosurface through the map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.isosurfaces.set('oldMesh', { name: 'oldMesh', mapName: 'density' });
+
+      registry.execute('set_name oldMesh, newMesh', ctx);
+
+      expect(mapService.renameIsosurface).toHaveBeenCalledWith('oldMesh', 'newMesh');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Renamed isosurface "oldMesh" to "newMesh"',
         type: 'result',
       });
     });
