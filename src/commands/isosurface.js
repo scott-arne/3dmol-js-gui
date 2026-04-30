@@ -10,13 +10,12 @@ export function splitIsosurfaceArgs(args) {
   let quote = null;
   for (let i = 0; i < args.length; i++) {
     const ch = args[i];
-    if ((ch === '"' || ch === "'") && quote === null) {
+    if ((ch === '"' || ch === "'") && quote === null && current.trim() === '') {
       quote = ch;
     } else if (ch === quote) {
       quote = null;
     } else if (ch === ',' && quote === null) {
-      const trimmed = current.trim();
-      if (trimmed) parts.push(trimmed);
+      parts.push(current.trim());
       current = '';
     } else {
       current += ch;
@@ -25,8 +24,7 @@ export function splitIsosurfaceArgs(args) {
   if (quote !== null) {
     throw new Error(ISOSURFACE_USAGE);
   }
-  const trimmed = current.trim();
-  if (trimmed) parts.push(trimmed);
+  parts.push(current.trim());
   return parts;
 }
 
@@ -61,6 +59,9 @@ function formatLevel(level) {
 export function parseIsosurfaceCommand(args) {
   const parts = splitIsosurfaceArgs(args);
   if (parts.length < 2 || parts.length > 7) {
+    throw new Error(ISOSURFACE_USAGE);
+  }
+  if ((parts.length > 3 && parts[2] === '') || parts.slice(3).some(part => part === '')) {
     throw new Error(ISOSURFACE_USAGE);
   }
 

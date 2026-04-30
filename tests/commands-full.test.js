@@ -1235,6 +1235,16 @@ describe('isosurface.js', () => {
     ]);
   });
 
+  it('preserves empty positional arguments while splitting', () => {
+    expect(splitIsosurfaceArgs('mesh1, density, 1, , 3')).toEqual([
+      'mesh1',
+      'density',
+      '1',
+      '',
+      '3',
+    ]);
+  });
+
   it('creates a default mesh isosurface from a map', async () => {
     await registry.execute('isosurface mesh1, density', ctx);
 
@@ -1251,6 +1261,27 @@ describe('isosurface.js', () => {
     expect(terminal.lines[0]).toEqual({
       msg: 'Created mesh isosurface "mesh1" from map "density" at +1',
       type: 'result',
+    });
+  });
+
+  it('preserves internal double quotes inside single-quoted selection text', async () => {
+    const selectionResult = { spec: { entry: 'my object' } };
+    const selectionSpec = { entry: 'my object' };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+
+    await registry.execute('isosurface mesh1, density, 1, \'entry "my object"\', 2', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('entry "my object"');
+    expect(mapService.createIsosurface).toHaveBeenCalledWith({
+      name: 'mesh1',
+      mapName: 'density',
+      level: 1,
+      selectionText: 'entry "my object"',
+      selection: selectionSpec,
+      buffer: 2,
+      carve: null,
+      representation: 'mesh',
     });
   });
 
@@ -1286,6 +1317,15 @@ describe('isosurface.js', () => {
       .rejects.toThrow('Unknown isosurface representation "sticks"');
     await expect(registry.execute('isosurface mesh1, density, 1, "chain A', ctx))
       .rejects.toThrow('Usage: isosurface');
+  });
+
+  it('rejects skipped optional positional fields', async () => {
+    await expect(registry.execute('isosurface iso, density, 1, , 3', ctx))
+      .rejects.toThrow('Usage: isosurface');
+    await expect(registry.execute('isosurface iso, density, 1, , , , surface', ctx))
+      .rejects.toThrow('Usage: isosurface');
+
+    expect(mapService.createIsosurface).not.toHaveBeenCalled();
   });
 });
 
