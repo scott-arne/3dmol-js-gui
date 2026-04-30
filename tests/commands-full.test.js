@@ -1167,6 +1167,13 @@ describe('surface.js', () => {
     expect(surfaceService.createSurface).not.toHaveBeenCalled();
   });
 
+  it('rejects an unknown named-form type before creating a surface', async () => {
+    await expect(registry.execute('surface pocket, protein, vdw', ctx))
+      .rejects.toThrow('Unknown surface type "vdw"');
+
+    expect(surfaceService.createSurface).not.toHaveBeenCalled();
+  });
+
   it('throws when the surface service is unavailable', async () => {
     mockState.objects.set('1UBQ', { model: {} });
     ctx = makeCtx(terminal);

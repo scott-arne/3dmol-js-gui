@@ -25,9 +25,9 @@ function normalizeCommandSurfaceType(rawType) {
   return normalizeSurfaceType(rawType || 'molecular').type;
 }
 
-function isExplicitSurfaceType(rawType) {
+function isSurfaceTypeToken(rawType) {
   const type = String(rawType || '').trim().toLowerCase();
-  return type === 'molecular' || type === 'sasa';
+  return type.length > 0 && !/\s/.test(type);
 }
 
 async function createParentSurface(parts, ctx, state) {
@@ -56,7 +56,7 @@ async function createNamedSurface(parts, ctx) {
     throw new Error(SURFACE_USAGE);
   }
 
-  const hasType = parts.length > 2 && isExplicitSurfaceType(parts[parts.length - 1]);
+  const hasType = parts.length > 2 && isSurfaceTypeToken(parts[parts.length - 1]);
   const type = normalizeCommandSurfaceType(hasType ? parts[parts.length - 1] : undefined);
   const selectionText = (hasType ? parts.slice(1, -1) : parts.slice(1)).join(', ').trim();
   const surfaceService = requireSurfaceService(ctx);
