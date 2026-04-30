@@ -8,7 +8,7 @@
 import './ui/styles.css';
 import { initViewer, getViewer, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
 import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
-import { loadStructure } from './loading/structure-loader.js';
+import { loadStructure, loadStructureFile } from './loading/structure-loader.js';
 import {
   normalizeRemoteLoadingConfig,
   resolveArbitraryUrlRequest,
@@ -44,6 +44,7 @@ import {
   reparentEntry,
   findTreeNode,
   collectEntryNames,
+  getNextIsosurfaceName,
 } from './state.js';
 import { createCommandRegistry, createCommandContext } from './commands/registry.js';
 import { registerAllCommands } from './commands/index.js';
@@ -68,6 +69,22 @@ import {
   removeSurfacesForParent,
   findSingleSurfaceParent,
 } from './surfaces.js';
+import {
+  createIsosurface,
+  createMap,
+  removeIsosurface,
+  removeMap,
+  renameIsosurface,
+  renameMap,
+  setIsosurfaceColor,
+  setIsosurfaceLevel,
+  setIsosurfaceOpacity,
+  setIsosurfaceRepresentation,
+  setIsosurfaceVisibility,
+  setMapColor,
+  setMapOpacity,
+  setMapVisibility,
+} from './maps.js';
 
 // Guard: ensure 3Dmol.js is loaded
 if (typeof $3Dmol === 'undefined') {
@@ -114,6 +131,23 @@ const surfaceService = {
   setSurfaceParentVisibility,
   removeSurfacesForParent,
   findSingleSurfaceParent,
+};
+
+const mapService = {
+  createMap,
+  removeMap,
+  renameMap,
+  setMapVisibility,
+  setMapColor,
+  setMapOpacity,
+  createIsosurface,
+  removeIsosurface,
+  renameIsosurface,
+  setIsosurfaceVisibility,
+  setIsosurfaceRepresentation,
+  setIsosurfaceOpacity,
+  setIsosurfaceColor,
+  setIsosurfaceLevel,
 };
 
 function isSurfaceEffectivelyVisible(surface) {
@@ -406,6 +440,167 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
   },
 
+  onToggleMapVisibility(name) {
+    const map = getState().maps.get(name);
+    if (!map) return;
+    const updated = mapService.setMapVisibility(name, !map.visible);
+    if (updated) {
+      terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} map "${name}"`, 'result');
+    }
+  },
+
+  async onCreateIsosurface(mapName) {
+    const name = getNextIsosurfaceName();
+    try {
+      const iso = await mapService.createIsosurface({
+        name,
+        mapName,
+        level: 1,
+        representation: 'mesh',
+      });
+      terminal.print(`Created mesh isosurface "${iso.name}" from map "${mapName}" at +1`, 'result');
+    } catch (e) {
+      terminal.print(`Failed to create isosurface from map "${mapName}": ${e.message}`, 'error');
+    }
+  },
+
+  onMapAction(name, action) {
+    const map = getState().maps.get(name);
+    if (!map) return;
+
+    switch (action) {
+      case 'delete':
+        if (mapService.removeMap(name)) {
+          terminal.print(`Deleted map "${name}"`, 'result');
+        }
+        break;
+      case 'rename':
+        showRenameDialog(name, (newName) => {
+          try {
+            if (mapService.renameMap(name, newName)) {
+              terminal.print(`Renamed map "${name}" to "${newName}"`, 'result');
+            }
+          } catch (e) {
+            terminal.print(e.message, 'error');
+          }
+        });
+        break;
+      case 'center':
+        getViewer().center(map.bounds.center);
+        scheduleRender();
+        terminal.print(`Centered on map "${name}"`, 'result');
+        break;
+      case 'zoom':
+        getViewer().zoomTo();
+        scheduleRender();
+        terminal.print(`Zoomed to map "${name}"`, 'result');
+        break;
+    }
+  },
+
+  onMapStyle(name, value) {
+    const [kind, rawValue] = String(value).split(':');
+    if (kind === 'opacity') {
+      const opacity = Number(rawValue);
+      if (!Number.isFinite(opacity)) {
+        terminal.print(`Invalid map opacity "${rawValue}"`, 'error');
+        return;
+      }
+      const updated = mapService.setMapOpacity(name, opacity);
+      if (updated) {
+        terminal.print(`Set map "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+      }
+    }
+  },
+
+  onMapColor(name, color) {
+    const updated = mapService.setMapColor(name, color);
+    if (updated) {
+      terminal.print(`Colored map "${name}" ${color}`, 'result');
+    }
+  },
+
+  onToggleIsosurfaceVisibility(name) {
+    const iso = getState().isosurfaces.get(name);
+    if (!iso) return;
+    const updated = mapService.setIsosurfaceVisibility(name, !iso.visible);
+    if (updated) {
+      terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} isosurface "${name}"`, 'result');
+    }
+  },
+
+  onIsosurfaceAction(name, action) {
+    const iso = getState().isosurfaces.get(name);
+    if (!iso) return;
+    if (action.startsWith('contour:')) {
+      const level = Number(action.slice('contour:'.length));
+      const updated = mapService.setIsosurfaceLevel(name, level);
+      if (updated) {
+        terminal.print(`Set isosurface "${name}" contour to ${level > 0 ? `+${level}` : level}`, 'result');
+      }
+      return;
+    }
+
+    switch (action) {
+      case 'delete':
+        if (mapService.removeIsosurface(name)) {
+          terminal.print(`Deleted isosurface "${name}"`, 'result');
+        }
+        break;
+      case 'rename':
+        showRenameDialog(name, (newName) => {
+          try {
+            if (mapService.renameIsosurface(name, newName)) {
+              terminal.print(`Renamed isosurface "${name}" to "${newName}"`, 'result');
+            }
+          } catch (e) {
+            terminal.print(e.message, 'error');
+          }
+        });
+        break;
+      case 'center':
+        getViewer().center(getState().maps.get(iso.mapName)?.bounds?.center);
+        scheduleRender();
+        terminal.print(`Centered on isosurface "${name}"`, 'result');
+        break;
+      case 'zoom':
+        getViewer().zoomTo();
+        scheduleRender();
+        terminal.print(`Zoomed to isosurface "${name}"`, 'result');
+        break;
+    }
+  },
+
+  onIsosurfaceStyle(name, value) {
+    const [kind, rawValue] = String(value).split(':');
+    try {
+      if (kind === 'representation') {
+        const updated = mapService.setIsosurfaceRepresentation(name, rawValue);
+        if (updated) {
+          terminal.print(`Set isosurface "${name}" representation to ${rawValue}`, 'result');
+        }
+      } else if (kind === 'opacity') {
+        const opacity = Number(rawValue);
+        if (!Number.isFinite(opacity)) {
+          throw new Error(`Invalid isosurface opacity "${rawValue}"`);
+        }
+        const updated = mapService.setIsosurfaceOpacity(name, opacity);
+        if (updated) {
+          terminal.print(`Set isosurface "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+        }
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  onIsosurfaceColor(name, color) {
+    const updated = mapService.setIsosurfaceColor(name, color);
+    if (updated) {
+      terminal.print(`Colored isosurface "${name}" ${color}`, 'result');
+    }
+  },
+
   onShow(name, rep, kind) {
     handleSidebarEntryShow(name, rep, kind);
   },
@@ -641,6 +836,11 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
           result.ok ? `Loaded "${filename}" as "${result.name}"` : result.message,
           result.ok ? 'result' : 'error',
         );
+      },
+      onLoadFile: async (file) => {
+        const result = await loadStructureFile(file);
+        terminal.print(result.message, result.ok ? 'result' : 'error');
+        return result;
       },
       onRemoteSource: async ({ sourceId, path, name, format }) => {
         let resolved;
@@ -942,6 +1142,7 @@ const ctx = createCommandContext({
   sidebar,
   state: getState(),
   surfaceService,
+  mapService,
 });
 registerAllCommands(registry, { remoteLoading });
 
