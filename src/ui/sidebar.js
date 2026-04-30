@@ -39,6 +39,73 @@ function closeActivePopup() {
   }
 }
 
+function menuHasDynamicItems(items) {
+  return items.some((item) => {
+    if (item.children) return true;
+    return Object.prototype.hasOwnProperty.call(item, 'checked');
+  });
+}
+
+function appendMenuItemLabel(menuItem, item) {
+  if (item.checked) {
+    const check = document.createElement('span');
+    check.className = 'popup-menu-check';
+    check.textContent = '\u2713';
+    menuItem.appendChild(check);
+  }
+
+  const labelSpan = document.createElement('span');
+  labelSpan.textContent = item.label;
+  menuItem.appendChild(labelSpan);
+}
+
+function appendGenericMenuItems(parent, items, isSubmenu = false) {
+  for (const item of items) {
+    if (item.separator) {
+      const sep = document.createElement('div');
+      sep.className = 'popup-menu-separator';
+      parent.appendChild(sep);
+    } else if (item.children) {
+      const menuItem = document.createElement('div');
+      const itemClass = isSubmenu ? 'popup-menu-submenu-item' : 'popup-menu-item';
+      menuItem.className = `${itemClass} popup-menu-has-submenu`;
+      if (item.checked) {
+        menuItem.classList.add('checked');
+      }
+      appendMenuItemLabel(menuItem, item);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'popup-menu-arrow';
+      arrow.textContent = '\u25B6';
+      menuItem.appendChild(arrow);
+
+      const submenu = document.createElement('div');
+      submenu.className = 'popup-menu-submenu';
+      appendGenericMenuItems(submenu, item.children, true);
+      menuItem.appendChild(submenu);
+      parent.appendChild(menuItem);
+    } else {
+      const menuItem = document.createElement('div');
+      menuItem.className = isSubmenu ? 'popup-menu-submenu-item' : 'popup-menu-item';
+      if (item.checked) {
+        menuItem.classList.add('checked');
+      }
+      if (item.value !== undefined) {
+        menuItem.dataset.value = item.value;
+      }
+      appendMenuItemLabel(menuItem, item);
+
+      const plainValue = item.value;
+      menuItem.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeActivePopup();
+        currentMenuOnClick(plainValue);
+      });
+      parent.appendChild(menuItem);
+    }
+  }
+}
+
 /**
  * Create and display a popup menu anchored to a button element.
  *
@@ -47,7 +114,8 @@ function closeActivePopup() {
  * at a time; opening a new one closes the previous.
  *
  * @param {HTMLElement} anchor - The button element to anchor the menu to.
- * @param {Array<{label: string, value: string}|{separator: true}>} items - Menu items.
+ * @param {Array<{label: string, value: string, checked?: boolean, children?: Array}|{separator: true}>} items
+ *   Menu items.
  * @param {function} onClick - Callback invoked with the selected item's value.
  */
 function createPopupMenu(anchor, items, onClick) {
@@ -60,7 +128,8 @@ function createPopupMenu(anchor, items, onClick) {
   // Update the mutable callback reference so cached listeners use the new onClick
   currentMenuOnClick = onClick;
 
-  let menu = menuCache.get(items);
+  const canCache = !menuHasDynamicItems(items);
+  let menu = canCache ? menuCache.get(items) : null;
   if (!menu) {
     menu = document.createElement('div');
     menu.className = 'popup-menu';
@@ -247,10 +316,34 @@ function createPopupMenu(anchor, items, onClick) {
 
         menuItem.appendChild(submenu);
         menu.appendChild(menuItem);
+      } else if (item.children) {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'popup-menu-item popup-menu-has-submenu';
+        if (item.checked) {
+          menuItem.classList.add('checked');
+        }
+        appendMenuItemLabel(menuItem, item);
+
+        const arrow = document.createElement('span');
+        arrow.className = 'popup-menu-arrow';
+        arrow.textContent = '\u25B6';
+        menuItem.appendChild(arrow);
+
+        const submenu = document.createElement('div');
+        submenu.className = 'popup-menu-submenu';
+        appendGenericMenuItems(submenu, item.children, true);
+        menuItem.appendChild(submenu);
+        menu.appendChild(menuItem);
       } else {
         const menuItem = document.createElement('div');
         menuItem.className = 'popup-menu-item';
-        menuItem.textContent = item.label;
+        if (item.checked) {
+          menuItem.classList.add('checked');
+        }
+        if (item.value !== undefined) {
+          menuItem.dataset.value = item.value;
+        }
+        appendMenuItemLabel(menuItem, item);
         const plainValue = item.value;
         menuItem.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -261,7 +354,9 @@ function createPopupMenu(anchor, items, onClick) {
       }
     }
 
-    menuCache.set(items, menu);
+    if (canCache) {
+      menuCache.set(items, menu);
+    }
   }
 
   // Clear stale submenu positioning from previous use
@@ -341,6 +436,24 @@ const SELECTION_ACTION_MENU = [
 ];
 
 /**
+ * Action menu items for surface objects.
+ */
+const SURFACE_ACTION_MENU = [
+  { label: 'Rename...', value: 'rename' },
+  { label: 'Delete', value: 'delete' },
+  { separator: true },
+  { label: 'Center', value: 'center' },
+  { label: 'Zoom', value: 'zoom' },
+];
+
+/**
+ * Color menu items for surface objects.
+ */
+const SURFACE_COLOR_MENU = [
+  { label: 'Solid', value: 'solid', submenu: 'solid-swatches' },
+];
+
+/**
  * Action menu items for groups.
  */
 const GROUP_ACTION_MENU = [
@@ -362,6 +475,27 @@ const SELECTION_CALLBACK_MAP = {
   C: 'onSelectionColor',
 };
 
+function buildSurfaceStyleMenu(surface = {}) {
+  const mode = surface.mode || 'surface';
+  const opacity = surface.opacity ?? 0.75;
+  const isOpacity = (value) => Math.abs(opacity - value) < 0.001;
+
+  return [
+    { label: 'Surface', value: 'mode:surface', checked: mode === 'surface' },
+    { label: 'Wireframe', value: 'mode:wireframe', checked: mode === 'wireframe' },
+    { separator: true },
+    {
+      label: 'Opacity',
+      children: [
+        { label: '25%', value: 'opacity:0.25', checked: isOpacity(0.25) },
+        { label: '50%', value: 'opacity:0.5', checked: isOpacity(0.5) },
+        { label: '75%', value: 'opacity:0.75', checked: isOpacity(0.75) },
+        { label: '100%', value: 'opacity:1', checked: isOpacity(1) },
+      ],
+    },
+  ];
+}
+
 const BUTTON_MENUS = {
   A: {
     callbackKey: 'onAction',
@@ -372,6 +506,14 @@ const BUTTON_MENUS = {
       { label: 'Center', value: 'center' },
       { label: 'Orient', value: 'orient' },
       { label: 'Zoom', value: 'zoom' },
+      { separator: true },
+      {
+        label: 'Create Surface',
+        children: [
+          { label: 'Solvent Accessible', value: 'surface:sasa' },
+          { label: 'Molecular', value: 'surface:molecular' },
+        ],
+      },
     ],
   },
   S: {
@@ -433,6 +575,7 @@ const BUTTON_MENUS = {
  */
 export function createSidebar(container, callbacks) {
   container.classList.add('sidebar');
+  let currentState = { objects: new Map(), selections: new Map(), surfaces: new Map() };
 
   // --- Resize handle ---
   const resizeHandle = document.createElement('div');
@@ -475,16 +618,22 @@ export function createSidebar(container, callbacks) {
     if (!row) return;
 
     const name = row.dataset.name;
-    const kind = row.dataset.kind; // 'object', 'selection', or 'group'
+    const kind = row.dataset.kind; // 'object', 'selection', 'group', or 'surface'
     const label = btn.dataset.btn;
 
     // Route to the appropriate popup menu and callback
     if (kind === 'object') {
       const menuDef = BUTTON_MENUS[label];
       createPopupMenu(btn, menuDef.items, (value) => {
-        if (value.startsWith('view:') && callbacks.onView) {
+        if (value.startsWith('surface:')) {
+          if (callbacks.onCreateSurface) {
+            callbacks.onCreateSurface(name, value.slice(8));
+          } else if (callbacks[menuDef.callbackKey]) {
+            callbacks[menuDef.callbackKey](name, value);
+          }
+        } else if (value.startsWith('view:') && callbacks.onView) {
           callbacks.onView(name, value.slice(5));
-        } else {
+        } else if (callbacks[menuDef.callbackKey]) {
           callbacks[menuDef.callbackKey](name, value);
         }
       });
@@ -522,6 +671,27 @@ export function createSidebar(container, callbacks) {
           }
         });
       }
+    } else if (kind === 'surface') {
+      if (label === 'A') {
+        createPopupMenu(btn, SURFACE_ACTION_MENU, (value) => {
+          if (callbacks.onSurfaceAction) {
+            callbacks.onSurfaceAction(name, value);
+          }
+        });
+      } else if (label === 'S') {
+        const surface = currentState.surfaces.get(name);
+        createPopupMenu(btn, buildSurfaceStyleMenu(surface), (value) => {
+          if (callbacks.onSurfaceStyle) {
+            callbacks.onSurfaceStyle(name, value);
+          }
+        });
+      } else if (label === 'C') {
+        createPopupMenu(btn, SURFACE_COLOR_MENU, (value) => {
+          if (callbacks.onSurfaceColor) {
+            callbacks.onSurfaceColor(name, value);
+          }
+        });
+      }
     }
   });
 
@@ -552,6 +722,19 @@ export function createSidebar(container, callbacks) {
   }
 
   /**
+   * Attach A,S,C buttons for a surface row.
+   */
+  function attachSurfaceButtons(btnGroup, name) {
+    for (const label of ['A', 'S', 'C']) {
+      const btn = document.createElement('button');
+      btn.className = 'sidebar-btn';
+      btn.textContent = label;
+      btn.dataset.btn = label;
+      btnGroup.appendChild(btn);
+    }
+  }
+
+  /**
    * Attach A,S,H,L,C buttons for a group row.
    * A opens the group action menu; S,H,L,C propagate to group callbacks.
    */
@@ -563,6 +746,10 @@ export function createSidebar(container, callbacks) {
       btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
+  }
+
+  function isSurfaceVisible(surface) {
+    return surface.visible !== false && surface.parentVisible !== false;
   }
 
   /**
@@ -679,6 +866,45 @@ export function createSidebar(container, callbacks) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'sidebar-buttons';
     attachSelectionButtons(btnGroup, name);
+    row.appendChild(btnGroup);
+
+    return row;
+  }
+
+  /**
+   * Build a single surface row for the sidebar.
+   */
+  function buildSurfaceRow(name, surface) {
+    const row = document.createElement('div');
+    row.className = 'sidebar-object sidebar-surface';
+    const visible = isSurfaceVisible(surface);
+    if (!visible) {
+      row.classList.add('dimmed');
+    }
+
+    // Clicking only the non-button side of the row toggles visibility.
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.sidebar-buttons')) return;
+      if (callbacks.onToggleSurfaceVisibility) {
+        callbacks.onToggleSurfaceVisibility(name);
+      }
+    });
+
+    const status = document.createElement('div');
+    status.className = 'sidebar-object-status';
+    if (visible) {
+      status.classList.add('active');
+    }
+    row.appendChild(status);
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'sidebar-object-name';
+    nameEl.textContent = name;
+    row.appendChild(nameEl);
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'sidebar-buttons';
+    attachSurfaceButtons(btnGroup, name);
     row.appendChild(btnGroup);
 
     return row;
@@ -815,6 +1041,14 @@ export function createSidebar(container, callbacks) {
           row.dataset.name = node.name;
           target.appendChild(row);
         }
+      } else if (node.type === 'surface') {
+        const surface = state.surfaces.get(node.name);
+        if (surface) {
+          const row = buildSurfaceRow(node.name, surface);
+          row.dataset.kind = 'surface';
+          row.dataset.name = node.name;
+          target.appendChild(row);
+        }
       }
     }
   }
@@ -849,6 +1083,8 @@ export function createSidebar(container, callbacks) {
       out.push({ key: `object:${node.name}`, type: 'object', node });
     } else if (node.type === 'selection') {
       out.push({ key: `selection:${node.name}`, type: 'selection', node });
+    } else if (node.type === 'surface') {
+      out.push({ key: `surface:${node.name}`, type: 'surface', node });
     }
   }
 
@@ -887,6 +1123,16 @@ export function createSidebar(container, callbacks) {
     row.classList.toggle('dimmed', !sel.visible);
     const status = row.querySelector('.sidebar-object-status');
     if (status) status.classList.toggle('active', sel.visible);
+  }
+
+  /**
+   * Update an existing surface row in place (visibility + status).
+   */
+  function updateSurfaceRow(row, surface) {
+    const visible = isSurfaceVisible(surface);
+    row.classList.toggle('dimmed', !visible);
+    const status = row.querySelector('.sidebar-object-status');
+    if (status) status.classList.toggle('active', visible);
   }
 
   /**
@@ -1009,6 +1255,14 @@ export function createSidebar(container, callbacks) {
         row.dataset.name = desc.node.name;
         return row;
       }
+      case 'surface': {
+        const surface = state.surfaces.get(desc.node.name);
+        if (!surface) return null;
+        const row = buildSurfaceRow(desc.node.name, surface);
+        row.dataset.kind = 'surface';
+        row.dataset.name = desc.node.name;
+        return row;
+      }
       case 'separator': {
         const sep = document.createElement('div');
         sep.className = 'sidebar-separator';
@@ -1062,6 +1316,11 @@ export function createSidebar(container, callbacks) {
             if (sel) updateSelectionRow(existing, sel);
             break;
           }
+          case 'surface': {
+            const surface = state.surfaces.get(desc.node.name);
+            if (surface) updateSurfaceRow(existing, surface);
+            break;
+          }
           case 'group-header':
             updateGroupHeader(existing, desc.node);
             break;
@@ -1105,17 +1364,23 @@ export function createSidebar(container, callbacks) {
      * Rebuild the sidebar object list from the current state.
      *
      * If state.entryTree is populated, renders from the tree structure.
-     * Otherwise falls back to rendering from state.objects and state.selections
+     * Otherwise falls back to rendering from objects, surfaces, and selections
      * for backward compatibility.
      *
      * @param {object} state - The application state.
      */
     refresh(state) {
-      const hasTree = state.entryTree && state.entryTree.length > 0;
+      currentState = {
+        ...state,
+        objects: state.objects || new Map(),
+        selections: state.selections || new Map(),
+        surfaces: state.surfaces || new Map(),
+      };
+      const hasTree = currentState.entryTree && currentState.entryTree.length > 0;
 
       if (hasTree) {
         // --- Tree-based rendering (incremental keyed diff) ---
-        const tree = state.entryTree;
+        const tree = currentState.entryTree;
 
         // Split into non-selection and selection top-level nodes
         const objNodes = tree.filter(n => n.type !== 'selection');
@@ -1134,66 +1399,36 @@ export function createSidebar(container, callbacks) {
         }
 
         // Perform incremental diff on this container's direct children
-        diffChildren(container, expectedSequence, state, resizeHandle);
+        diffChildren(container, expectedSequence, currentState, resizeHandle);
       } else {
-        // --- Legacy flat rendering (incremental update) ---
-        const expectedNames = new Set();
-
-        // Update or add object rows
-        for (const [name, obj] of state.objects) {
-          expectedNames.add('obj:' + name);
-          let row = container.querySelector(`[data-kind="object"][data-name="${CSS.escape(name)}"]`);
-          if (!row) {
-            row = buildObjectRow(name, obj, false);
-            row.dataset.kind = 'object';
-            row.dataset.name = name;
-            const sep = container.querySelector('.sidebar-separator');
-            if (sep) {
-              container.insertBefore(row, sep);
-            } else {
-              container.appendChild(row);
-            }
-          } else {
-            row.classList.toggle('dimmed', !obj.visible);
-            const status = row.querySelector('.sidebar-object-status');
-            if (status) status.classList.toggle('active', obj.visible);
-          }
+        // --- Legacy flat rendering (incremental keyed diff) ---
+        const expectedSequence = [];
+        for (const name of currentState.objects.keys()) {
+          expectedSequence.push({
+            key: `object:${name}`,
+            type: 'object',
+            node: { type: 'object', name },
+          });
+        }
+        for (const name of currentState.surfaces.keys()) {
+          expectedSequence.push({
+            key: `surface:${name}`,
+            type: 'surface',
+            node: { type: 'surface', name },
+          });
+        }
+        if (currentState.selections.size > 0) {
+          expectedSequence.push({ key: '__separator__', type: 'separator' });
+        }
+        for (const name of currentState.selections.keys()) {
+          expectedSequence.push({
+            key: `selection:${name}`,
+            type: 'selection',
+            node: { type: 'selection', name },
+          });
         }
 
-        // Handle separator
-        const hasSelections = state.selections.size > 0;
-        let sep = container.querySelector('.sidebar-separator');
-        if (hasSelections && !sep) {
-          sep = document.createElement('div');
-          sep.className = 'sidebar-separator';
-          container.appendChild(sep);
-        } else if (!hasSelections && sep) {
-          sep.remove();
-        }
-
-        // Update or add selection rows
-        for (const [name, sel] of state.selections) {
-          expectedNames.add('sel:' + name);
-          let row = container.querySelector(`[data-kind="selection"][data-name="${CSS.escape(name)}"]`);
-          if (!row) {
-            row = buildSelectionRow(name, sel);
-            row.dataset.kind = 'selection';
-            row.dataset.name = name;
-            container.appendChild(row);
-          } else {
-            row.classList.toggle('dimmed', !sel.visible);
-            const status = row.querySelector('.sidebar-object-status');
-            if (status) status.classList.toggle('active', sel.visible);
-          }
-        }
-
-        // Remove stale rows
-        for (const row of [...container.querySelectorAll('[data-kind]')]) {
-          const key = row.dataset.kind === 'object' ? 'obj:' : 'sel:';
-          if (!expectedNames.has(key + row.dataset.name)) {
-            row.remove();
-          }
-        }
+        diffChildren(container, expectedSequence, currentState, resizeHandle);
       }
     },
 

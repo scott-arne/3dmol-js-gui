@@ -16,8 +16,31 @@ function makeSelection(overrides = {}) {
   return { expression: 'chain A', spec: { chain: 'A' }, atomCount: 42, visible: true, ...overrides };
 }
 
-function makeTreeState({ objects = new Map(), selections = new Map(), entryTree = [] } = {}) {
-  return { objects, selections, entryTree };
+function makeSurface(overrides = {}) {
+  return {
+    name: 'surface_1',
+    parentName: '1UBQ',
+    selection: { model: {} },
+    type: 'molecular',
+    surfaceType: 'MS',
+    handle: 1,
+    pending: false,
+    visible: true,
+    parentVisible: true,
+    mode: 'surface',
+    opacity: 0.75,
+    color: '#FFFFFF',
+    ...overrides,
+  };
+}
+
+function makeTreeState({
+  objects = new Map(),
+  selections = new Map(),
+  surfaces = new Map(),
+  entryTree = [],
+} = {}) {
+  return { objects, selections, surfaces, entryTree };
 }
 
 describe('Sidebar tree-based rendering', () => {
@@ -53,6 +76,11 @@ describe('Sidebar tree-based rendering', () => {
       onGroupLabel: vi.fn(),
       onGroupColor: vi.fn(),
       onGroupView: vi.fn(),
+      onToggleSurfaceVisibility: vi.fn(),
+      onSurfaceAction: vi.fn(),
+      onSurfaceStyle: vi.fn(),
+      onSurfaceColor: vi.fn(),
+      onCreateSurface: vi.fn(),
     };
 
     sidebar = createSidebar(container, callbacks);
@@ -88,6 +116,17 @@ describe('Sidebar tree-based rendering', () => {
       expect(row).not.toBeNull();
       const nameEl = row.querySelector('.sidebar-object-name');
       expect(nameEl.textContent).toBe('(sele1)');
+    });
+
+    it('renders a top-level surface from entryTree', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      const entryTree = [{ type: 'surface', name: 'surface_1' }];
+      sidebar.refresh(makeTreeState({ surfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="surface"][data-name="surface_1"]');
+      expect(row).not.toBeNull();
+      expect(row.classList.contains('sidebar-surface')).toBe(true);
+      expect(row.querySelector('.sidebar-object-name').textContent).toBe('surface_1');
     });
 
     it('adds separator between objects and selections', () => {
@@ -316,6 +355,26 @@ describe('Sidebar tree-based rendering', () => {
       expect(childRow).not.toBeNull();
     });
 
+    it('renders a surface child under a hierarchy parent', () => {
+      const objects = new Map([['parent', makeObject()]]);
+      const surfaces = new Map([
+        ['parent_surface', makeSurface({ name: 'parent_surface', parentName: 'parent' })],
+      ]);
+      const entryTree = [
+        { type: 'object', name: 'parent', collapsed: false, children: [
+          { type: 'surface', name: 'parent_surface' },
+        ]},
+      ];
+      sidebar.refresh(makeTreeState({ objects, surfaces, entryTree }));
+
+      const childContainer = container.querySelector('[data-hierarchy-children="parent"]');
+      const surfaceRow = childContainer.querySelector(
+        '[data-kind="surface"][data-name="parent_surface"]',
+      );
+      expect(surfaceRow).not.toBeNull();
+      expect(surfaceRow.querySelector('.sidebar-object-name').textContent).toBe('parent_surface');
+    });
+
     it('hierarchy parent row has toggle icon', () => {
       const objects = new Map([
         ['parent', makeObject()],
@@ -438,6 +497,23 @@ describe('Sidebar tree-based rendering', () => {
       const secondRow = container.querySelector('[data-name="mol1"]');
       expect(secondRow).toBe(firstRow); // Same DOM element reused
       expect(secondRow.classList.contains('dimmed')).toBe(true);
+    });
+
+    it('updates existing surface row visibility without rebuilding', () => {
+      const surfaces = new Map([['surfaceA', makeSurface({ name: 'surfaceA' })]]);
+      const tree = [{ type: 'surface', name: 'surfaceA' }];
+      sidebar.refresh(makeTreeState({ surfaces, entryTree: tree }));
+
+      const firstRow = container.querySelector('[data-kind="surface"][data-name="surfaceA"]');
+      expect(firstRow).toBeTruthy();
+
+      surfaces.set('surfaceA', makeSurface({ name: 'surfaceA', visible: false }));
+      sidebar.refresh(makeTreeState({ surfaces, entryTree: tree }));
+
+      const secondRow = container.querySelector('[data-kind="surface"][data-name="surfaceA"]');
+      expect(secondRow).toBe(firstRow);
+      expect(secondRow.classList.contains('dimmed')).toBe(true);
+      expect(secondRow.querySelector('.sidebar-object-status').classList.contains('active')).toBe(false);
     });
 
     it('adding an entry inserts without destroying existing rows', () => {

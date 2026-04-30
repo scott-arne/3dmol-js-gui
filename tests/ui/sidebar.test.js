@@ -11,8 +11,8 @@ vi.mock('../../src/ui/color-swatches.js', () => ({
 /**
  * Build a mock application state object.
  */
-function makeState({ objects = new Map(), selections = new Map() } = {}) {
-  return { objects, selections };
+function makeState({ objects = new Map(), selections = new Map(), surfaces = new Map() } = {}) {
+  return { objects, selections, surfaces };
 }
 
 /**
@@ -27,6 +27,27 @@ function makeObject(overrides = {}) {
  */
 function makeSelection(overrides = {}) {
   return { expression: 'chain A', spec: { chain: 'A' }, atomCount: 42, visible: true, ...overrides };
+}
+
+/**
+ * Build a mock surface entry as stored in state.surfaces.
+ */
+function makeSurface(overrides = {}) {
+  return {
+    name: 'surface_1',
+    parentName: '1UBQ',
+    selection: { model: {} },
+    type: 'molecular',
+    surfaceType: 'MS',
+    handle: 1,
+    pending: false,
+    visible: true,
+    parentVisible: true,
+    mode: 'surface',
+    opacity: 0.75,
+    color: '#FFFFFF',
+    ...overrides,
+  };
 }
 
 describe('Sidebar', () => {
@@ -54,6 +75,11 @@ describe('Sidebar', () => {
       onSelectionLabel: vi.fn(),
       onSelectionColor: vi.fn(),
       onSelectionView: vi.fn(),
+      onToggleSurfaceVisibility: vi.fn(),
+      onSurfaceAction: vi.fn(),
+      onSurfaceStyle: vi.fn(),
+      onSurfaceColor: vi.fn(),
+      onCreateSurface: vi.fn(),
     };
 
     sidebar = createSidebar(container, callbacks);
@@ -271,6 +297,160 @@ describe('Sidebar', () => {
     });
   });
 
+  describe('surface rendering', () => {
+    it('renders a surface row with only A, S, C buttons', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"][data-name="surface_1"]');
+      expect(row).not.toBeNull();
+      expect(row.classList.contains('sidebar-object')).toBe(true);
+      expect(row.classList.contains('sidebar-surface')).toBe(true);
+
+      const status = row.querySelector('.sidebar-object-status');
+      expect(status.classList.contains('active')).toBe(true);
+
+      const nameEl = row.querySelector('.sidebar-object-name');
+      expect(nameEl.textContent).toBe('surface_1');
+
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      const labels = Array.from(buttons).map((b) => b.textContent);
+      expect(labels).toEqual(['A', 'S', 'C']);
+    });
+
+    it('surface non-button click toggles surface visibility', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"]');
+      row.click();
+
+      expect(callbacks.onToggleSurfaceVisibility).toHaveBeenCalledWith('surface_1');
+    });
+
+    it('clicking surface action button does not toggle visibility', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"]');
+      const aBtn = row.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      expect(callbacks.onToggleSurfaceVisibility).not.toHaveBeenCalled();
+    });
+
+    it('surface A menu fires surface action callback', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"]');
+      const aBtn = row.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const centerItem = Array.from(
+        popup.querySelectorAll('.popup-menu-item'),
+      ).find((el) => el.textContent === 'Center');
+      centerItem.click();
+
+      expect(callbacks.onSurfaceAction).toHaveBeenCalledWith('surface_1', 'center');
+    });
+
+    it('surface S menu shows mode and opacity checkmarks with data values', () => {
+      const surfaces = new Map([
+        ['surface_1', makeSurface({ mode: 'wireframe', opacity: 0.5 })],
+      ]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"]');
+      const sBtn = row.querySelectorAll('.sidebar-btn')[1];
+      sBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const valueItems = Array.from(
+        popup.querySelectorAll('[data-value]'),
+      );
+      expect(valueItems.map((el) => el.dataset.value)).toEqual([
+        'mode:surface',
+        'mode:wireframe',
+        'opacity:0.25',
+        'opacity:0.5',
+        'opacity:0.75',
+        'opacity:1',
+      ]);
+
+      const wireframeItem = popup.querySelector('[data-value="mode:wireframe"]');
+      const opacityItem = popup.querySelector('[data-value="opacity:0.5"]');
+      expect(wireframeItem.classList.contains('checked')).toBe(true);
+      expect(opacityItem.classList.contains('checked')).toBe(true);
+      expect(wireframeItem.querySelector('.popup-menu-check').textContent).toBe('\u2713');
+      expect(opacityItem.querySelector('.popup-menu-check').textContent).toBe('\u2713');
+
+      popup.querySelector('[data-value="mode:surface"]').click();
+      expect(callbacks.onSurfaceStyle).toHaveBeenCalledWith('surface_1', 'mode:surface');
+
+      sBtn.click();
+      document.querySelector('[data-value="opacity:0.25"]').click();
+      expect(callbacks.onSurfaceStyle).toHaveBeenCalledWith('surface_1', 'opacity:0.25');
+    });
+
+    it('surface C menu exposes solid swatches only and calls onSurfaceColor', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"]');
+      const cBtn = row.querySelectorAll('.sidebar-btn')[2];
+      cBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const labels = Array.from(
+        popup.querySelectorAll('.popup-menu-item'),
+      ).map((el) => el.textContent);
+      expect(labels.some((label) => label.includes('Solid'))).toBe(true);
+      expect(labels.some((label) => label.includes('By Element'))).toBe(false);
+      expect(labels.some((label) => label.includes('By Chain'))).toBe(false);
+      expect(labels.some((label) => label.includes('By SS'))).toBe(false);
+      expect(labels.some((label) => label.includes('By B-Factor'))).toBe(false);
+
+      const solidSubmenu = popup.querySelector('.popup-menu-has-submenu');
+      const swatchCell = solidSubmenu.querySelector('.swatch-cell');
+      swatchCell.click();
+
+      expect(callbacks.onSurfaceColor).toHaveBeenCalledWith('surface_1', '#0000FF');
+    });
+
+    it('surface row dimming respects visible and parentVisible', () => {
+      const surfaces = new Map([
+        ['hidden_self', makeSurface({ name: 'hidden_self', visible: false, parentVisible: true })],
+        ['hidden_parent', makeSurface({ name: 'hidden_parent', visible: true, parentVisible: false })],
+      ]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      for (const name of ['hidden_self', 'hidden_parent']) {
+        const row = container.querySelector(`[data-kind="surface"][data-name="${name}"]`);
+        expect(row.classList.contains('dimmed')).toBe(true);
+        expect(row.querySelector('.sidebar-object-status').classList.contains('active')).toBe(false);
+      }
+    });
+
+    it('renders objects, surfaces, separator, then selections without entryTree', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      const selections = new Map([['sele1', makeSelection()]]);
+      sidebar.refresh(makeState({ objects, surfaces, selections }));
+
+      const children = Array.from(container.children);
+      const objIdx = children.findIndex((el) => el.dataset.kind === 'object');
+      const surfIdx = children.findIndex((el) => el.dataset.kind === 'surface');
+      const sepIdx = children.findIndex((el) => el.classList.contains('sidebar-separator'));
+      const selIdx = children.findIndex((el) => el.dataset.kind === 'selection');
+
+      expect(objIdx).toBeLessThan(surfIdx);
+      expect(surfIdx).toBeLessThan(sepIdx);
+      expect(sepIdx).toBeLessThan(selIdx);
+    });
+  });
+
   describe('separator between objects and selections', () => {
     it('adds separator when there are selections', () => {
       const objects = new Map([['1UBQ', makeObject()]]);
@@ -412,6 +592,31 @@ describe('Sidebar', () => {
       centerItem.click();
 
       expect(callbacks.onAction).toHaveBeenCalledWith('1UBQ', 'center');
+    });
+
+    it('object Action menu can create surfaces', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      sidebar.refresh(makeState({ objects }));
+
+      const aBtn = container.querySelector('.sidebar-btn');
+      aBtn.click();
+
+      const popup = document.querySelector('.popup-menu');
+      const labels = Array.from(
+        popup.querySelectorAll('.popup-menu-item, .popup-menu-submenu-item'),
+      ).map((el) => el.textContent);
+      expect(labels.some((label) => label.includes('Create Surface'))).toBe(true);
+      expect(labels).toContain('Solvent Accessible');
+      expect(labels).toContain('Molecular');
+
+      popup.querySelector('[data-value="surface:sasa"]').click();
+      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('1UBQ', 'sasa');
+
+      aBtn.click();
+      document.querySelector('[data-value="surface:molecular"]').click();
+      expect(callbacks.onCreateSurface).toHaveBeenCalledWith('1UBQ', 'molecular');
+      expect(callbacks.onAction).not.toHaveBeenCalledWith('1UBQ', 'surface:sasa');
+      expect(callbacks.onAction).not.toHaveBeenCalledWith('1UBQ', 'surface:molecular');
     });
 
     it('clicking S button item fires onShow callback', () => {
@@ -721,17 +926,17 @@ describe('Sidebar', () => {
       const objects = new Map([['1UBQ', makeObject()]]);
       sidebar.refresh(makeState({ objects }));
 
-      const aBtn = container.querySelector('.sidebar-btn');
-      aBtn.click();
+      const sBtn = container.querySelectorAll('.sidebar-btn')[1];
+      sBtn.click();
       const menu1 = document.querySelector('.popup-menu');
       expect(menu1).toBeTruthy();
 
       // Close menu by clicking the same button (toggle)
-      aBtn.click();
+      sBtn.click();
       expect(document.querySelector('.popup-menu')).toBeNull();
 
       // Open same type of menu again
-      aBtn.click();
+      sBtn.click();
       const menu2 = document.querySelector('.popup-menu');
 
       // Should be the same DOM element (cached and reused)
