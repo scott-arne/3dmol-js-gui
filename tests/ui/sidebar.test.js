@@ -522,6 +522,20 @@ describe('Sidebar', () => {
       expect(Array.from(row.querySelectorAll('.sidebar-btn')).map(btn => btn.textContent)).toEqual(['A', 'S', 'C']);
     });
 
+    it('fallback rendering nests isosurfaces under their parent maps', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ mapName: 'density' })]]);
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree: [] }));
+
+      const mapChildren = container.querySelector('[data-map-children="density"]');
+      expect(mapChildren).not.toBeNull();
+      expect(mapChildren.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]')).not.toBeNull();
+
+      const topLevelIsosurfaces = Array.from(container.children)
+        .filter((child) => child.dataset.kind === 'isosurface');
+      expect(topLevelIsosurfaces).toEqual([]);
+    });
+
     it('map row click toggles map visibility but action button click does not', () => {
       const maps = new Map([['density', makeMap()]]);
       sidebar.refresh(makeState({ maps }));
@@ -564,6 +578,18 @@ describe('Sidebar', () => {
 
       expect(callbacks.onMapAction).toHaveBeenCalledWith('density', 'center');
       expect(callbacks.onCreateIsosurface).not.toHaveBeenCalled();
+    });
+
+    it('map create isosurface action is ignored when the create callback is absent', () => {
+      delete callbacks.onCreateIsosurface;
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const aButton = container.querySelector('[data-kind="map"] .sidebar-btn');
+      aButton.click();
+      document.querySelector('[data-value="create_isosurface"]').click();
+
+      expect(callbacks.onMapAction).not.toHaveBeenCalledWith('density', 'create_isosurface');
     });
 
     it('isosurface row click toggles visibility but action button clicks do not', () => {

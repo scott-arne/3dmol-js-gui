@@ -727,8 +727,10 @@ export function createSidebar(container, callbacks) {
     } else if (kind === 'map') {
       if (label === 'A') {
         createPopupMenu(btn, MAP_ACTION_MENU, (value) => {
-          if (value === 'create_isosurface' && callbacks.onCreateIsosurface) {
-            callbacks.onCreateIsosurface(name);
+          if (value === 'create_isosurface') {
+            if (callbacks.onCreateIsosurface) {
+              callbacks.onCreateIsosurface(name);
+            }
           } else if (callbacks.onMapAction) {
             callbacks.onMapAction(name, value);
           }
@@ -1681,6 +1683,20 @@ export function createSidebar(container, callbacks) {
       } else {
         // --- Legacy flat rendering (incremental keyed diff) ---
         const expectedSequence = [];
+        const isosurfacesByMap = new Map();
+        const orphanIsosurfaces = [];
+        for (const [name, iso] of currentState.isosurfaces) {
+          const mapName = iso && iso.mapName;
+          if (mapName && currentState.maps.has(mapName)) {
+            if (!isosurfacesByMap.has(mapName)) {
+              isosurfacesByMap.set(mapName, []);
+            }
+            isosurfacesByMap.get(mapName).push(name);
+          } else {
+            orphanIsosurfaces.push(name);
+          }
+        }
+
         for (const name of currentState.objects.keys()) {
           expectedSequence.push({
             key: `object:${name}`,
@@ -1696,13 +1712,23 @@ export function createSidebar(container, callbacks) {
           });
         }
         for (const name of currentState.maps.keys()) {
+          const children = (isosurfacesByMap.get(name) || [])
+            .map((childName) => ({ type: 'isosurface', name: childName }));
+          const node = { type: 'map', name, collapsed: false, children };
           expectedSequence.push({
             key: `map:${name}`,
             type: 'map',
-            node: { type: 'map', name },
+            node,
           });
+          if (children.length > 0) {
+            expectedSequence.push({
+              key: `map-children:${name}`,
+              type: 'map-children',
+              node,
+            });
+          }
         }
-        for (const name of currentState.isosurfaces.keys()) {
+        for (const name of orphanIsosurfaces) {
           expectedSequence.push({
             key: `isosurface:${name}`,
             type: 'isosurface',
