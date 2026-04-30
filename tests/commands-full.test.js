@@ -1327,6 +1327,17 @@ describe('isosurface.js', () => {
 
     expect(mapService.createIsosurface).not.toHaveBeenCalled();
   });
+
+  it('rejects blank required name and map fields', async () => {
+    await expect(registry.execute('isosurface , density', ctx))
+      .rejects.toThrow('Usage: isosurface');
+    await expect(registry.execute('isosurface mesh1, ', ctx))
+      .rejects.toThrow('Usage: isosurface');
+    await expect(registry.execute('isosurface , ', ctx))
+      .rejects.toThrow('Usage: isosurface');
+
+    expect(mapService.createIsosurface).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -61,6 +61,9 @@ export function parseIsosurfaceCommand(args) {
   if (parts.length < 2 || parts.length > 7) {
     throw new Error(ISOSURFACE_USAGE);
   }
+  if (parts[0] === '' || parts[1] === '') {
+    throw new Error(ISOSURFACE_USAGE);
+  }
   if ((parts.length > 3 && parts[2] === '') || parts.slice(3).some(part => part === '')) {
     throw new Error(ISOSURFACE_USAGE);
   }
