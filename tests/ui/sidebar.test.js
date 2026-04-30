@@ -536,6 +536,22 @@ describe('Sidebar', () => {
       expect(topLevelIsosurfaces).toEqual([]);
     });
 
+    it('fallback rendering keeps orphan isosurfaces as top-level rows', () => {
+      const isosurfaces = new Map([
+        ['orphan_iso', makeIsosurface({ name: 'orphan_iso', mapName: 'missing_map' })],
+      ]);
+
+      expect(() => sidebar.refresh(makeState({ isosurfaces, entryTree: [] }))).not.toThrow();
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="orphan_iso"]');
+      expect(row).not.toBeNull();
+      expect(container.querySelector('.sidebar-map-children [data-name="orphan_iso"]')).toBeNull();
+
+      const topLevelIsosurfaces = Array.from(container.children)
+        .filter((child) => child.dataset.kind === 'isosurface');
+      expect(topLevelIsosurfaces).toEqual([row]);
+    });
+
     it('map row click toggles map visibility but action button click does not', () => {
       const maps = new Map([['density', makeMap()]]);
       sidebar.refresh(makeState({ maps }));
