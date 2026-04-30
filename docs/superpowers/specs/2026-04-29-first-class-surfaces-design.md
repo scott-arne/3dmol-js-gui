@@ -128,7 +128,7 @@ surface ligand_surface, ligand, sasa
 Command behavior:
 
 - The one-argument form treats the argument as an existing molecule entry and
-  creates or replaces a whole-molecule surface.
+  creates or replaces a whole-molecule surface named `<parent>_surface`.
 - The named form resolves the selection, creates or replaces a surface named
   `<name>`, and nests it if the selection belongs to exactly one molecule.
 - If the selection spans multiple molecules, the named surface is top-level.
