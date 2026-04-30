@@ -5,10 +5,19 @@ import { vi } from 'vitest';
  */
 export function createMockViewer() {
   const atoms = [];
+  let nextSurfaceId = 1;
 
   return {
     addModel: vi.fn(() => ({ getID: () => 0 })),
     removeModel: vi.fn(),
+    addSurface: vi.fn(() => {
+      const surfaceId = nextSurfaceId++;
+      const promise = Promise.resolve({ surfid: surfaceId });
+      promise.surfid = surfaceId;
+      return promise;
+    }),
+    removeSurface: vi.fn(),
+    setSurfaceMaterialStyle: vi.fn(),
     setStyle: vi.fn(),
     addStyle: vi.fn(),
     setClickable: vi.fn(),
