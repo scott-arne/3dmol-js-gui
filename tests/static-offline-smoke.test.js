@@ -68,6 +68,7 @@ describe('static offline smoke fixture', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     delete window.__C3D_INIT__;
     delete globalThis.$3Dmol;
     delete globalThis.ResizeObserver;
@@ -355,14 +356,21 @@ describe('static offline smoke fixture', () => {
       expect.objectContaining({ isoval: 1, wireframe: true }),
     );
 
+    vi.useFakeTimers();
+
     document.querySelector('[data-kind="isosurface"][data-name="isosurface_1"] [data-btn="A"]').click();
-    clickPopupItem('contour:-3');
+    clickPopupItem('contour');
+    const contourInput = document.querySelector('.contour-level-input');
+    expect(contourInput).not.toBeNull();
+    contourInput.value = '0.42';
+    contourInput.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(150);
     await flushStateUpdates();
 
-    expect(getState().isosurfaces.get('isosurface_1').level).toBe(-3);
+    expect(getState().isosurfaces.get('isosurface_1').level).toBe(0.42);
     expect(mockViewer.addIsosurface).toHaveBeenLastCalledWith(
       getState().maps.get('density').volumeData,
-      expect.objectContaining({ isoval: -3 }),
+      expect.objectContaining({ isoval: 0.42 }),
     );
   });
 

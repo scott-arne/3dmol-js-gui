@@ -658,21 +658,20 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
   },
 
+  onIsosurfaceContour(name, { level }) {
+    try {
+      const updated = mapService.setIsosurfaceLevel(name, level);
+      if (updated) {
+        terminal.print(`Set isosurface "${name}" contour to ${level > 0 ? `+${level}` : level}`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
   onIsosurfaceAction(name, action) {
     const iso = getState().isosurfaces.get(name);
     if (!iso) return;
-    if (action.startsWith('contour:')) {
-      const level = Number(action.slice('contour:'.length));
-      try {
-        const updated = mapService.setIsosurfaceLevel(name, level);
-        if (updated) {
-          terminal.print(`Set isosurface "${name}" contour to ${level > 0 ? `+${level}` : level}`, 'result');
-        }
-      } catch (e) {
-        terminal.print(e.message, 'error');
-      }
-      return;
-    }
 
     switch (action) {
       case 'delete':
