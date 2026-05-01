@@ -48,6 +48,7 @@ import {
 } from './state.js';
 import { createCommandRegistry, createCommandContext } from './commands/registry.js';
 import { registerAllCommands } from './commands/index.js';
+import { clearScene } from './scene-clear.js';
 import { showLoadDialog, showExportDialog, showQuickstart, showRenameDialog } from './ui/dialogs.js';
 import { createContextMenu } from './ui/context-menu.js';
 import {
@@ -1042,6 +1043,11 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     }, {
       remoteLoading,
     });
+  },
+
+  onClear() {
+    clearScene({ surfaceService, mapService });
+    terminal.print('Cleared viewer', 'result');
   },
 
   onExport() {

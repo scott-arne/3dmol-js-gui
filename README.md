@@ -101,8 +101,9 @@ and appears in the dialog only when `allowArbitraryUrls` is true.
 | clip | `clip <near>, <far>` | Set clipping planes |
 | reset | `reset` | Reset the view |
 | remove | `remove <selection>` | Remove atoms from the viewer |
-| delete | `delete <name>` | Delete an object or selection |
-| set_name | `set_name <old>, <new>` | Rename an object or selection |
+| delete | `delete <name>` or `del <name>` | Delete an object, selection, group, surface, map, or isosurface |
+| clear | `clear` | Clear all objects, selections, surfaces, maps, isosurfaces, labels, and highlights |
+| set_name | `set_name <old>, <new>` | Rename an object, selection, group, surface, map, or isosurface |
 | png | `png [filename]` | Export the view as PNG |
 | help | `help [command]` | Show help for a command |
 
@@ -229,6 +230,7 @@ label active_site, resn
 ├── src/
 │   ├── main.js             Application bootstrap and wiring
 │   ├── actions.js          Shared color, label, show/hide, and view actions
+│   ├── scene-clear.js      Shared viewer and state clearing helper
 │   ├── viewer.js           3Dmol.js wrapper (init, load, select, highlight)
 │   ├── state.js            Observable application state store
 │   ├── maps.js             Density map and isosurface viewer service

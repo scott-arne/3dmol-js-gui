@@ -18,6 +18,7 @@ const SELECTION_MODES = ['atoms', 'residues', 'chains', 'molecules'];
  * @param {HTMLElement} container - The container element (should have class `.menubar`).
  * @param {object} callbacks - Callback functions for menu actions.
  * @param {function} callbacks.onLoad - Called when File > Load... is clicked.
+ * @param {function} callbacks.onClear - Called when File > Clear is clicked.
  * @param {function} callbacks.onExport - Called when File > Export... is clicked.
  * @param {function(string): void} callbacks.onSelectionMode - Called with the mode string when a selection mode is chosen.
  * @param {function} callbacks.onToggleSidebar - Called when Window > Sidebar is toggled.
@@ -82,6 +83,15 @@ export function createMenuBar(container, callbacks) {
         if (callbacks.onLoad) callbacks.onLoad();
       },
     }));
+
+    dropdown.appendChild(createDropdownItem('Clear', {
+      onClick: () => {
+        closeDropdown();
+        if (callbacks.onClear) callbacks.onClear();
+      },
+    }));
+
+    addSeparator(dropdown);
 
     dropdown.appendChild(createDropdownItem('Export Image...', {
       onClick: () => {

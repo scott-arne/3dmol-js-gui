@@ -1412,6 +1412,15 @@ describe('editing.js', () => {
       expect(() => registry.execute('delete', ctx)).toThrow('Usage: delete');
     });
 
+    it('allows del as a synonym for delete', () => {
+      mockState.selections.set('mysel', { spec: {}, atomCount: 5 });
+
+      registry.execute('del mysel', ctx);
+
+      expect(removeSelection).toHaveBeenCalledWith('mysel');
+      expect(terminal.lines[0].msg).toContain('Deleted selection');
+    });
+
     it('deletes a selection', () => {
       mockState.selections.set('mysel', { spec: {}, atomCount: 5 });
 
@@ -1440,6 +1449,14 @@ describe('editing.js', () => {
       expect(pruneSelections).toHaveBeenCalledWith([0, 1]);
       expect(terminal.lines[0].msg).toContain('Deleted object');
       expect(terminal.lines[0].msg).toContain('mol');
+    });
+
+    it('keeps de as an unambiguous prefix for delete', () => {
+      mockState.selections.set('mysel', { spec: {}, atomCount: 5 });
+
+      registry.execute('de mysel', ctx);
+
+      expect(removeSelection).toHaveBeenCalledWith('mysel');
     });
 
     it('deletes a surface through the surface service', () => {
@@ -1706,6 +1723,68 @@ describe('editing.js', () => {
 
       expect(() => registry.execute('delete density', ctx))
         .toThrow('Map service is unavailable');
+    });
+  });
+
+  describe('clear', () => {
+    it('throws when arguments are provided', () => {
+      expect(() => registry.execute('clear mol', ctx)).toThrow('Usage: clear');
+    });
+
+    it('clears viewer entries, selections, labels, and highlights', () => {
+      const surfaceService = makeSurfaceService();
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, surfaceService, mapService);
+      const modelRef = {};
+      mockState.objects.set('mol', {
+        model: modelRef,
+        visible: true,
+        representations: new Set(['cartoon']),
+      });
+      mockState.selections.set('sele', { spec: {}, atomCount: 2, visible: true });
+      mockState.surfaces.set('surf', { name: 'surf', handle: {} });
+      mockState.maps.set('density', { name: 'density' });
+      mockState.isosurfaces.set('mesh', { name: 'mesh', mapName: 'density' });
+      mockState.entryTree.push(
+        { type: 'object', name: 'mol' },
+        { type: 'surface', name: 'surf' },
+        { type: 'map', name: 'density', children: [{ type: 'isosurface', name: 'mesh' }] },
+        { type: 'selection', name: 'sele' },
+      );
+
+      registry.execute('clear', ctx);
+
+      expect(mockViewer.removeModel).toHaveBeenCalledWith(modelRef);
+      expect(surfaceService.removeSurface).toHaveBeenCalledWith('surf');
+      expect(mapService.removeMap).toHaveBeenCalledWith('density');
+      expect(mapService.removeIsosurface).not.toHaveBeenCalledWith('mesh');
+      expect(mockState.objects.size).toBe(0);
+      expect(mockState.selections.size).toBe(0);
+      expect(mockState.surfaces.size).toBe(0);
+      expect(mockState.maps.size).toBe(0);
+      expect(mockState.isosurfaces.size).toBe(0);
+      expect(mockState.entryTree).toEqual([]);
+      expect(clearAllLabels).toHaveBeenCalled();
+      expect(hlClearHighlight).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
+      expect(notifyStateChange).toHaveBeenCalled();
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Cleared viewer',
+        type: 'result',
+      });
+    });
+
+    it('removes orphan isosurfaces that are not parented to a loaded map', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, undefined, mapService);
+      mockState.isosurfaces.set('orphan', { name: 'orphan', mapName: 'missing_map' });
+      mockState.entryTree.push({ type: 'isosurface', name: 'orphan' });
+
+      registry.execute('clear', ctx);
+
+      expect(mapService.removeIsosurface).toHaveBeenCalledWith('orphan');
+      expect(mockState.isosurfaces.size).toBe(0);
+      expect(mockState.entryTree).toEqual([]);
     });
   });
 
@@ -3139,6 +3218,8 @@ describe('index.js', () => {
     // Editing commands
     expect(registry.has('remove')).toBe(true);
     expect(registry.has('delete')).toBe(true);
+    expect(registry.has('del')).toBe(true);
+    expect(registry.has('clear')).toBe(true);
     expect(registry.has('set_name')).toBe(true);
 
     // Surface commands
@@ -3175,8 +3256,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 9 camera + 4 display + 4 selection + 3 editing + 2 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 41
-    expect(commands.length).toBe(41);
+    // 9 camera + 4 display + 4 selection + 4 editing + 2 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 42
+    expect(commands.length).toBe(42);
   });
 
   it('all registered commands have help text', () => {

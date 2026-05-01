@@ -24,6 +24,57 @@ describe('CommandRegistry', () => {
     registry.execute('test foo', {});
     expect(handler).toHaveBeenCalledWith('foo', {});
   });
+  it('supports exact command aliases without changing canonical list output', () => {
+    const registry = createCommandRegistry();
+    const handler = vi.fn();
+    registry.register('delete', {
+      aliases: ['del'],
+      handler,
+      usage: 'delete <name>',
+      help: 'Delete an entry.',
+    });
+
+    registry.execute('del mol', {});
+
+    expect(handler).toHaveBeenCalledWith('mol', {});
+    expect(registry.has('del')).toBe(true);
+    expect(registry.getHelp('del')).toEqual({
+      usage: 'delete <name>',
+      help: 'Delete an entry.',
+    });
+    expect(registry.list()).toEqual(['delete']);
+  });
+  it('keeps prefix matching scoped to canonical commands when an alias exists', () => {
+    const registry = createCommandRegistry();
+    const handler = vi.fn();
+    registry.register('delete', {
+      aliases: ['del'],
+      handler,
+      usage: 'delete <name>',
+      help: 'Delete an entry.',
+    });
+
+    registry.execute('de mol', {});
+
+    expect(handler).toHaveBeenCalledWith('mol', {});
+  });
+  it('rejects commands that conflict with existing aliases', () => {
+    const registry = createCommandRegistry();
+    registry.register('delete', {
+      aliases: ['del'],
+      handler: () => {},
+      usage: 'delete <name>',
+      help: 'Delete an entry.',
+    });
+
+    expect(() => {
+      registry.register('del', {
+        handler: () => {},
+        usage: 'del <name>',
+        help: 'Delete an entry.',
+      });
+    }).toThrow('conflicts with an existing alias');
+  });
   it('throws on unknown command', () => {
     const registry = createCommandRegistry();
     expect(() => registry.execute('nonexistent', {})).toThrow(/unknown command/i);

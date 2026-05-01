@@ -19,6 +19,7 @@ describe('Menu Bar', () => {
 
     callbacks = {
       onLoad: vi.fn(),
+      onClear: vi.fn(),
       onExport: vi.fn(),
       onView: vi.fn(),
       onSelect: vi.fn(),
@@ -257,7 +258,7 @@ describe('Menu Bar', () => {
   });
 
   describe('File dropdown', () => {
-    it('has Load... and Export Image... items', () => {
+    it('has Load..., Clear, and Export Image... items', () => {
       const fileItem = container.querySelectorAll('.menubar-item')[0];
       fileItem.click();
 
@@ -266,6 +267,7 @@ describe('Menu Bar', () => {
       const labels = Array.from(items).map((el) => el.textContent);
 
       expect(labels).toContain('Load...');
+      expect(labels).toContain('Clear');
       expect(labels).toContain('Export Image...');
     });
 
@@ -280,6 +282,19 @@ describe('Menu Bar', () => {
       loadItem.click();
 
       expect(callbacks.onLoad).toHaveBeenCalled();
+    });
+
+    it('Clear item fires onClear callback', () => {
+      const fileItem = container.querySelectorAll('.menubar-item')[0];
+      fileItem.click();
+
+      const dropdown = fileItem.querySelector('.menubar-dropdown');
+      const clearItem = Array.from(
+        dropdown.querySelectorAll('.menubar-dropdown-item'),
+      ).find((el) => el.textContent === 'Clear');
+      clearItem.click();
+
+      expect(callbacks.onClear).toHaveBeenCalled();
     });
 
     it('Export Image... item fires onExport callback', () => {
@@ -658,6 +673,21 @@ describe('Menu Bar', () => {
 
       // Should not throw
       expect(bar).toBeDefined();
+    });
+
+    it('handles missing onClear callback gracefully', () => {
+      const safeCallbacks = { ...callbacks, onClear: undefined };
+      const newContainer = document.createElement('div');
+      document.body.appendChild(newContainer);
+      createMenuBar(newContainer, safeCallbacks);
+
+      const fileItem = newContainer.querySelectorAll('.menubar-item')[0];
+      fileItem.click();
+      const clearItem = Array.from(
+        fileItem.querySelectorAll('.menubar-dropdown-item'),
+      ).find((el) => el.textContent === 'Clear');
+
+      expect(() => clearItem.click()).not.toThrow();
     });
 
     it('handles missing onSelectionMode callback gracefully', () => {

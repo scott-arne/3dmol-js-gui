@@ -46,6 +46,10 @@ export function normalizeVolumeFormat(rawFormat) {
 /**
  * Compute an axis-aligned bounding box from the eight grid corners.
  *
+ * CCP4/MRC volumes use `matrix` for scene placement. 3Dmol applies that
+ * matrix when generating isosurface vertices, so map boxes must use the same
+ * transform rather than VolumeData#getCoordinates, which ignores `matrix`.
+ *
  * @param {object} volumeData - 3Dmol VolumeData-like object.
  * @returns {{min: object, max: object, center: object, dimensions: object}} Bounds metadata.
  * @throws {Error} If the VolumeData object cannot provide valid bounds.
@@ -56,7 +60,7 @@ export function computeVolumeBounds(volumeData) {
     !hasPositiveDimension(volumeData.size?.x) ||
     !hasPositiveDimension(volumeData.size?.y) ||
     !hasPositiveDimension(volumeData.size?.z) ||
-    typeof volumeData.getCoordinates !== 'function'
+    (!hasVolumeMatrix(volumeData) && typeof volumeData.getCoordinates !== 'function')
   ) {
     throw new Error('Cannot determine map bounds');
   }
@@ -71,8 +75,7 @@ export function computeVolumeBounds(volumeData) {
   for (const x of xValues) {
     for (const y of yValues) {
       for (const z of zValues) {
-        const index = x * size.y * size.z + y * size.z + z;
-        const coord = volumeData.getCoordinates(index);
+        const coord = getVolumeCornerCoordinate(volumeData, x, y, z);
         if (!isCoordinate(coord)) {
           throw new Error('Cannot determine map bounds');
         }
@@ -99,6 +102,29 @@ export function computeVolumeBounds(volumeData) {
       h: max.y - min.y,
       d: max.z - min.z,
     },
+  };
+}
+
+function getVolumeCornerCoordinate(volumeData, x, y, z) {
+  if (hasVolumeMatrix(volumeData)) {
+    return transformPoint(volumeData.matrix.elements, x, y, z);
+  }
+
+  const { size } = volumeData;
+  const index = x * size.y * size.z + y * size.z + z;
+  return volumeData.getCoordinates(index);
+}
+
+function hasVolumeMatrix(volumeData) {
+  const elements = volumeData?.matrix?.elements;
+  return elements?.length >= 16 && Array.from(elements).every(Number.isFinite);
+}
+
+function transformPoint(elements, x, y, z) {
+  return {
+    x: elements[0] * x + elements[4] * y + elements[8] * z + elements[12],
+    y: elements[1] * x + elements[5] * y + elements[9] * z + elements[13],
+    z: elements[2] * x + elements[6] * y + elements[10] * z + elements[14],
   };
 }
 

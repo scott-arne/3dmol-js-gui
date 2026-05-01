@@ -60,6 +60,17 @@ describe('showLoadDialog', () => {
     expect(overlay.parentNode).toBe(document.body);
   });
 
+  it('shows a focused load header and compact source tabs', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+
+    expect(overlay.querySelector('.modal-title').textContent).toBe('Load');
+    expect(overlay.querySelector('.modal-subtitle').textContent).toBe(
+      'Structure or density map',
+    );
+    expect(getTabLabels(overlay)).toEqual(['PDB ID', 'File']);
+  });
+
   it('close button removes overlay', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');
@@ -103,6 +114,24 @@ describe('showLoadDialog', () => {
     expect(fileInput.accept).toContain('.ccp4');
     expect(fileInput.accept).toContain('.map');
     expect(fileInput.accept).toContain('.mrc');
+  });
+
+  it('local file target shows the selected filename', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const selectedName = filePanel.querySelector('.modal-file-name');
+    const file = new File(['ATOM ...'], 'protein_density.cube', { type: 'text/plain' });
+
+    expect(selectedName.textContent).toBe('No file selected');
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(selectedName.textContent).toBe('protein_density.cube');
   });
 
   it('fetch button calls onFetch with uppercase PDB ID for 4-char input', () => {
@@ -365,7 +394,7 @@ describe('showLoadDialog', () => {
     });
 
     const overlay = document.querySelector('.modal-overlay');
-    expect(getTabLabels(overlay)).toEqual(['Fetch PDB', 'Local File', 'Remote Source']);
+    expect(getTabLabels(overlay)).toEqual(['PDB ID', 'File', 'Remote']);
   });
 
   it('remote source form calls onRemoteSource and closes on success', async () => {
@@ -378,7 +407,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     const remoteTab = [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source');
+      .find((tab) => tab.textContent === 'Remote');
     remoteTab.click();
     overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
     overlay.querySelector('.modal-source-name').value = 'Ligand Pose';
@@ -408,7 +437,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source')
+      .find((tab) => tab.textContent === 'Remote')
       .click();
     overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
     overlay.querySelector('.modal-source-name').value = 'Ligand Pose';
@@ -433,7 +462,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source')
+      .find((tab) => tab.textContent === 'Remote')
       .click();
     overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
     const loadBtn = overlay.querySelector('.modal-panel:not(.hidden) .modal-btn');
@@ -454,7 +483,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source')
+      .find((tab) => tab.textContent === 'Remote')
       .click();
     overlay.querySelector('.modal-source-path').value = '   ';
     overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
@@ -471,13 +500,13 @@ describe('showLoadDialog', () => {
     });
 
     const overlay = document.querySelector('.modal-overlay');
-    expect(getTabLabels(overlay)).toEqual(['Fetch PDB', 'Local File', 'URL']);
+    expect(getTabLabels(overlay)).toEqual(['PDB ID', 'File', 'URL']);
 
     overlay.remove();
     showLoadDialog(callbacks);
     expect(getTabLabels(document.querySelector('.modal-overlay'))).toEqual([
-      'Fetch PDB',
-      'Local File',
+      'PDB ID',
+      'File',
     ]);
   });
 

@@ -95,6 +95,29 @@ describe('map viewer service', () => {
     expect(volumeData.getCoordinates).toHaveBeenCalledTimes(8);
   });
 
+  it('uses the volume matrix for transformed map bounds', () => {
+    const volumeData = {
+      size: { x: 3, y: 2, z: 2 },
+      matrix: {
+        elements: new Float32Array([
+          0, 2, 0, 0,
+          3, 0, 0, 0,
+          0, 0, 4, 0,
+          10, 20, 30, 1,
+        ]),
+      },
+      getCoordinates: vi.fn(() => ({ x: 999, y: 999, z: 999 })),
+    };
+
+    expect(computeVolumeBounds(volumeData)).toEqual({
+      min: { x: 10, y: 20, z: 30 },
+      max: { x: 13, y: 24, z: 34 },
+      center: { x: 11.5, y: 22, z: 32 },
+      dimensions: { w: 3, h: 4, d: 4 },
+    });
+    expect(volumeData.getCoordinates).not.toHaveBeenCalled();
+  });
+
   it('creates a VolumeData-backed map entry and renders its bounding box', () => {
     const volumeData = createCornerVolume();
     installVolumeData(volumeData);

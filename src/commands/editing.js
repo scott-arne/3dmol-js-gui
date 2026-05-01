@@ -16,6 +16,7 @@ import {
   updateSurfaceEntry,
 } from '../state.js';
 import { renderHighlight, clearHighlight } from '../highlight.js';
+import { clearScene } from '../scene-clear.js';
 
 function requireSurfaceService(ctx) {
   if (!ctx.surfaceService) {
@@ -127,6 +128,7 @@ export function registerEditingCommands(registry) {
   });
 
   registry.register('delete', {
+    aliases: ['del'],
     handler: (args, ctx) => {
       const name = args.trim();
       if (!name) {
@@ -260,6 +262,22 @@ export function registerEditingCommands(registry) {
     },
     usage: 'delete <name>',
     help: 'Delete an object, selection, group, surface, map, or isosurface.',
+  });
+
+  registry.register('clear', {
+    handler: (args, ctx) => {
+      if (args.trim()) {
+        throw new Error('Usage: clear');
+      }
+
+      clearScene({
+        surfaceService: ctx.surfaceService,
+        mapService: ctx.mapService,
+      });
+      ctx.terminal.print('Cleared viewer', 'result');
+    },
+    usage: 'clear',
+    help: 'Clear all objects, selections, surfaces, maps, isosurfaces, labels, and highlights from the viewer.',
   });
 
   registry.register('set_name', {
