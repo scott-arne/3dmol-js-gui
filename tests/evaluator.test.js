@@ -91,9 +91,19 @@ describe('Selection Evaluator', () => {
       expect(result).toEqual([5]);
     });
 
+    it('polar_hydrogens is an alias for polar_hydrogen', () => {
+      const result = selectAtoms('polar_hydrogens');
+      expect(result).toEqual([5]);
+    });
+
     it('nonpolar_hydrogen returns H atoms near C', () => {
       // The only H (serial 5) is nearest to N, not C, so no nonpolar H
       const result = selectAtoms('nonpolar_hydrogen');
+      expect(result).toEqual([]);
+    });
+
+    it('nonpolar_hydrogens is an alias for nonpolar_hydrogen', () => {
+      const result = selectAtoms('nonpolar_hydrogens');
       expect(result).toEqual([]);
     });
   });

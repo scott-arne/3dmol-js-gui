@@ -54,6 +54,7 @@ import { createContextMenu } from './ui/context-menu.js';
 import {
   applyColor, applyColorToSelection, formatColorDisplay,
   applyLabel, applyShow, applyHide, applyHideSelection,
+  hideRepPreservingStyles,
   applyViewPreset, getPresetLabel,
 } from './actions.js';
 import { applyPreset } from './presets.js';
@@ -1668,6 +1669,64 @@ if (init) {
   v.setStyle({}, {});
   const ops = init.operations || [];
 
+  function resolveInitSelection(selection) {
+    if (typeof selection === 'string') {
+      return getSelSpec(resolveSelection(selection));
+    }
+    return selection || {};
+  }
+
+  function modelMatchesSelection(obj, sel) {
+    const targetModel = sel.model;
+    if (targetModel === undefined || targetModel === null) return true;
+    if (Array.isArray(targetModel)) {
+      return targetModel.includes(obj.model) || targetModel.includes(obj.modelIndex);
+    }
+    return targetModel === obj.model || targetModel === obj.modelIndex;
+  }
+
+  function styleReps(style) {
+    return Object.keys(style || {});
+  }
+
+  function isWholeObjectSelection(sel) {
+    const keys = Object.keys(sel || {});
+    return keys.length === 0 || keys.every(key => key === 'model');
+  }
+
+  function applyInitStyle(sel, style) {
+    v.addStyle(sel, style || {});
+    const reps = styleReps(style);
+    if (reps.length === 0) return;
+    const st = getState();
+    for (const [, obj] of st.objects) {
+      if (!modelMatchesSelection(obj, sel)) continue;
+      for (const rep of reps) obj.representations.add(rep);
+    }
+    notifyStateChange();
+  }
+
+  function applyInitRemoveStyle(sel, style) {
+    const reps = styleReps(style);
+    if (reps.length === 0) return;
+    const st = getState();
+    const clearObjectReps = isWholeObjectSelection(sel);
+    for (const [, obj] of st.objects) {
+      if (!modelMatchesSelection(obj, sel)) continue;
+      const scopedSel = Object.assign({}, sel, { model: obj.model });
+      for (const rep of reps) {
+        if (rep === 'everything') {
+          v.setStyle(scopedSel, {});
+          if (clearObjectReps) obj.representations.clear();
+        } else {
+          hideRepPreservingStyles(v, scopedSel, rep, obj.representations);
+          obj.representations.delete(rep);
+        }
+      }
+    }
+    notifyStateChange();
+  }
+
   if (ops.length === 0) {
     // No operations: default to line
     v.setStyle({}, repStyle('line'));
@@ -1681,14 +1740,11 @@ if (init) {
         }
         notifyStateChange();
       } else if (op.op === 'style') {
-        let sel;
-        if (typeof op.selection === 'string') {
-          const result = resolveSelection(op.selection);
-          sel = getSelSpec(result);
-        } else {
-          sel = op.selection || {};
-        }
-        v.addStyle(sel, op.style || {});
+        const sel = resolveInitSelection(op.selection);
+        applyInitStyle(sel, op.style);
+      } else if (op.op === 'remove_style') {
+        const sel = resolveInitSelection(op.selection);
+        applyInitRemoveStyle(sel, op.style);
       } else if (op.op === 'color') {
         const st = getState();
         const reps = new Set();
@@ -1697,13 +1753,7 @@ if (init) {
         }
         if (reps.size === 0) reps.add('line');
 
-        let sel;
-        if (typeof op.selection === 'string') {
-          const result = resolveSelection(op.selection);
-          sel = getSelSpec(result);
-        } else {
-          sel = op.selection || {};
-        }
+        const sel = resolveInitSelection(op.selection);
 
         // Only restyle atoms that currently have a visible style.
         // This prevents bringing back atoms hidden by hideNonpolarH.

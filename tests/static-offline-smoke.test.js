@@ -115,6 +115,61 @@ describe('static offline smoke fixture', () => {
     expect(mockViewer.render).toHaveBeenCalled();
   });
 
+  it('applies initialization remove_style operations', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+    mockViewer._addAtoms([
+      {
+        serial: 1,
+        style: { cartoon: { color: 'red' }, stick: { radius: 0.25 } },
+      },
+    ]);
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.operations = [
+      { op: 'style', selection: null, style: { cartoon: { color: 'red' } } },
+      { op: 'remove_style', selection: null, style: { cartoon: {} } },
+    ];
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(mockViewer.addStyle).toHaveBeenCalledWith(
+      {},
+      { cartoon: { color: 'red' } }
+    );
+    expect(mockViewer.setStyle).toHaveBeenCalledWith(
+      { model: expect.any(Object) },
+      { stick: { radius: 0.25 } }
+    );
+  });
+
+  it('applies initialization remove_style everything to nonpolar hydrogens', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+    mockViewer._addAtoms([
+      { serial: 1, elem: 'C', x: 0, y: 0, z: 0, style: { stick: {} } },
+      { serial: 2, elem: 'H', x: 1, y: 0, z: 0, style: { stick: {} } },
+    ]);
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.operations = [
+      {
+        op: 'remove_style',
+        selection: 'nonpolar_hydrogens',
+        style: { everything: {} },
+      },
+    ];
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(mockViewer.setStyle).toHaveBeenCalledWith(
+      { serial: [2], model: expect.any(Object) },
+      {}
+    );
+  });
+
   it('group visibility toggles direct grouped surfaces', async () => {
     const { mockViewer, addSurfaceEntry, addGroup, getState } = await bootFixtureApp();
 
