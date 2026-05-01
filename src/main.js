@@ -96,6 +96,10 @@ if (typeof $3Dmol === 'undefined') {
   throw new Error('3Dmol.js not loaded');
 }
 
+function formatSignedLevel(level) {
+  return level > 0 ? `+${level}` : String(level);
+}
+
 const app = document.getElementById('app');
 const init = window.__C3D_INIT__;
 const remoteLoading = normalizeRemoteLoadingConfig(init?.services?.remoteLoading);
@@ -564,10 +568,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
       const iso = await mapService.createIsosurface({
         name,
         mapName,
-        level: 1,
         representation: 'mesh',
       });
-      terminal.print(`Created mesh isosurface "${iso.name}" from map "${mapName}" at +1`, 'result');
+      terminal.print(
+        `Created ${iso.representation} isosurface "${iso.name}" from map "${iso.mapName}" at ${formatSignedLevel(iso.level)}`,
+        'result',
+      );
     } catch (e) {
       terminal.print(`Failed to create isosurface from map "${mapName}": ${e.message}`, 'error');
     }

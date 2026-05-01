@@ -428,11 +428,15 @@ export function createIsosurface(options) {
   if (!map) {
     throw new Error(`Map "${options.mapName}" not found`);
   }
+  const level = Number.isFinite(options.level)
+    ? options.level
+    : getSuggestedIsosurfaceLevel(map);
 
   const previous = snapshotIsosurfaceEntry(getState().isosurfaces.get(options.name));
 
   const iso = addIsosurfaceEntry({
     ...options,
+    level,
     representation,
     parentVisible: map.visible !== false,
     handle: previous?.handle ?? null,

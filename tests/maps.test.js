@@ -507,6 +507,26 @@ describe('map viewer service', () => {
     expect(getState().isosurfaces.has('mesh')).toBe(false);
   });
 
+  it('uses the parent map suggested contour level when no isosurface level is provided', () => {
+    const isoHandle = { id: 'iso-suggested' };
+    mockViewer.addIsosurface.mockReturnValueOnce(isoHandle);
+
+    const map = createMap({ name: 'density', data: 'map data', format: 'mrc' });
+    map.contourStats = { ...map.contourStats, suggestedLevel: 0.42 };
+
+    const iso = createIsosurface({ name: 'mesh', mapName: 'density' });
+
+    expect(iso).toMatchObject({
+      name: 'mesh',
+      mapName: 'density',
+      level: 0.42,
+      handle: isoHandle,
+    });
+    expect(mockViewer.addIsosurface).toHaveBeenCalledWith(map.volumeData, expect.objectContaining({
+      isoval: 0.42,
+    }));
+  });
+
   it('keeps the existing isosurface handle when addIsosurface throws during redraw', () => {
     const oldHandle = { id: 'iso-old' };
     createMap({ name: 'density', data: 'map data', format: 'ccp4' });

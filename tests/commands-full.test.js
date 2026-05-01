@@ -1250,12 +1250,19 @@ describe('isosurface.js', () => {
   });
 
   it('creates a default mesh isosurface from a map', async () => {
-    await registry.execute('isosurface mesh1, density', ctx);
+    mapService.createIsosurface.mockResolvedValueOnce({
+      name: 'iso',
+      mapName: 'density',
+      level: 0.42,
+      representation: 'mesh',
+    });
+
+    await registry.execute('isosurface iso, density', ctx);
 
     expect(mapService.createIsosurface).toHaveBeenCalledWith({
-      name: 'mesh1',
+      name: 'iso',
       mapName: 'density',
-      level: 1,
+      level: null,
       selectionText: null,
       selection: null,
       buffer: null,
@@ -1263,7 +1270,7 @@ describe('isosurface.js', () => {
       representation: 'mesh',
     });
     expect(terminal.lines[0]).toEqual({
-      msg: 'Created mesh isosurface "mesh1" from map "density" at +1',
+      msg: 'Created mesh isosurface "iso" from map "density" at +0.42',
       type: 'result',
     });
   });

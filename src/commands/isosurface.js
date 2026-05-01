@@ -1,7 +1,7 @@
 import { getState } from '../state.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
 
-const ISOSURFACE_USAGE = 'Usage: isosurface name, map, level [,(selection) [,buffer [,carve [,representation]]]]';
+const ISOSURFACE_USAGE = 'Usage: isosurface name, map [,level [,(selection) [,buffer [,carve [,representation]]]]]';
 const REPRESENTATIONS = new Set(['mesh', 'surface']);
 
 export function splitIsosurfaceArgs(args) {
@@ -69,7 +69,7 @@ export function parseIsosurfaceCommand(args) {
   }
 
   const [name, mapName, levelRaw, selectionTextRaw, bufferRaw, carveRaw, representationRaw] = parts;
-  const level = parseOptionalFloat(levelRaw, 'level', 1);
+  const level = parseOptionalFloat(levelRaw, 'level', null);
   const buffer = parseOptionalFloat(bufferRaw, 'buffer', null);
   const carve = parseOptionalFloat(carveRaw, 'carve', null);
   const representation = normalizeRepresentation(representationRaw);
@@ -93,12 +93,12 @@ export function registerIsosurfaceCommands(registry) {
       }
 
       const mapService = requireMapService(ctx);
-      await mapService.createIsosurface({
+      const iso = await mapService.createIsosurface({
         ...parsed,
         selection,
       });
       ctx.terminal.print(
-        `Created ${parsed.representation} isosurface "${parsed.name}" from map "${parsed.mapName}" at ${formatLevel(parsed.level)}`,
+        `Created ${iso.representation} isosurface "${iso.name}" from map "${iso.mapName}" at ${formatLevel(iso.level)}`,
         'result',
       );
     },
