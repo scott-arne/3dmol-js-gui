@@ -79,7 +79,7 @@ and appears in the dialog only when `allowArbitraryUrls` is true.
 | count_atoms | `count_atoms [selection]` | Count atoms matching a selection |
 | get_model | `get_model [selection]` | Print summary info about a selection |
 | surface | `surface <parent> [, <type>]` or `surface <name>, <selection> [, <type>]` | Create or replace a molecular or solvent-accessible surface |
-| isosurface | `isosurface name, map, level [,(selection) [,buffer [,carve [,representation]]]]` | Create or replace an isosurface from a loaded density map |
+| isosurface | `isosurface name, map [,level [,(selection) [,buffer [,carve [,representation]]]]]` | Create or replace an isosurface from a loaded density map |
 | show | `show <rep> [, selection]` | Show a representation |
 | hide | `hide <rep> [, selection]` | Hide a representation |
 | enable | `enable <object>` | Show a hidden object |
@@ -114,20 +114,24 @@ a map row shows its 3D bounding box; hiding the row keeps the parsed volume data
 available for later isosurface creation. MAP and MRC files are treated as
 CCP4-compatible density maps.
 
-Use the map row **A** menu to create a default child isosurface at `+1 sigma`, or
-use the terminal for explicit names and contour levels:
+Use the map row **A** menu to create a default child isosurface at the map's
+suggested contour level, or use the terminal for explicit names and contour
+levels:
 
 ```
+isosurface iso_auto, density_map
 isosurface iso_1, density_map, 1.0
 isosurface ligand_mesh, density_map, 2.0, ligand, 3
 isosurface pocket_mesh, density_map, 1.5, "chain A, resn LIG", 3, 2, mesh
 ```
 
 Isosurface rows are children of their parent map and default to mesh
-representation. Their **A** menu includes fixed contour levels from `-10` to
-`+10`; their **S** menu switches between mesh and surface rendering and controls
-opacity. Selection expressions containing commas must be quoted in the terminal
-command.
+representation. Their **A** menu includes **Contour...**, which opens a slider
+and raw-value input. The slider range is derived from the parent map values, and
+the terminal `isosurface name, map` form uses the map's suggested contour when no
+level is provided. Explicit terminal levels remain raw values. Their **S** menu
+switches between mesh and surface rendering and controls opacity. Selection
+expressions containing commas must be quoted in the terminal command.
 
 ## Selection Language
 
