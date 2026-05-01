@@ -112,6 +112,7 @@ describe('Sidebar', () => {
       onCreateIsosurface: vi.fn(),
       onToggleIsosurfaceVisibility: vi.fn(),
       onIsosurfaceAction: vi.fn(),
+      onIsosurfaceContour: vi.fn(),
       onIsosurfaceStyle: vi.fn(),
       onIsosurfaceColor: vi.fn(),
     };
@@ -121,6 +122,7 @@ describe('Sidebar', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -642,28 +644,33 @@ describe('Sidebar', () => {
 
       const buttons = row.querySelectorAll('.sidebar-btn');
       buttons[0].click();
-      expect(Array.from(
-        document.querySelectorAll('[data-value^="contour:"]'),
-      ).map((item) => item.querySelector('span:last-child').textContent)).toEqual([
-        '-10',
-        '-5',
-        '-4',
-        '-3',
-        '-2',
-        '-1',
-        '+1',
-        '+2',
-        '+3',
-        '+4',
-        '+5',
-        '+10',
-      ]);
-      expect(document.querySelector('[data-value="contour:-3"]').classList.contains('checked')).toBe(true);
+      const contourItems = document.querySelectorAll('[data-value="contour"]');
+      expect(contourItems).toHaveLength(1);
+      expect(document.querySelectorAll('[data-value^="contour:"]')).toHaveLength(0);
       for (const value of ['rename', 'delete', 'center', 'zoom']) {
         expect(document.querySelector(`[data-value="${value}"]`)).not.toBeNull();
       }
-      document.querySelector('[data-value="contour:-3"]').click();
-      expect(callbacks.onIsosurfaceAction).toHaveBeenCalledWith('isosurface_1', 'contour:-3');
+
+      contourItems[0].click();
+      const popover = document.querySelector('.contour-popover');
+      expect(popover).not.toBeNull();
+      const title = popover.querySelector('.contour-popover-title');
+      const rangeLabel = popover.querySelector('.contour-range-label');
+      expect(popover.getAttribute('role')).toBe('dialog');
+      expect(popover.getAttribute('aria-labelledby')).toBe(title.id);
+      expect(title.id).not.toBe('');
+      expect(title.textContent).toContain('Contour');
+      expect(popover.querySelector('input[type="range"]')).not.toBeNull();
+      const slider = popover.querySelector('.contour-slider');
+      expect(slider).not.toBeNull();
+      expect(slider.getAttribute('aria-label')).toBe('Contour level');
+      expect(slider.getAttribute('aria-describedby')).toBe(rangeLabel.id);
+      expect(rangeLabel.id).not.toBe('');
+      expect(popover.querySelector('.contour-level-input').value).toBe('-3');
+      expect(popover.querySelector('.contour-level-input').getAttribute('aria-label')).toBe('Contour level');
+      expect(popover.querySelector('.contour-level-input').getAttribute('aria-describedby')).toBe(rangeLabel.id);
+      expect(rangeLabel.textContent).toContain('Auto range');
+      expect(popover.querySelector('.contour-reset-auto').textContent).toBe('Reset Auto');
 
       buttons[0].click();
       document.querySelector('[data-value="delete"]').click();
@@ -681,6 +688,124 @@ describe('Sidebar', () => {
       buttons[2].click();
       document.querySelector('.swatch-cell').click();
       expect(callbacks.onIsosurfaceColor).toHaveBeenCalledWith('isosurface_1', '#0000FF');
+    });
+
+    it('debounces isosurface contour slider changes', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: { min: 0, max: 1, robustMin: 0, robustMax: 1, suggestedLevel: 0.5 },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.25, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      const actionButton = row.querySelector('.sidebar-btn');
+      actionButton.click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const slider = document.querySelector('.contour-slider');
+      slider.value = '0.7';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      slider.value = '0.8';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+      vi.advanceTimersByTime(149);
+      expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(11);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.8, source: 'slider' },
+      );
+    });
+
+    it('flushes the latest pending contour change when the popover closes', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: { min: 0, max: 1, robustMin: 0, robustMax: 1, suggestedLevel: 0.5 },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.25, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const slider = document.querySelector('.contour-slider');
+      const levelInput = document.querySelector('.contour-level-input');
+      slider.value = '0.7';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      levelInput.value = '0.85';
+      levelInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+      vi.advanceTimersByTime(50);
+      expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
+
+      buttons[1].click();
+      expect(document.querySelector('.contour-popover')).toBeNull();
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.85, source: 'input' },
+      );
+
+      vi.advanceTimersByTime(150);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not flush invalid pending contour input when the popover closes', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: { min: 0, max: 1, robustMin: 0, robustMax: 1, suggestedLevel: 0.5 },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.25, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const slider = document.querySelector('.contour-slider');
+      const levelInput = document.querySelector('.contour-level-input');
+      slider.value = '0.7';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      levelInput.value = 'not-a-number';
+      levelInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+      buttons[1].click();
+      vi.advanceTimersByTime(150);
+
+      expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
     });
   });
 

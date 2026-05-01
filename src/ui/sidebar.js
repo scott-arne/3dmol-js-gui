@@ -24,6 +24,8 @@ const menuCache = new Map();
 /** @type {function|null} Mutable callback reference used by cached menu listeners. */
 let currentMenuOnClick = null;
 
+let contourPopoverId = 0;
+
 /**
  * Close any currently open popup menu and remove its outside-click listener.
  */
@@ -409,11 +411,17 @@ function createPopupMenu(anchor, items, onClick) {
   }
 
   // Defer attachment so the current click event does not immediately close the menu
-  requestAnimationFrame(() => {
+  let listenerAttached = false;
+  const listenerFrame = requestAnimationFrame(() => {
+    if (activePopup !== menu) return;
+    listenerAttached = true;
     document.addEventListener('click', onDocumentClick, true);
   });
 
   activePopupCleanup = () => {
+    if (!listenerAttached) {
+      cancelAnimationFrame(listenerFrame);
+    }
     document.removeEventListener('click', onDocumentClick, true);
   };
 }
@@ -452,7 +460,7 @@ const MAP_ACTION_MENU = [
   { label: 'Zoom', value: 'zoom' },
 ];
 
-const CONTOUR_VALUES = [-10, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 10];
+const CONTOUR_DEBOUNCE_MS = 150;
 
 function buildOpacityMenu(currentOpacity = 1) {
   const isOpacity = (value) => Math.abs(currentOpacity - value) < 0.001;
@@ -471,17 +479,9 @@ function buildMapStyleMenu(map = {}) {
   return [buildOpacityMenu(map.opacity ?? 1)];
 }
 
-function buildIsosurfaceActionMenu(iso = {}) {
-  const currentLevel = iso.level ?? 1;
+function buildIsosurfaceActionMenu() {
   return [
-    {
-      label: 'Contour',
-      children: CONTOUR_VALUES.map(value => ({
-        label: value > 0 ? `+${value}` : String(value),
-        value: `contour:${value}`,
-        checked: Math.abs(currentLevel - value) < 0.001,
-      })),
-    },
+    { label: 'Contour...', value: 'contour' },
     { separator: true },
     { label: 'Rename...', value: 'rename' },
     { label: 'Delete', value: 'delete' },
@@ -489,6 +489,239 @@ function buildIsosurfaceActionMenu(iso = {}) {
     { label: 'Center', value: 'center' },
     { label: 'Zoom', value: 'zoom' },
   ];
+}
+
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseFiniteValue(value) {
+  if (value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatContourLevel(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(8)));
+}
+
+function clampValue(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getContourRange(currentLevel, stats = {}) {
+  if (isFiniteNumber(stats.robustMin) && isFiniteNumber(stats.robustMax) && stats.robustMin !== stats.robustMax) {
+    return {
+      min: Math.min(stats.robustMin, stats.robustMax),
+      max: Math.max(stats.robustMin, stats.robustMax),
+      source: 'Auto range',
+    };
+  }
+
+  const center = isFiniteNumber(currentLevel) ? currentLevel : 1;
+  const radius = Math.max(Math.abs(center) * 0.5, 1);
+  return {
+    min: center - radius,
+    max: center + radius,
+    source: 'Auto range fallback',
+  };
+}
+
+function getContourStep(min, max) {
+  const span = max - min;
+  if (!Number.isFinite(span) || span <= 0) return 0.01;
+  const step = Number((span / 100).toPrecision(3));
+  return Number.isFinite(step) && step > 0 ? step : 0.01;
+}
+
+function positionContourPopover(popover, anchor) {
+  const anchorRect = anchor.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  const viewportHeight = window.innerHeight;
+
+  const spaceBelow = viewportHeight - anchorRect.bottom;
+  let top = anchorRect.bottom;
+  if (spaceBelow < popoverRect.height && anchorRect.top > spaceBelow) {
+    top = anchorRect.top - popoverRect.height;
+  }
+
+  let left = anchorRect.left + window.scrollX;
+  if (left + popoverRect.width > window.innerWidth) {
+    left = anchorRect.right + window.scrollX - popoverRect.width;
+  }
+  if (left < 0) left = 0;
+
+  popover.style.position = 'absolute';
+  popover.style.top = `${top + window.scrollY}px`;
+  popover.style.left = `${left}px`;
+}
+
+function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) {
+  closeActivePopup();
+
+  const stats = map.contourStats || {};
+  const suggestedLevel = isFiniteNumber(stats.suggestedLevel) ? stats.suggestedLevel : null;
+  const currentLevel = isFiniteNumber(iso.level) ? iso.level : (suggestedLevel ?? 1);
+  const range = getContourRange(currentLevel, stats);
+  const step = getContourStep(range.min, range.max);
+  const id = ++contourPopoverId;
+  const titleId = `contour-popover-title-${id}`;
+  const rangeId = `contour-range-label-${id}`;
+
+  const popover = document.createElement('div');
+  popover.className = 'contour-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-labelledby', titleId);
+  popover.setAttribute('aria-describedby', rangeId);
+
+  const header = document.createElement('div');
+  header.className = 'contour-popover-header';
+
+  const title = document.createElement('div');
+  title.className = 'contour-popover-title';
+  title.id = titleId;
+  title.textContent = 'Contour';
+  header.appendChild(title);
+
+  const isoName = document.createElement('div');
+  isoName.className = 'contour-popover-name';
+  isoName.textContent = name;
+  header.appendChild(isoName);
+  popover.appendChild(header);
+
+  const rangeLabel = document.createElement('div');
+  rangeLabel.className = 'contour-range-label';
+  rangeLabel.id = rangeId;
+  rangeLabel.textContent = `${range.source}: ${formatContourLevel(range.min)} to ${formatContourLevel(range.max)}`;
+  popover.appendChild(rangeLabel);
+
+  const controlRow = document.createElement('div');
+  controlRow.className = 'contour-control-row';
+
+  const slider = document.createElement('input');
+  slider.className = 'contour-slider';
+  slider.type = 'range';
+  slider.min = String(range.min);
+  slider.max = String(range.max);
+  slider.step = String(step);
+  slider.value = String(clampValue(currentLevel, range.min, range.max));
+  slider.setAttribute('aria-label', 'Contour level');
+  slider.setAttribute('aria-describedby', rangeId);
+  controlRow.appendChild(slider);
+
+  const levelInput = document.createElement('input');
+  levelInput.className = 'contour-level-input';
+  levelInput.type = 'number';
+  levelInput.step = 'any';
+  levelInput.value = formatContourLevel(currentLevel);
+  levelInput.setAttribute('aria-label', 'Contour level');
+  levelInput.setAttribute('aria-describedby', rangeId);
+  controlRow.appendChild(levelInput);
+  popover.appendChild(controlRow);
+
+  const footer = document.createElement('div');
+  footer.className = 'contour-popover-footer';
+
+  const resetButton = document.createElement('button');
+  resetButton.className = 'contour-reset-auto';
+  resetButton.type = 'button';
+  resetButton.textContent = 'Reset Auto';
+  footer.appendChild(resetButton);
+
+  const status = document.createElement('div');
+  status.className = 'contour-status';
+  footer.appendChild(status);
+  popover.appendChild(footer);
+
+  let pendingTimer = null;
+  let pendingContourChange = null;
+
+  function clearPendingTimer() {
+    if (pendingTimer !== null) {
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
+    }
+  }
+
+  function clearPendingContourChange() {
+    clearPendingTimer();
+    pendingContourChange = null;
+  }
+
+  function flushPendingContourChange() {
+    if (!pendingContourChange) return;
+    const change = pendingContourChange;
+    clearPendingContourChange();
+    callbacks.onIsosurfaceContour?.(name, change);
+  }
+
+  function setStatus(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle('error', isError);
+  }
+
+  function setLevelDisplay(nextLevel) {
+    levelInput.value = formatContourLevel(nextLevel);
+    slider.value = String(clampValue(nextLevel, range.min, range.max));
+  }
+
+  function scheduleContourChange(nextLevel, source) {
+    clearPendingTimer();
+    pendingContourChange = { level: nextLevel, source };
+    pendingTimer = setTimeout(() => {
+      flushPendingContourChange();
+    }, CONTOUR_DEBOUNCE_MS);
+  }
+
+  slider.addEventListener('input', () => {
+    const nextLevel = parseFiniteValue(slider.value);
+    if (nextLevel === null) return;
+    setLevelDisplay(nextLevel);
+    setStatus('');
+    scheduleContourChange(nextLevel, 'slider');
+  });
+
+  levelInput.addEventListener('input', () => {
+    const nextLevel = parseFiniteValue(levelInput.value);
+    if (nextLevel === null) {
+      clearPendingContourChange();
+      setStatus('Enter a finite contour level.', true);
+      return;
+    }
+    slider.value = String(clampValue(nextLevel, range.min, range.max));
+    setStatus('');
+    scheduleContourChange(nextLevel, 'input');
+  });
+
+  resetButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (suggestedLevel === null) {
+      clearPendingContourChange();
+      setStatus('No automatic contour level is available.', true);
+      return;
+    }
+    setLevelDisplay(suggestedLevel);
+    setStatus('');
+    scheduleContourChange(suggestedLevel, 'reset');
+  });
+
+  document.body.appendChild(popover);
+  activePopup = popover;
+  activePopupAnchor = null;
+  positionContourPopover(popover, anchor);
+
+  function onDocumentClick(e) {
+    if (!popover.contains(e.target) && e.target !== anchor) {
+      closeActivePopup();
+    }
+  }
+
+  document.addEventListener('click', onDocumentClick, true);
+
+  activePopupCleanup = () => {
+    flushPendingContourChange();
+    document.removeEventListener('click', onDocumentClick, true);
+  };
 }
 
 function buildIsosurfaceStyleMenu(iso = {}) {
@@ -752,8 +985,11 @@ export function createSidebar(container, callbacks) {
     } else if (kind === 'isosurface') {
       if (label === 'A') {
         const iso = currentState.isosurfaces.get(name);
-        createPopupMenu(btn, buildIsosurfaceActionMenu(iso), (value) => {
-          if (callbacks.onIsosurfaceAction) {
+        createPopupMenu(btn, buildIsosurfaceActionMenu(), (value) => {
+          if (value === 'contour') {
+            const map = currentState.maps.get(iso?.mapName);
+            createContourPopover(btn, name, iso, map, callbacks);
+          } else if (callbacks.onIsosurfaceAction) {
             callbacks.onIsosurfaceAction(name, value);
           }
         });

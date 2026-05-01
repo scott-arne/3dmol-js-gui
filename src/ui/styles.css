@@ -55,6 +55,7 @@ body[data-theme="light"] .menubar-dropdown,
 body[data-theme="light"] .menubar-hamburger-submenu,
 body[data-theme="light"] .popup-menu,
 body[data-theme="light"] .popup-menu-submenu,
+body[data-theme="light"] .contour-popover,
 body[data-theme="light"] .context-menu,
 body[data-theme="light"] .context-menu-submenu,
 body[data-theme="light"] .modal,
@@ -1092,6 +1093,95 @@ body {
 
 .popup-menu-submenu-item:hover {
   background: var(--menu-hover);
+}
+
+/* --- Contour Popover --- */
+.contour-popover {
+  position: absolute;
+  z-index: 1500;
+  width: 240px;
+  padding: 10px;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.contour-popover-header,
+.contour-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.contour-popover-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.contour-popover-name,
+.contour-range-label,
+.contour-status {
+  color: var(--inactive);
+  font-size: 11px;
+}
+
+.contour-popover-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contour-range-label {
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.contour-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.contour-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.contour-level-input {
+  width: 72px;
+  padding: 3px 5px;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font: inherit;
+}
+
+.contour-reset-auto {
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.contour-reset-auto:hover {
+  background: var(--menu-hover);
+}
+
+.contour-status {
+  text-align: right;
+}
+
+.contour-status.error {
+  color: var(--error);
 }
 
 /* --- Scrollbar Styling --- */
