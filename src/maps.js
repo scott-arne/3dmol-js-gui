@@ -35,6 +35,8 @@ const CONTOUR_STATS_FALLBACK = {
   suggestedLevel: 1,
 };
 
+const MAX_CONTOUR_SAMPLE_SIZE = 50000;
+
 /**
  * Normalize map file formats into 3Dmol VolumeData parser formats.
  *
@@ -120,15 +122,15 @@ export function computeVolumeBounds(volumeData) {
  * @returns {{min: number, max: number, robustMin: number, robustMax: number, suggestedLevel: number}} Contour statistics.
  */
 export function computeContourStats(volumeData) {
-  const values = getFiniteVolumeValues(volumeData)
-    .sort((a, b) => a - b);
+  const summary = getFiniteVolumeSummary(volumeData);
+  const values = summary.values.sort((a, b) => a - b);
 
   if (values.length === 0) {
     return { ...CONTOUR_STATS_FALLBACK };
   }
 
-  const min = values[0];
-  const max = values[values.length - 1];
+  const min = summary.min;
+  const max = summary.max;
   let robustMin = getSortedPercentile(values, 0.01);
   let robustMax = getSortedPercentile(values, 0.99);
 
@@ -152,21 +154,69 @@ export function computeContourStats(volumeData) {
   };
 }
 
-function getFiniteVolumeValues(volumeData) {
+function getFiniteVolumeSummary(volumeData) {
   const data = volumeData?.data;
   const values = [];
   if (!data || !Number.isFinite(data.length)) {
-    return values;
+    return { values, min: 0, max: 0, finiteCount: 0 };
   }
+
+  let finiteCount = 0;
+  let min = Infinity;
+  let max = -Infinity;
 
   for (let index = 0; index < data.length; index++) {
     const value = data[index];
-    if (Number.isFinite(value)) {
-      values.push(value);
+    if (isFiniteDensityValue(value)) {
+      finiteCount += 1;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+      if (values.length < MAX_CONTOUR_SAMPLE_SIZE) {
+        values.push(value);
+      }
     }
   }
 
+  if (finiteCount > MAX_CONTOUR_SAMPLE_SIZE) {
+    return {
+      values: sampleFiniteVolumeValues(data, finiteCount),
+      min,
+      max,
+      finiteCount,
+    };
+  }
+
+  return { values, min, max, finiteCount };
+}
+
+function sampleFiniteVolumeValues(data, finiteCount) {
+  const targetCount = Math.min(MAX_CONTOUR_SAMPLE_SIZE, finiteCount);
+  if (targetCount <= 0) {
+    return [];
+  }
+
+  const values = [];
+  const interval = targetCount === 1 ? 0 : (finiteCount - 1) / (targetCount - 1);
+  let finiteIndex = 0;
+
+  for (let index = 0; index < data.length && values.length < targetCount; index++) {
+    const value = data[index];
+    if (!isFiniteDensityValue(value)) {
+      continue;
+    }
+
+    const targetIndex = Math.round(values.length * interval);
+    if (finiteIndex >= targetIndex) {
+      values.push(value);
+    }
+    finiteIndex += 1;
+  }
+
   return values;
+}
+
+function isFiniteDensityValue(value) {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 /**

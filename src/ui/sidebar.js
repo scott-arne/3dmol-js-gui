@@ -462,6 +462,16 @@ const MAP_ACTION_MENU = [
 
 const CONTOUR_DEBOUNCE_MS = 150;
 
+const ISOSURFACE_ACTION_MENU = [
+  { label: 'Contour...', value: 'contour' },
+  { separator: true },
+  { label: 'Rename...', value: 'rename' },
+  { label: 'Delete', value: 'delete' },
+  { separator: true },
+  { label: 'Center', value: 'center' },
+  { label: 'Zoom', value: 'zoom' },
+];
+
 function buildOpacityMenu(currentOpacity = 1) {
   const isOpacity = (value) => Math.abs(currentOpacity - value) < 0.001;
   return {
@@ -480,15 +490,7 @@ function buildMapStyleMenu(map = {}) {
 }
 
 function buildIsosurfaceActionMenu() {
-  return [
-    { label: 'Contour...', value: 'contour' },
-    { separator: true },
-    { label: 'Rename...', value: 'rename' },
-    { label: 'Delete', value: 'delete' },
-    { separator: true },
-    { label: 'Center', value: 'center' },
-    { label: 'Zoom', value: 'zoom' },
-  ];
+  return ISOSURFACE_ACTION_MENU;
 }
 
 function isFiniteNumber(value) {

@@ -807,6 +807,27 @@ describe('Sidebar', () => {
 
       expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
     });
+
+    it('reuses the cached isosurface action menu across repeated opens', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ mapName: 'density' })]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const actionButton = container
+        .querySelector('[data-kind="isosurface"][data-name="isosurface_1"] .sidebar-btn');
+
+      actionButton.click();
+      actionButton.click();
+
+      const createElementSpy = vi.spyOn(document, 'createElement');
+      actionButton.click();
+
+      expect(createElementSpy).not.toHaveBeenCalled();
+      createElementSpy.mockRestore();
+    });
   });
 
   describe('separator between objects and selections', () => {

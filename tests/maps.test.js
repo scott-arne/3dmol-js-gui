@@ -178,6 +178,34 @@ describe('map viewer service', () => {
     expect(stats.suggestedLevel).toBeCloseTo(2);
   });
 
+  it('caps the sorted percentile sample for large density arrays', () => {
+    const data = {
+      length: 50001,
+    };
+    for (let index = 0; index < data.length; index++) {
+      data[index] = index;
+    }
+    const originalSort = Array.prototype.sort;
+    const sortLengths = [];
+    const sortSpy = vi
+      .spyOn(Array.prototype, 'sort')
+      .mockImplementation(function captureSortLength(compareFn) {
+        sortLengths.push(this.length);
+        return originalSort.call(this, compareFn);
+      });
+
+    try {
+      const stats = computeContourStats({ data });
+
+      expect(stats.min).toBe(0);
+      expect(stats.max).toBe(50000);
+      expect(sortLengths.length).toBeGreaterThan(0);
+      expect(Math.max(...sortLengths)).toBeLessThan(data.length);
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
   it('uses a small centered robust range when finite density values collapse', () => {
     const stats = computeContourStats({ data: new Float32Array([NaN, 2.5, Infinity]) });
 
