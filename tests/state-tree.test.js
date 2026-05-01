@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getState, addObject, removeObject, addSelection, removeSelection,
-  addSurfaceEntry,
+  addSurfaceEntry, addMapEntry, addIsosurfaceEntry,
   renameObject, renameSelection, addGroup, removeGroup, ungroupGroup,
   renameGroup, toggleCollapsed, reparentEntry, unparentEntry,
   findTreeNode, removeTreeNode, renameTreeNode,
@@ -13,6 +13,8 @@ function resetState() {
   state.objects.clear();
   state.selections.clear();
   state.surfaces.clear();
+  state.maps?.clear();
+  state.isosurfaces?.clear();
   state.entryTree.length = 0;
   state._listeners.length = 0;
   state.selectionMode = 'atoms';
@@ -180,7 +182,13 @@ describe('renameTreeNode', () => {
 describe('collectEntryNames', () => {
   it('collects from simple object', () => {
     const result = collectEntryNames({ type: 'object', name: 'A' });
-    expect(result).toEqual({ objects: ['A'], selections: [], surfaces: [] });
+    expect(result).toEqual({
+      objects: ['A'],
+      selections: [],
+      surfaces: [],
+      maps: [],
+      isosurfaces: [],
+    });
   });
 
   it('collects from group with mixed children', () => {
@@ -239,6 +247,30 @@ describe('surface tree integration', () => {
       objects: ['mol'],
       selections: ['sel'],
       surfaces: ['surf'],
+      maps: [],
+      isosurfaces: [],
+    });
+  });
+
+  it('collects map and isosurface names from nested tree nodes', () => {
+    const node = {
+      type: 'group',
+      name: 'density_group',
+      children: [
+        {
+          type: 'map',
+          name: 'density',
+          children: [{ type: 'isosurface', name: 'isosurface_1' }],
+        },
+      ],
+    };
+
+    expect(collectEntryNames(node)).toEqual({
+      objects: [],
+      selections: [],
+      surfaces: [],
+      maps: ['density'],
+      isosurfaces: ['isosurface_1'],
     });
   });
 
@@ -563,6 +595,21 @@ describe('reparentEntry', () => {
   it('throws when child not found', () => {
     addObject('P', {}, 0);
     expect(() => reparentEntry('nope', 'P')).toThrow(/not found/);
+  });
+
+  it('throws when reparenting a map under an object', () => {
+    addObject('P', {}, 0);
+    addMapEntry({ name: 'density', volumeData: {}, bounds: {} });
+
+    expect(() => reparentEntry('density', 'P')).toThrow(/cannot be reparented/);
+  });
+
+  it('throws when reparenting an isosurface under an object', () => {
+    addObject('P', {}, 0);
+    addMapEntry({ name: 'density', volumeData: {}, bounds: {} });
+    addIsosurfaceEntry({ name: 'mesh', mapName: 'density' });
+
+    expect(() => reparentEntry('mesh', 'P')).toThrow(/cannot be reparented/);
   });
 
   it('throws when reparenting would create cycle', () => {

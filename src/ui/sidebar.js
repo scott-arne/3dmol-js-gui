@@ -24,6 +24,8 @@ const menuCache = new Map();
 /** @type {function|null} Mutable callback reference used by cached menu listeners. */
 let currentMenuOnClick = null;
 
+let contourPopoverId = 0;
+
 /**
  * Close any currently open popup menu and remove its outside-click listener.
  */
@@ -409,11 +411,17 @@ function createPopupMenu(anchor, items, onClick) {
   }
 
   // Defer attachment so the current click event does not immediately close the menu
-  requestAnimationFrame(() => {
+  let listenerAttached = false;
+  const listenerFrame = requestAnimationFrame(() => {
+    if (activePopup !== menu) return;
+    listenerAttached = true;
     document.addEventListener('click', onDocumentClick, true);
   });
 
   activePopupCleanup = () => {
+    if (!listenerAttached) {
+      cancelAnimationFrame(listenerFrame);
+    }
     document.removeEventListener('click', onDocumentClick, true);
   };
 }
@@ -441,6 +449,329 @@ const SURFACE_ACTION_MENU = [
 const SURFACE_COLOR_MENU = [
   { label: 'Solid', value: 'solid', submenu: 'solid-swatches' },
 ];
+
+function buildMapActionMenu(map = {}) {
+  return [
+    { label: 'Create Isosurface', value: 'create_isosurface' },
+    {
+      label: 'Show Bounding Box',
+      value: 'show_bounding_box',
+      checked: map.showBoundingBox === true,
+    },
+    { separator: true },
+    { label: 'Rename...', value: 'rename' },
+    { label: 'Delete', value: 'delete' },
+    { separator: true },
+    { label: 'Center', value: 'center' },
+    { label: 'Zoom', value: 'zoom' },
+  ];
+}
+
+const CONTOUR_DEBOUNCE_MS = 150;
+const CONTOUR_SIGMA_MIN = -3;
+const CONTOUR_SIGMA_MAX = 6;
+const CONTOUR_SIGMA_STEP = 0.01;
+
+const ISOSURFACE_ACTION_MENU = [
+  { label: 'Contour...', value: 'contour' },
+  { separator: true },
+  { label: 'Rename...', value: 'rename' },
+  { label: 'Delete', value: 'delete' },
+  { separator: true },
+  { label: 'Center', value: 'center' },
+  { label: 'Zoom', value: 'zoom' },
+];
+
+function buildOpacityMenu(currentOpacity = 1) {
+  const isOpacity = (value) => Math.abs(currentOpacity - value) < 0.001;
+  return {
+    label: 'Opacity',
+    children: [
+      { label: '25%', value: 'opacity:0.25', checked: isOpacity(0.25) },
+      { label: '50%', value: 'opacity:0.5', checked: isOpacity(0.5) },
+      { label: '75%', value: 'opacity:0.75', checked: isOpacity(0.75) },
+      { label: '100%', value: 'opacity:1', checked: isOpacity(1) },
+    ],
+  };
+}
+
+function buildMapStyleMenu(map = {}) {
+  return [buildOpacityMenu(map.opacity ?? 1)];
+}
+
+function buildIsosurfaceActionMenu() {
+  return ISOSURFACE_ACTION_MENU;
+}
+
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseFiniteValue(value) {
+  if (value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatContourLevel(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(8)));
+}
+
+function clampValue(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getContourSigmaScale(stats = {}) {
+  const mean = isFiniteNumber(stats.mean) ? stats.mean : 0;
+  const stdDev = isFiniteNumber(stats.stdDev) && stats.stdDev > 0 ? stats.stdDev : 1;
+  return { mean, stdDev };
+}
+
+function rawLevelToSigma(level, scale) {
+  return (level - scale.mean) / scale.stdDev;
+}
+
+function sigmaToRawLevel(sigma, scale) {
+  return scale.mean + sigma * scale.stdDev;
+}
+
+function formatSigmaValue(value) {
+  return formatContourLevel(value);
+}
+
+function positionContourPopover(popover, anchor) {
+  const anchorRect = anchor.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  const viewportHeight = window.innerHeight;
+
+  const spaceBelow = viewportHeight - anchorRect.bottom;
+  let top = anchorRect.bottom;
+  if (spaceBelow < popoverRect.height && anchorRect.top > spaceBelow) {
+    top = anchorRect.top - popoverRect.height;
+  }
+
+  let left = anchorRect.left + window.scrollX;
+  if (left + popoverRect.width > window.innerWidth) {
+    left = anchorRect.right + window.scrollX - popoverRect.width;
+  }
+  if (left < 0) left = 0;
+
+  popover.style.position = 'absolute';
+  popover.style.top = `${top + window.scrollY}px`;
+  popover.style.left = `${left}px`;
+}
+
+function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) {
+  closeActivePopup();
+
+  const stats = map.contourStats || {};
+  const suggestedLevel = isFiniteNumber(stats.suggestedLevel) ? stats.suggestedLevel : null;
+  const currentLevel = isFiniteNumber(iso.level) ? iso.level : (suggestedLevel ?? 1);
+  const scale = getContourSigmaScale(stats);
+  const currentSigma = rawLevelToSigma(currentLevel, scale);
+  const id = ++contourPopoverId;
+  const titleId = `contour-popover-title-${id}`;
+  const rangeId = `contour-range-label-${id}`;
+
+  const popover = document.createElement('div');
+  popover.className = 'contour-popover';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-labelledby', titleId);
+  popover.setAttribute('aria-describedby', rangeId);
+
+  const header = document.createElement('div');
+  header.className = 'contour-popover-header';
+
+  const title = document.createElement('div');
+  title.className = 'contour-popover-title';
+  title.id = titleId;
+  title.textContent = 'Contour';
+  header.appendChild(title);
+
+  const isoName = document.createElement('div');
+  isoName.className = 'contour-popover-name';
+  isoName.textContent = name;
+  header.appendChild(isoName);
+  popover.appendChild(header);
+
+  const rangeLabel = document.createElement('div');
+  rangeLabel.className = 'contour-range-label';
+  rangeLabel.id = rangeId;
+  rangeLabel.textContent = `Sigma range: ${CONTOUR_SIGMA_MIN}\u03c3 to +${CONTOUR_SIGMA_MAX}\u03c3; mean ${formatContourLevel(scale.mean)}, \u03c3 ${formatContourLevel(scale.stdDev)}`;
+  popover.appendChild(rangeLabel);
+
+  const controlRow = document.createElement('div');
+  controlRow.className = 'contour-control-row';
+
+  const slider = document.createElement('input');
+  slider.className = 'contour-slider';
+  slider.type = 'range';
+  slider.min = String(CONTOUR_SIGMA_MIN);
+  slider.max = String(CONTOUR_SIGMA_MAX);
+  slider.step = String(CONTOUR_SIGMA_STEP);
+  slider.value = String(clampValue(currentSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
+  slider.setAttribute('aria-label', 'Sigma contour level');
+  slider.setAttribute('aria-describedby', rangeId);
+  controlRow.appendChild(slider);
+
+  const sigmaInput = document.createElement('input');
+  sigmaInput.className = 'contour-sigma-input';
+  sigmaInput.type = 'number';
+  sigmaInput.step = 'any';
+  sigmaInput.value = formatSigmaValue(currentSigma);
+  sigmaInput.setAttribute('aria-label', 'Sigma contour level');
+  sigmaInput.setAttribute('aria-describedby', rangeId);
+  controlRow.appendChild(sigmaInput);
+  popover.appendChild(controlRow);
+
+  const rawRow = document.createElement('label');
+  rawRow.className = 'contour-raw-row';
+  const rawLabel = document.createElement('span');
+  rawLabel.textContent = 'Raw level';
+  const levelInput = document.createElement('input');
+  levelInput.className = 'contour-level-input contour-raw-input';
+  levelInput.type = 'number';
+  levelInput.step = 'any';
+  levelInput.value = formatContourLevel(currentLevel);
+  levelInput.setAttribute('aria-label', 'Raw contour level');
+  levelInput.setAttribute('aria-describedby', rangeId);
+  rawRow.appendChild(rawLabel);
+  rawRow.appendChild(levelInput);
+  popover.appendChild(rawRow);
+
+  const footer = document.createElement('div');
+  footer.className = 'contour-popover-footer';
+
+  const resetButton = document.createElement('button');
+  resetButton.className = 'contour-reset-auto';
+  resetButton.type = 'button';
+  resetButton.textContent = 'Reset Auto';
+  footer.appendChild(resetButton);
+
+  const status = document.createElement('div');
+  status.className = 'contour-status';
+  footer.appendChild(status);
+  popover.appendChild(footer);
+
+  let pendingTimer = null;
+  let pendingContourChange = null;
+
+  function clearPendingTimer() {
+    if (pendingTimer !== null) {
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
+    }
+  }
+
+  function clearPendingContourChange() {
+    clearPendingTimer();
+    pendingContourChange = null;
+  }
+
+  function flushPendingContourChange() {
+    if (!pendingContourChange) return;
+    const change = pendingContourChange;
+    clearPendingContourChange();
+    callbacks.onIsosurfaceContour?.(name, change);
+  }
+
+  function setStatus(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle('error', isError);
+  }
+
+  function setLevelDisplay(nextLevel) {
+    levelInput.value = formatContourLevel(nextLevel);
+    const nextSigma = rawLevelToSigma(nextLevel, scale);
+    sigmaInput.value = formatSigmaValue(nextSigma);
+    slider.value = String(clampValue(nextSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
+  }
+
+  function scheduleContourChange(nextLevel, source) {
+    clearPendingTimer();
+    pendingContourChange = { level: nextLevel, source };
+    pendingTimer = setTimeout(() => {
+      flushPendingContourChange();
+    }, CONTOUR_DEBOUNCE_MS);
+  }
+
+  slider.addEventListener('input', () => {
+    const nextSigma = parseFiniteValue(slider.value);
+    if (nextSigma === null) return;
+    const nextLevel = sigmaToRawLevel(nextSigma, scale);
+    setLevelDisplay(nextLevel);
+    setStatus('');
+    scheduleContourChange(nextLevel, 'slider');
+  });
+
+  sigmaInput.addEventListener('input', () => {
+    const nextSigma = parseFiniteValue(sigmaInput.value);
+    if (nextSigma === null) {
+      clearPendingContourChange();
+      setStatus('Enter a finite sigma value.', true);
+      return;
+    }
+    const nextLevel = sigmaToRawLevel(nextSigma, scale);
+    levelInput.value = formatContourLevel(nextLevel);
+    slider.value = String(clampValue(nextSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
+    setStatus('');
+    scheduleContourChange(nextLevel, 'sigma');
+  });
+
+  levelInput.addEventListener('input', () => {
+    const nextLevel = parseFiniteValue(levelInput.value);
+    if (nextLevel === null) {
+      clearPendingContourChange();
+      setStatus('Enter a finite contour level.', true);
+      return;
+    }
+    const nextSigma = rawLevelToSigma(nextLevel, scale);
+    sigmaInput.value = formatSigmaValue(nextSigma);
+    slider.value = String(clampValue(nextSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
+    setStatus('');
+    scheduleContourChange(nextLevel, 'raw');
+  });
+
+  resetButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (suggestedLevel === null) {
+      clearPendingContourChange();
+      setStatus('No automatic contour level is available.', true);
+      return;
+    }
+    setLevelDisplay(suggestedLevel);
+    setStatus('');
+    scheduleContourChange(suggestedLevel, 'reset');
+  });
+
+  document.body.appendChild(popover);
+  activePopup = popover;
+  activePopupAnchor = null;
+  positionContourPopover(popover, anchor);
+
+  function onDocumentClick(e) {
+    if (!popover.contains(e.target) && e.target !== anchor) {
+      closeActivePopup();
+    }
+  }
+
+  document.addEventListener('click', onDocumentClick, true);
+
+  activePopupCleanup = () => {
+    flushPendingContourChange();
+    document.removeEventListener('click', onDocumentClick, true);
+  };
+}
+
+function buildIsosurfaceStyleMenu(iso = {}) {
+  const representation = iso.representation || 'mesh';
+  return [
+    { label: 'Mesh', value: 'representation:mesh', checked: representation === 'mesh' },
+    { label: 'Surface', value: 'representation:surface', checked: representation === 'surface' },
+    { separator: true },
+    buildOpacityMenu(iso.opacity ?? 0.75),
+  ];
+}
 
 /**
  * Action menu items for groups.
@@ -557,7 +888,13 @@ const BUTTON_MENUS = {
  */
 export function createSidebar(container, callbacks) {
   container.classList.add('sidebar');
-  let currentState = { objects: new Map(), selections: new Map(), surfaces: new Map() };
+  let currentState = {
+    objects: new Map(),
+    selections: new Map(),
+    surfaces: new Map(),
+    maps: new Map(),
+    isosurfaces: new Map(),
+  };
 
   // --- Resize handle ---
   const resizeHandle = document.createElement('div');
@@ -600,7 +937,7 @@ export function createSidebar(container, callbacks) {
     if (!row) return;
 
     const name = row.dataset.name;
-    const kind = row.dataset.kind; // 'object', 'selection', 'group', or 'surface'
+    const kind = row.dataset.kind;
     const label = btn.dataset.btn;
 
     // Route to the appropriate popup menu and callback
@@ -659,6 +996,57 @@ export function createSidebar(container, callbacks) {
           }
         });
       }
+    } else if (kind === 'map') {
+      if (label === 'A') {
+        const map = currentState.maps.get(name);
+        createPopupMenu(btn, buildMapActionMenu(map), (value) => {
+          if (value === 'create_isosurface') {
+            if (callbacks.onCreateIsosurface) {
+              callbacks.onCreateIsosurface(name);
+            }
+          } else if (callbacks.onMapAction) {
+            callbacks.onMapAction(name, value);
+          }
+        });
+      } else if (label === 'S') {
+        const map = currentState.maps.get(name);
+        createPopupMenu(btn, buildMapStyleMenu(map), (value) => {
+          if (callbacks.onMapStyle) {
+            callbacks.onMapStyle(name, value);
+          }
+        });
+      } else if (label === 'C') {
+        createPopupMenu(btn, SURFACE_COLOR_MENU, (value) => {
+          if (callbacks.onMapColor) {
+            callbacks.onMapColor(name, value);
+          }
+        });
+      }
+    } else if (kind === 'isosurface') {
+      if (label === 'A') {
+        const iso = currentState.isosurfaces.get(name);
+        createPopupMenu(btn, buildIsosurfaceActionMenu(), (value) => {
+          if (value === 'contour') {
+            const map = currentState.maps.get(iso?.mapName);
+            createContourPopover(btn, name, iso, map, callbacks);
+          } else if (callbacks.onIsosurfaceAction) {
+            callbacks.onIsosurfaceAction(name, value);
+          }
+        });
+      } else if (label === 'S') {
+        const iso = currentState.isosurfaces.get(name);
+        createPopupMenu(btn, buildIsosurfaceStyleMenu(iso), (value) => {
+          if (callbacks.onIsosurfaceStyle) {
+            callbacks.onIsosurfaceStyle(name, value);
+          }
+        });
+      } else if (label === 'C') {
+        createPopupMenu(btn, SURFACE_COLOR_MENU, (value) => {
+          if (callbacks.onIsosurfaceColor) {
+            callbacks.onIsosurfaceColor(name, value);
+          }
+        });
+      }
     }
   });
 
@@ -688,10 +1076,7 @@ export function createSidebar(container, callbacks) {
     }
   }
 
-  /**
-   * Attach A,S,C buttons for a surface row.
-   */
-  function attachSurfaceButtons(btnGroup, name) {
+  function attachCompactEntryButtons(btnGroup) {
     for (const label of ['A', 'S', 'C']) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
@@ -699,6 +1084,13 @@ export function createSidebar(container, callbacks) {
       btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
+  }
+
+  /**
+   * Attach A,S,C buttons for a surface row.
+   */
+  function attachSurfaceButtons(btnGroup, name) {
+    attachCompactEntryButtons(btnGroup);
   }
 
   /**
@@ -717,6 +1109,14 @@ export function createSidebar(container, callbacks) {
 
   function isSurfaceVisible(surface) {
     return surface.visible !== false && surface.parentVisible !== false;
+  }
+
+  function isMapVisible(map) {
+    return map.visible !== false;
+  }
+
+  function isIsosurfaceVisible(iso) {
+    return iso.visible !== false && iso.parentVisible !== false;
   }
 
   /**
@@ -838,6 +1238,18 @@ export function createSidebar(container, callbacks) {
     return row;
   }
 
+  function buildEntryIcon(className, label, active) {
+    const icon = document.createElement('span');
+    icon.className = `sidebar-entry-icon ${className}`;
+    if (active) {
+      icon.classList.add('active');
+    }
+    icon.setAttribute('role', 'img');
+    icon.setAttribute('aria-label', label);
+    icon.title = label;
+    return icon;
+  }
+
   /**
    * Build a single surface row for the sidebar.
    */
@@ -857,12 +1269,15 @@ export function createSidebar(container, callbacks) {
       }
     });
 
-    const status = document.createElement('div');
-    status.className = 'sidebar-object-status';
+    const icon = document.createElement('span');
+    icon.className = 'sidebar-entry-icon sidebar-surface-icon';
     if (visible) {
-      status.classList.add('active');
+      icon.classList.add('active');
     }
-    row.appendChild(status);
+    icon.setAttribute('role', 'img');
+    icon.setAttribute('aria-label', 'Surface');
+    icon.title = 'Surface';
+    row.appendChild(icon);
 
     const nameEl = document.createElement('span');
     nameEl.className = 'sidebar-object-name';
@@ -875,6 +1290,92 @@ export function createSidebar(container, callbacks) {
     row.appendChild(btnGroup);
 
     return row;
+  }
+
+  function buildMapRow(name, map) {
+    const row = document.createElement('div');
+    row.className = 'sidebar-object sidebar-map';
+    const visible = isMapVisible(map);
+    if (!visible) {
+      row.classList.add('dimmed');
+    }
+
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.sidebar-buttons')) return;
+      if (callbacks.onToggleMapVisibility) {
+        callbacks.onToggleMapVisibility(name);
+      }
+    });
+
+    row.appendChild(buildEntryIcon('sidebar-map-icon', 'Density map', visible));
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'sidebar-object-name';
+    nameEl.textContent = name;
+    row.appendChild(nameEl);
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'sidebar-buttons';
+    attachCompactEntryButtons(btnGroup);
+    row.appendChild(btnGroup);
+
+    return row;
+  }
+
+  function buildIsosurfaceRow(name, iso) {
+    const row = document.createElement('div');
+    row.className = 'sidebar-object sidebar-isosurface';
+    const visible = isIsosurfaceVisible(iso);
+    if (!visible) {
+      row.classList.add('dimmed');
+    }
+
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.sidebar-buttons')) return;
+      if (callbacks.onToggleIsosurfaceVisibility) {
+        callbacks.onToggleIsosurfaceVisibility(name);
+      }
+    });
+
+    row.appendChild(buildEntryIcon('sidebar-isosurface-icon', 'Isosurface', visible));
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'sidebar-object-name';
+    nameEl.textContent = name;
+    row.appendChild(nameEl);
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'sidebar-buttons';
+    attachCompactEntryButtons(btnGroup);
+    row.appendChild(btnGroup);
+
+    return row;
+  }
+
+  function buildMapNode(node, state) {
+    const frag = document.createDocumentFragment();
+    const map = state.maps.get(node.name);
+    if (!map) {
+      return frag;
+    }
+
+    const row = buildMapRow(node.name, map);
+    row.dataset.kind = 'map';
+    row.dataset.name = node.name;
+    frag.appendChild(row);
+
+    if (node.children && node.children.length > 0) {
+      const childContainer = document.createElement('div');
+      childContainer.className = 'sidebar-map-children';
+      childContainer.dataset.mapChildren = node.name;
+      if (node.collapsed) {
+        childContainer.classList.add('collapsed');
+      }
+      renderTreeNodes(node.children, state, childContainer);
+      frag.appendChild(childContainer);
+    }
+
+    return frag;
   }
 
   /**
@@ -1016,6 +1517,16 @@ export function createSidebar(container, callbacks) {
           row.dataset.name = node.name;
           target.appendChild(row);
         }
+      } else if (node.type === 'map') {
+        target.appendChild(buildMapNode(node, state));
+      } else if (node.type === 'isosurface') {
+        const iso = state.isosurfaces.get(node.name);
+        if (iso) {
+          const row = buildIsosurfaceRow(node.name, iso);
+          row.dataset.kind = 'isosurface';
+          row.dataset.name = node.name;
+          target.appendChild(row);
+        }
       }
     }
   }
@@ -1052,6 +1563,13 @@ export function createSidebar(container, callbacks) {
       out.push({ key: `selection:${node.name}`, type: 'selection', node });
     } else if (node.type === 'surface') {
       out.push({ key: `surface:${node.name}`, type: 'surface', node });
+    } else if (node.type === 'map') {
+      out.push({ key: `map:${node.name}`, type: 'map', node });
+      if (node.children && node.children.length > 0) {
+        out.push({ key: `map-children:${node.name}`, type: 'map-children', node });
+      }
+    } else if (node.type === 'isosurface') {
+      out.push({ key: `isosurface:${node.name}`, type: 'isosurface', node });
     }
   }
 
@@ -1067,6 +1585,9 @@ export function createSidebar(container, callbacks) {
     }
     if (el.dataset.hierarchyChildren !== undefined) {
       return `hierarchy-children:${el.dataset.hierarchyChildren}`;
+    }
+    if (el.dataset.mapChildren !== undefined) {
+      return `map-children:${el.dataset.mapChildren}`;
     }
     if (el.classList && el.classList.contains('sidebar-separator')) {
       return '__separator__';
@@ -1093,13 +1614,27 @@ export function createSidebar(container, callbacks) {
   }
 
   /**
-   * Update an existing surface row in place (visibility + status).
+   * Update an existing surface row in place (visibility + glyph state).
    */
   function updateSurfaceRow(row, surface) {
     const visible = isSurfaceVisible(surface);
     row.classList.toggle('dimmed', !visible);
-    const status = row.querySelector('.sidebar-object-status');
-    if (status) status.classList.toggle('active', visible);
+    const icon = row.querySelector('.sidebar-surface-icon');
+    if (icon) icon.classList.toggle('active', visible);
+  }
+
+  function updateMapRow(row, map) {
+    const visible = isMapVisible(map);
+    row.classList.toggle('dimmed', !visible);
+    const icon = row.querySelector('.sidebar-map-icon');
+    if (icon) icon.classList.toggle('active', visible);
+  }
+
+  function updateIsosurfaceRow(row, iso) {
+    const visible = isIsosurfaceVisible(iso);
+    row.classList.toggle('dimmed', !visible);
+    const icon = row.querySelector('.sidebar-isosurface-icon');
+    if (icon) icon.classList.toggle('active', visible);
   }
 
   /**
@@ -1145,6 +1680,17 @@ export function createSidebar(container, callbacks) {
    * Update a hierarchy children container in place (collapsed class + recurse).
    */
   function updateHierarchyChildren(childContainer, node, state) {
+    childContainer.classList.toggle('collapsed', !!node.collapsed);
+    const childExpected = [];
+    if (node.children) {
+      for (const child of node.children) {
+        addExpectedKeys(child, childExpected);
+      }
+    }
+    diffChildren(childContainer, childExpected, state, null);
+  }
+
+  function updateMapChildren(childContainer, node, state) {
     childContainer.classList.toggle('collapsed', !!node.collapsed);
     const childExpected = [];
     if (node.children) {
@@ -1230,6 +1776,34 @@ export function createSidebar(container, callbacks) {
         row.dataset.name = desc.node.name;
         return row;
       }
+      case 'map': {
+        const map = state.maps.get(desc.node.name);
+        if (!map) return null;
+        const row = buildMapRow(desc.node.name, map);
+        row.dataset.kind = 'map';
+        row.dataset.name = desc.node.name;
+        return row;
+      }
+      case 'map-children': {
+        const childContainer = document.createElement('div');
+        childContainer.className = 'sidebar-map-children';
+        childContainer.dataset.mapChildren = desc.node.name;
+        if (desc.node.collapsed) {
+          childContainer.classList.add('collapsed');
+        }
+        if (desc.node.children) {
+          renderTreeNodes(desc.node.children, state, childContainer);
+        }
+        return childContainer;
+      }
+      case 'isosurface': {
+        const iso = state.isosurfaces.get(desc.node.name);
+        if (!iso) return null;
+        const row = buildIsosurfaceRow(desc.node.name, iso);
+        row.dataset.kind = 'isosurface';
+        row.dataset.name = desc.node.name;
+        return row;
+      }
       case 'separator': {
         const sep = document.createElement('div');
         sep.className = 'sidebar-separator';
@@ -1288,6 +1862,19 @@ export function createSidebar(container, callbacks) {
             if (surface) updateSurfaceRow(existing, surface);
             break;
           }
+          case 'map': {
+            const map = state.maps.get(desc.node.name);
+            if (map) updateMapRow(existing, map);
+            break;
+          }
+          case 'map-children':
+            updateMapChildren(existing, desc.node, state);
+            break;
+          case 'isosurface': {
+            const iso = state.isosurfaces.get(desc.node.name);
+            if (iso) updateIsosurfaceRow(existing, iso);
+            break;
+          }
           case 'group-header':
             updateGroupHeader(existing, desc.node);
             break;
@@ -1342,6 +1929,8 @@ export function createSidebar(container, callbacks) {
         objects: state.objects || new Map(),
         selections: state.selections || new Map(),
         surfaces: state.surfaces || new Map(),
+        maps: state.maps || new Map(),
+        isosurfaces: state.isosurfaces || new Map(),
       };
       const hasTree = currentState.entryTree && currentState.entryTree.length > 0;
 
@@ -1370,6 +1959,20 @@ export function createSidebar(container, callbacks) {
       } else {
         // --- Legacy flat rendering (incremental keyed diff) ---
         const expectedSequence = [];
+        const isosurfacesByMap = new Map();
+        const orphanIsosurfaces = [];
+        for (const [name, iso] of currentState.isosurfaces) {
+          const mapName = iso && iso.mapName;
+          if (mapName && currentState.maps.has(mapName)) {
+            if (!isosurfacesByMap.has(mapName)) {
+              isosurfacesByMap.set(mapName, []);
+            }
+            isosurfacesByMap.get(mapName).push(name);
+          } else {
+            orphanIsosurfaces.push(name);
+          }
+        }
+
         for (const name of currentState.objects.keys()) {
           expectedSequence.push({
             key: `object:${name}`,
@@ -1382,6 +1985,30 @@ export function createSidebar(container, callbacks) {
             key: `surface:${name}`,
             type: 'surface',
             node: { type: 'surface', name },
+          });
+        }
+        for (const name of currentState.maps.keys()) {
+          const children = (isosurfacesByMap.get(name) || [])
+            .map((childName) => ({ type: 'isosurface', name: childName }));
+          const node = { type: 'map', name, collapsed: false, children };
+          expectedSequence.push({
+            key: `map:${name}`,
+            type: 'map',
+            node,
+          });
+          if (children.length > 0) {
+            expectedSequence.push({
+              key: `map-children:${name}`,
+              type: 'map-children',
+              node,
+            });
+          }
+        }
+        for (const name of orphanIsosurfaces) {
+          expectedSequence.push({
+            key: `isosurface:${name}`,
+            type: 'isosurface',
+            node: { type: 'isosurface', name },
           });
         }
         if (currentState.selections.size > 0) {

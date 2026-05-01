@@ -60,6 +60,17 @@ describe('showLoadDialog', () => {
     expect(overlay.parentNode).toBe(document.body);
   });
 
+  it('shows a focused load header and compact source tabs', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+
+    expect(overlay.querySelector('.modal-title').textContent).toBe('Load');
+    expect(overlay.querySelector('.modal-subtitle').textContent).toBe(
+      'Structure or density map',
+    );
+    expect(getTabLabels(overlay)).toEqual(['PDB ID', 'File']);
+  });
+
   it('close button removes overlay', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');
@@ -93,6 +104,43 @@ describe('showLoadDialog', () => {
     expect(tabs[1].classList.contains('active')).toBe(false);
     expect(panels[0].classList.contains('hidden')).toBe(false);
     expect(panels[1].classList.contains('hidden')).toBe(true);
+  });
+
+  it('local file input accepts density map extensions', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const fileInput = overlay.querySelectorAll('.modal-panel')[1].querySelector('input[type="file"]');
+
+    expect(fileInput.accept).toContain('.ccp4');
+    expect(fileInput.accept).toContain('.map');
+    expect(fileInput.accept).toContain('.mrc');
+  });
+
+  it('local file target does not render format chips', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+
+    expect(filePanel.querySelector('.modal-format-chips')).toBeNull();
+    expect(filePanel.querySelector('.modal-format-chip')).toBeNull();
+  });
+
+  it('local file target shows the selected filename', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const selectedName = filePanel.querySelector('.modal-file-name');
+    const file = new File(['ATOM ...'], 'protein_density.cube', { type: 'text/plain' });
+
+    expect(selectedName.textContent).toBe('No file selected');
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(selectedName.textContent).toBe('protein_density.cube');
   });
 
   it('fetch button calls onFetch with uppercase PDB ID for 4-char input', () => {
@@ -185,6 +233,64 @@ describe('showLoadDialog', () => {
     expect(document.querySelector('.modal-overlay')).toBeNull();
   });
 
+  it('load button fallback reads map files as binary and calls onLoad', async () => {
+    const data = new ArrayBuffer(16);
+    const mockFileReader = {
+      readAsArrayBuffer: vi.fn(),
+      readAsText: vi.fn(),
+      onload: null,
+      onerror: null,
+      error: null,
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const loadBtn = filePanel.querySelector('.modal-btn');
+    const file = new File(['map data'], 'density.map', { type: 'application/octet-stream' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+
+    loadBtn.click();
+
+    expect(mockFileReader.readAsArrayBuffer).toHaveBeenCalledWith(file);
+    expect(mockFileReader.readAsText).not.toHaveBeenCalled();
+    mockFileReader.onload({ target: { result: data } });
+    expect(callbacks.onLoad).toHaveBeenCalledWith(data, 'map', 'density.map');
+    expect(document.querySelector('.modal-overlay')).toBeNull();
+  });
+
+  it('load button with file calls onLoadFile directly when provided', async () => {
+    const mockFileReader = {
+      readAsText: vi.fn(),
+      onload: null,
+    };
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(() => mockFileReader);
+    callbacks.onLoadFile = vi.fn().mockResolvedValue({ ok: true });
+
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+    const fileInput = filePanel.querySelector('input[type="file"]');
+    const loadBtn = filePanel.querySelector('.modal-btn');
+    const file = new File(['map data'], 'density.ccp4', { type: 'application/octet-stream' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      writable: false,
+    });
+
+    loadBtn.click();
+
+    await vi.waitFor(() => expect(callbacks.onLoadFile).toHaveBeenCalledWith(file));
+    expect(mockFileReader.readAsText).not.toHaveBeenCalled();
+    expect(callbacks.onLoad).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(document.querySelector('.modal-overlay')).toBeNull());
+  });
+
   it('load button without file does nothing', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');
@@ -212,7 +318,7 @@ describe('showLoadDialog', () => {
     expect(callbacks.onLoad).not.toHaveBeenCalled();
     expect(status).not.toBeNull();
     expect(status.classList.contains('error')).toBe(true);
-    expect(status.textContent).toBe('Choose a structure file to load.');
+    expect(status.textContent).toBe('Choose a structure or map file to load.');
   });
 
   it('shows an inline error when the selected file is empty', () => {
@@ -297,7 +403,7 @@ describe('showLoadDialog', () => {
     });
 
     const overlay = document.querySelector('.modal-overlay');
-    expect(getTabLabels(overlay)).toEqual(['Fetch PDB', 'Local File', 'Remote Source']);
+    expect(getTabLabels(overlay)).toEqual(['PDB ID', 'File', 'Remote']);
   });
 
   it('remote source form calls onRemoteSource and closes on success', async () => {
@@ -310,7 +416,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     const remoteTab = [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source');
+      .find((tab) => tab.textContent === 'Remote');
     remoteTab.click();
     overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
     overlay.querySelector('.modal-source-name').value = 'Ligand Pose';
@@ -340,7 +446,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source')
+      .find((tab) => tab.textContent === 'Remote')
       .click();
     overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
     overlay.querySelector('.modal-source-name').value = 'Ligand Pose';
@@ -365,7 +471,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source')
+      .find((tab) => tab.textContent === 'Remote')
       .click();
     overlay.querySelector('.modal-source-path').value = 'poses/ligand.pdb';
     const loadBtn = overlay.querySelector('.modal-panel:not(.hidden) .modal-btn');
@@ -386,7 +492,7 @@ describe('showLoadDialog', () => {
 
     const overlay = document.querySelector('.modal-overlay');
     [...overlay.querySelectorAll('.modal-tab')]
-      .find((tab) => tab.textContent === 'Remote Source')
+      .find((tab) => tab.textContent === 'Remote')
       .click();
     overlay.querySelector('.modal-source-path').value = '   ';
     overlay.querySelector('.modal-panel:not(.hidden) .modal-btn').click();
@@ -403,13 +509,13 @@ describe('showLoadDialog', () => {
     });
 
     const overlay = document.querySelector('.modal-overlay');
-    expect(getTabLabels(overlay)).toEqual(['Fetch PDB', 'Local File', 'URL']);
+    expect(getTabLabels(overlay)).toEqual(['PDB ID', 'File', 'URL']);
 
     overlay.remove();
     showLoadDialog(callbacks);
     expect(getTabLabels(document.querySelector('.modal-overlay'))).toEqual([
-      'Fetch PDB',
-      'Local File',
+      'PDB ID',
+      'File',
     ]);
   });
 

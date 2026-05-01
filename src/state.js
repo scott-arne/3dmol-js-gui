@@ -6,10 +6,13 @@
  * mutated through the public API.
  *
  * The entryTree array describes the display order and nesting structure of all
- * objects, surfaces, selections, and groups in the sidebar. Each node is one of:
+ * objects, surfaces, maps, isosurfaces, selections, and groups in the sidebar.
+ * Each node is one of:
  *
  *   { type: 'object', name }
  *   { type: 'surface', name }
+ *   { type: 'map', name, collapsed, children: [...] }
+ *   { type: 'isosurface', name }
  *   { type: 'selection', name }
  *   { type: 'group', name, collapsed, children: [...] }
  *   { type: 'object', name, collapsed, children: [...] }   (hierarchy parent)
@@ -24,6 +27,12 @@ const state = {
 
   /** @type {Map<string, {name: string, selection: object, type: string, surfaceType: string, parentName: string|null, handle: *, pending: boolean, visible: boolean, parentVisible: boolean, mode: string, opacity: number, color: string}>} */
   surfaces: new Map(),
+
+  /** @type {Map<string, {name: string, format: string, sourceFormat: string, volumeData: object, bounds: object, contourStats: object|null, handles: Array<*>, visible: boolean, color: string, opacity: number}>} */
+  maps: new Map(),
+
+  /** @type {Map<string, {name: string, mapName: string, level: number, selectionText: string|null, selection: object|null, buffer: number|null, carve: number|null, representation: string, handle: *, visible: boolean, parentVisible: boolean, color: string, opacity: number}>} */
+  isosurfaces: new Map(),
 
   /** @type {Array<object>} Ordered tree of display nodes. */
   entryTree: [],
@@ -103,18 +112,22 @@ export function renameTreeNode(tree, oldName, newName) {
 }
 
 /**
- * Collect all leaf entry names within a subtree (recursively).
- * Returns object, selection, and surface names separately.
+ * Collect all entry names within a subtree (recursively).
+ * Returns object, selection, surface, map, and isosurface names separately.
  *
  * @param {object} node - A tree node.
- * @returns {{objects: string[], selections: string[], surfaces: string[]}}
+ * @returns {{objects: string[], selections: string[], surfaces: string[], maps: string[], isosurfaces: string[]}}
  */
 export function collectEntryNames(node) {
-  const result = { objects: [], selections: [], surfaces: [] };
+  const result = { objects: [], selections: [], surfaces: [], maps: [], isosurfaces: [] };
   if (node.type === 'object') {
     result.objects.push(node.name);
   } else if (node.type === 'surface') {
     result.surfaces.push(node.name);
+  } else if (node.type === 'map') {
+    result.maps.push(node.name);
+  } else if (node.type === 'isosurface') {
+    result.isosurfaces.push(node.name);
   } else if (node.type === 'selection') {
     result.selections.push(node.name);
   }
@@ -124,6 +137,8 @@ export function collectEntryNames(node) {
       result.objects.push(...sub.objects);
       result.selections.push(...sub.selections);
       result.surfaces.push(...sub.surfaces);
+      result.maps.push(...sub.maps);
+      result.isosurfaces.push(...sub.isosurfaces);
     }
   }
   return result;
@@ -133,21 +148,23 @@ export function collectEntryNames(node) {
  * Collect all leaf entry names from multiple tree nodes.
  *
  * @param {Array} nodes - Array of tree nodes.
- * @returns {{objects: string[], selections: string[], surfaces: string[]}}
+ * @returns {{objects: string[], selections: string[], surfaces: string[], maps: string[], isosurfaces: string[]}}
  */
 export function collectAllEntryNames(nodes) {
-  const result = { objects: [], selections: [], surfaces: [] };
+  const result = { objects: [], selections: [], surfaces: [], maps: [], isosurfaces: [] };
   for (const node of nodes) {
     const sub = collectEntryNames(node);
     result.objects.push(...sub.objects);
     result.selections.push(...sub.selections);
     result.surfaces.push(...sub.surfaces);
+    result.maps.push(...sub.maps);
+    result.isosurfaces.push(...sub.isosurfaces);
   }
   return result;
 }
 
 /**
- * Build a default flat tree from state.objects and state.selections.
+ * Build a default flat tree from state entries.
  * Used when entryTree is empty (backward compatibility).
  *
  * @param {object} st - The state object.
@@ -161,6 +178,16 @@ export function buildDefaultTree(st) {
   if (st.surfaces) {
     for (const [name, surface] of st.surfaces) {
       insertSurfaceTreeNode(tree, name, surface.parentName);
+    }
+  }
+  if (st.maps) {
+    for (const name of st.maps.keys()) {
+      insertMapTreeNode(tree, name);
+    }
+  }
+  if (st.isosurfaces) {
+    for (const [name, entry] of st.isosurfaces) {
+      insertIsosurfaceTreeNode(tree, name, entry.mapName);
     }
   }
   for (const name of st.selections.keys()) {
@@ -663,6 +690,332 @@ function normalizeHierarchyParent(node) {
 }
 
 // ---------------------------------------------------------------------------
+// Map and isosurface management
+// ---------------------------------------------------------------------------
+
+const DEFAULT_MAP_ENTRY = {
+  contourStats: null,
+  handles: [],
+  visible: true,
+  showBoundingBox: false,
+  color: '#38BDF8',
+  opacity: 1,
+};
+
+const DEFAULT_ISOSURFACE_ENTRY = {
+  level: 1,
+  selectionText: null,
+  selection: null,
+  buffer: null,
+  carve: null,
+  representation: 'mesh',
+  handle: null,
+  visible: true,
+  parentVisible: true,
+  color: '#0000FF',
+  opacity: 0.75,
+};
+
+/**
+ * Find a unique map name using the same numeric suffix convention as objects.
+ *
+ * @param {string} baseName - Desired map name.
+ * @returns {string} Unique map name.
+ */
+function getUniqueMapName(baseName) {
+  let uniqueName = baseName;
+  let counter = 2;
+  while (state.maps.has(uniqueName)) {
+    uniqueName = `${baseName}_${counter}`;
+    counter++;
+  }
+  return uniqueName;
+}
+
+/**
+ * Add a density map entry and corresponding tree node.
+ *
+ * @param {object} entry - Map metadata.
+ * @returns {object} The stored map entry.
+ */
+export function addMapEntry(entry) {
+  const name = getUniqueMapName(entry.name);
+  const map = {
+    ...DEFAULT_MAP_ENTRY,
+    ...entry,
+    name,
+    handles: entry.handles ? [...entry.handles] : [],
+  };
+  state.maps.set(name, map);
+  removeTypedTreeNode(state.entryTree, name, 'map');
+  insertMapTreeNode(state.entryTree, name);
+  _notify();
+  return map;
+}
+
+/**
+ * Remove a map and all isosurfaces parented to it.
+ *
+ * @param {string} name - Map name.
+ * @returns {{map: object, isosurfaces: object[]}|undefined} Removed entries.
+ */
+export function removeMapEntry(name) {
+  const map = state.maps.get(name);
+  if (!map) return undefined;
+  const childNames = getChildIsosurfaceNames(name);
+  const isosurfaces = [];
+  for (const isoName of childNames) {
+    const iso = state.isosurfaces.get(isoName);
+    if (iso) {
+      isosurfaces.push(iso);
+      state.isosurfaces.delete(isoName);
+      removeTypedTreeNode(state.entryTree, isoName, 'isosurface');
+    }
+  }
+  state.maps.delete(name);
+  removeTypedTreeNode(state.entryTree, name, 'map');
+  _notify();
+  return { map, isosurfaces };
+}
+
+/**
+ * Rename a map entry and update child isosurface parent names.
+ *
+ * @param {string} oldName - Current map name.
+ * @param {string} newName - New map name.
+ * @returns {boolean} True if renamed.
+ */
+export function renameMapEntry(oldName, newName) {
+  const map = state.maps.get(oldName);
+  if (!map) return false;
+  if (state.maps.has(newName)) {
+    throw new Error(`A map named "${newName}" already exists`);
+  }
+  state.maps.delete(oldName);
+  map.name = newName;
+  state.maps.set(newName, map);
+  const found = findTreeNode(state.entryTree, oldName, 'map');
+  if (found) found.node.name = newName;
+  for (const iso of state.isosurfaces.values()) {
+    if (iso.mapName === oldName) iso.mapName = newName;
+  }
+  _notify();
+  return true;
+}
+
+/**
+ * Update map metadata.
+ *
+ * @param {string} name - Map name.
+ * @param {object} patch - Partial map metadata.
+ * @returns {object|undefined} The updated map entry.
+ */
+export function updateMapEntry(name, patch) {
+  const map = state.maps.get(name);
+  if (!map) return undefined;
+  if (Object.prototype.hasOwnProperty.call(patch, 'name')) {
+    throw new Error('Use renameMapEntry to rename maps');
+  }
+  Object.assign(map, patch);
+  _notify();
+  return map;
+}
+
+/**
+ * Toggle map visibility.
+ *
+ * @param {string} name - Map name.
+ * @returns {object|undefined} The updated map entry.
+ */
+export function toggleMapVisibility(name) {
+  const map = state.maps.get(name);
+  if (map) {
+    map.visible = !map.visible;
+    _notify();
+  }
+  return map;
+}
+
+/**
+ * Add or replace an isosurface entry under an existing map.
+ *
+ * @param {object} entry - Isosurface metadata.
+ * @returns {object} The stored isosurface entry.
+ */
+export function addIsosurfaceEntry(entry) {
+  if (!state.maps.has(entry.mapName)) {
+    throw new Error(`Map "${entry.mapName}" not found`);
+  }
+  const iso = { ...DEFAULT_ISOSURFACE_ENTRY, ...entry, name: entry.name };
+  state.isosurfaces.set(iso.name, iso);
+  removeTypedTreeNode(state.entryTree, iso.name, 'isosurface');
+  insertIsosurfaceTreeNode(state.entryTree, iso.name, iso.mapName);
+  _notify();
+  return iso;
+}
+
+/**
+ * Remove an isosurface entry and tree node.
+ *
+ * @param {string} name - Isosurface name.
+ * @returns {object|undefined} The removed isosurface entry.
+ */
+export function removeIsosurfaceEntry(name) {
+  const iso = state.isosurfaces.get(name);
+  if (!iso) return undefined;
+  state.isosurfaces.delete(name);
+  removeIsosurfaceTreeNode(name);
+  _notify();
+  return iso;
+}
+
+/**
+ * Rename an isosurface entry and tree node.
+ *
+ * @param {string} oldName - Current isosurface name.
+ * @param {string} newName - New isosurface name.
+ * @returns {boolean} True if renamed.
+ */
+export function renameIsosurfaceEntry(oldName, newName) {
+  const iso = state.isosurfaces.get(oldName);
+  if (!iso) return false;
+  if (state.isosurfaces.has(newName)) {
+    throw new Error(`An isosurface named "${newName}" already exists`);
+  }
+  state.isosurfaces.delete(oldName);
+  iso.name = newName;
+  state.isosurfaces.set(newName, iso);
+  const found = findTreeNode(state.entryTree, oldName, 'isosurface');
+  if (found) found.node.name = newName;
+  _notify();
+  return true;
+}
+
+/**
+ * Update isosurface metadata and reparent when mapName changes.
+ *
+ * @param {string} name - Isosurface name.
+ * @param {object} patch - Partial isosurface metadata.
+ * @returns {object|undefined} The updated isosurface entry.
+ */
+export function updateIsosurfaceEntry(name, patch) {
+  const iso = state.isosurfaces.get(name);
+  if (!iso) return undefined;
+  if (Object.prototype.hasOwnProperty.call(patch, 'name')) {
+    throw new Error('Use renameIsosurfaceEntry to rename isosurfaces');
+  }
+  const mapNameChanged = Object.prototype.hasOwnProperty.call(patch, 'mapName') &&
+    patch.mapName !== iso.mapName;
+  if (mapNameChanged && !state.maps.has(patch.mapName)) {
+    throw new Error(`Map "${patch.mapName}" not found`);
+  }
+  if (mapNameChanged) {
+    removeIsosurfaceTreeNode(name);
+  }
+  Object.assign(iso, patch);
+  if (mapNameChanged) {
+    insertIsosurfaceTreeNode(state.entryTree, name, iso.mapName);
+  }
+  _notify();
+  return iso;
+}
+
+/**
+ * Toggle isosurface visibility.
+ *
+ * @param {string} name - Isosurface name.
+ * @returns {object|undefined} The updated isosurface entry.
+ */
+export function toggleIsosurfaceVisibility(name) {
+  const iso = state.isosurfaces.get(name);
+  if (iso) {
+    iso.visible = !iso.visible;
+    _notify();
+  }
+  return iso;
+}
+
+/**
+ * Return isosurface names parented under a map.
+ *
+ * @param {string} mapName - Parent map name.
+ * @returns {string[]} Child isosurface names.
+ */
+export function getChildIsosurfaceNames(mapName) {
+  const names = [];
+  for (const [name, iso] of state.isosurfaces) {
+    if (iso.mapName === mapName) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Get the lowest available generated isosurface name for a prefix.
+ *
+ * @param {string} [prefix='isosurface'] - Name prefix.
+ * @returns {string} The next available isosurface name.
+ */
+export function getNextIsosurfaceName(prefix = 'isosurface') {
+  let counter = 1;
+  while (state.isosurfaces.has(`${prefix}_${counter}`)) {
+    counter++;
+  }
+  return `${prefix}_${counter}`;
+}
+
+/**
+ * Insert a map node before top-level selections.
+ *
+ * @param {Array} tree - Tree to mutate.
+ * @param {string} name - Map name.
+ */
+function insertMapTreeNode(tree, name) {
+  if (findTreeNode(tree, name, 'map')) return;
+  const node = { type: 'map', name, collapsed: false, children: [] };
+  const selIdx = tree.findIndex(n => n.type === 'selection');
+  if (selIdx >= 0) {
+    tree.splice(selIdx, 0, node);
+  } else {
+    tree.push(node);
+  }
+}
+
+/**
+ * Insert an isosurface node under an existing map node.
+ *
+ * @param {Array} tree - Tree to mutate.
+ * @param {string} name - Isosurface name.
+ * @param {string} mapName - Parent map name.
+ */
+function insertIsosurfaceTreeNode(tree, name, mapName) {
+  const node = { type: 'isosurface', name };
+  const parentFound = findTreeNode(tree, mapName, 'map');
+  if (parentFound) {
+    if (!parentFound.node.children) {
+      parentFound.node.children = [];
+      parentFound.node.collapsed = false;
+    }
+    parentFound.node.children.push(node);
+  }
+}
+
+/**
+ * Remove an isosurface node from the tree while preserving empty map parents.
+ *
+ * @param {string} name - Isosurface name.
+ * @returns {object|null} The removed tree node, or null if not found.
+ */
+function removeIsosurfaceTreeNode(name) {
+  const parentNode = _findParentNode(state.entryTree, name);
+  const removed = removeTypedTreeNode(state.entryTree, name, 'isosurface');
+  if (removed && parentNode && parentNode.type === 'map' && parentNode.children?.length === 0) {
+    parentNode.children = [];
+    parentNode.collapsed = false;
+  }
+  return removed;
+}
+
+// ---------------------------------------------------------------------------
 // Selection pruning
 // ---------------------------------------------------------------------------
 
@@ -758,10 +1111,10 @@ export function addGroup(name, memberNames) {
 
 /**
  * Remove a group and all its contents from state.
- * Also removes all objects, surfaces, and selections contained within from the Maps.
+ * Also removes all contained entries from their state maps.
  *
  * @param {string} name - The group name to remove.
- * @returns {{objects: string[], selections: string[], surfaces: string[]}} Names of removed entries.
+ * @returns {{objects: string[], selections: string[], surfaces: string[], maps: string[], isosurfaces: string[]}} Names of removed entries.
  */
 export function removeGroup(name) {
   const found = findTreeNode(state.entryTree, name, 'group');
@@ -780,6 +1133,12 @@ export function removeGroup(name) {
   }
   for (const surfaceName of entries.surfaces) {
     state.surfaces.delete(surfaceName);
+  }
+  for (const mapName of entries.maps) {
+    state.maps.delete(mapName);
+  }
+  for (const isoName of entries.isosurfaces) {
+    state.isosurfaces.delete(isoName);
   }
 
   // Remove group node from tree
@@ -868,6 +1227,9 @@ export function reparentEntry(childName, parentName) {
   const childFound = findTreeNode(state.entryTree, childName);
   if (!childFound) {
     throw new Error(`Entry "${childName}" not found`);
+  }
+  if (childFound.node.type === 'map' || childFound.node.type === 'isosurface') {
+    throw new Error('Density maps and isosurfaces cannot be reparented under objects');
   }
   if (childFound.node.children) {
     const descendant = findTreeNode(childFound.node.children, parentName);

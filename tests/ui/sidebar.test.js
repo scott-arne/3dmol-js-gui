@@ -11,8 +11,15 @@ vi.mock('../../src/ui/color-swatches.js', () => ({
 /**
  * Build a mock application state object.
  */
-function makeState({ objects = new Map(), selections = new Map(), surfaces = new Map() } = {}) {
-  return { objects, selections, surfaces };
+function makeState({
+  objects = new Map(),
+  selections = new Map(),
+  surfaces = new Map(),
+  maps = new Map(),
+  isosurfaces = new Map(),
+  entryTree,
+} = {}) {
+  return { objects, selections, surfaces, maps, isosurfaces, entryTree };
 }
 
 /**
@@ -50,6 +57,30 @@ function makeSurface(overrides = {}) {
   };
 }
 
+function makeMap(overrides = {}) {
+  return {
+    name: 'density',
+    visible: true,
+    color: '#38BDF8',
+    opacity: 1,
+    ...overrides,
+  };
+}
+
+function makeIsosurface(overrides = {}) {
+  return {
+    name: 'isosurface_1',
+    mapName: 'density',
+    visible: true,
+    parentVisible: true,
+    level: 1,
+    representation: 'mesh',
+    opacity: 0.75,
+    color: '#FFFFFF',
+    ...overrides,
+  };
+}
+
 describe('Sidebar', () => {
   let container;
   let callbacks;
@@ -74,6 +105,16 @@ describe('Sidebar', () => {
       onSurfaceStyle: vi.fn(),
       onSurfaceColor: vi.fn(),
       onCreateSurface: vi.fn(),
+      onToggleMapVisibility: vi.fn(),
+      onMapAction: vi.fn(),
+      onMapStyle: vi.fn(),
+      onMapColor: vi.fn(),
+      onCreateIsosurface: vi.fn(),
+      onToggleIsosurfaceVisibility: vi.fn(),
+      onIsosurfaceAction: vi.fn(),
+      onIsosurfaceContour: vi.fn(),
+      onIsosurfaceStyle: vi.fn(),
+      onIsosurfaceColor: vi.fn(),
     };
 
     sidebar = createSidebar(container, callbacks);
@@ -81,6 +122,7 @@ describe('Sidebar', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -289,6 +331,15 @@ describe('Sidebar', () => {
       expect(row.dataset.kind).toBe('selection');
       expect(row.dataset.name).toBe('sele1');
     });
+
+    it('does not render entry-type icons for molecule or selection rows', () => {
+      const objects = new Map([['1UBQ', makeObject()]]);
+      const selections = new Map([['sele1', makeSelection()]]);
+      sidebar.refresh(makeState({ objects, selections }));
+
+      expect(container.querySelector('[data-kind="object"] .sidebar-entry-icon')).toBeNull();
+      expect(container.querySelector('[data-kind="selection"] .sidebar-entry-icon')).toBeNull();
+    });
   });
 
   describe('surface rendering', () => {
@@ -301,8 +352,7 @@ describe('Sidebar', () => {
       expect(row.classList.contains('sidebar-object')).toBe(true);
       expect(row.classList.contains('sidebar-surface')).toBe(true);
 
-      const status = row.querySelector('.sidebar-object-status');
-      expect(status.classList.contains('active')).toBe(true);
+      expect(row.querySelector('.sidebar-object-status')).toBeNull();
 
       const nameEl = row.querySelector('.sidebar-object-name');
       expect(nameEl.textContent).toBe('surface_1');
@@ -310,6 +360,21 @@ describe('Sidebar', () => {
       const buttons = row.querySelectorAll('.sidebar-btn');
       const labels = Array.from(buttons).map((b) => b.textContent);
       expect(labels).toEqual(['A', 'S', 'C']);
+    });
+
+    it('renders a labeled surface icon before the surface name', () => {
+      const surfaces = new Map([['surface_1', makeSurface()]]);
+      sidebar.refresh(makeState({ surfaces }));
+
+      const row = container.querySelector('[data-kind="surface"][data-name="surface_1"]');
+      const icon = row.querySelector('.sidebar-entry-icon.sidebar-surface-icon');
+      const nameEl = row.querySelector('.sidebar-object-name');
+
+      expect(icon).not.toBeNull();
+      expect(icon.getAttribute('aria-label')).toBe('Surface');
+      expect(icon.getAttribute('title')).toBe('Surface');
+      expect(icon.classList.contains('active')).toBe(true);
+      expect(icon.nextSibling).toBe(nameEl);
     });
 
     it('surface non-button click toggles surface visibility', () => {
@@ -422,8 +487,10 @@ describe('Sidebar', () => {
 
       for (const name of ['hidden_self', 'hidden_parent']) {
         const row = container.querySelector(`[data-kind="surface"][data-name="${name}"]`);
+        const icon = row.querySelector('.sidebar-surface-icon');
         expect(row.classList.contains('dimmed')).toBe(true);
-        expect(row.querySelector('.sidebar-object-status').classList.contains('active')).toBe(false);
+        expect(row.querySelector('.sidebar-object-status')).toBeNull();
+        expect(icon.classList.contains('active')).toBe(false);
       }
     });
 
@@ -442,6 +509,410 @@ describe('Sidebar', () => {
       expect(objIdx).toBeLessThan(surfIdx);
       expect(surfIdx).toBeLessThan(sepIdx);
       expect(sepIdx).toBeLessThan(selIdx);
+    });
+  });
+
+  describe('map and isosurface rendering', () => {
+    it('renders map rows with A, S, C buttons and a map glyph', () => {
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const row = container.querySelector('[data-kind="map"][data-name="density"]');
+      expect(row).not.toBeNull();
+      expect(row.querySelector('.sidebar-map-icon')).not.toBeNull();
+      expect(row.querySelector('.sidebar-object-name').textContent).toBe('density');
+      expect(Array.from(row.querySelectorAll('.sidebar-btn')).map(btn => btn.textContent)).toEqual(['A', 'S', 'C']);
+    });
+
+    it('fallback rendering nests isosurfaces under their parent maps', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ mapName: 'density' })]]);
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree: [] }));
+
+      const mapChildren = container.querySelector('[data-map-children="density"]');
+      expect(mapChildren).not.toBeNull();
+      expect(mapChildren.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]')).not.toBeNull();
+
+      const topLevelIsosurfaces = Array.from(container.children)
+        .filter((child) => child.dataset.kind === 'isosurface');
+      expect(topLevelIsosurfaces).toEqual([]);
+    });
+
+    it('fallback rendering keeps orphan isosurfaces as top-level rows', () => {
+      const isosurfaces = new Map([
+        ['orphan_iso', makeIsosurface({ name: 'orphan_iso', mapName: 'missing_map' })],
+      ]);
+
+      expect(() => sidebar.refresh(makeState({ isosurfaces, entryTree: [] }))).not.toThrow();
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="orphan_iso"]');
+      expect(row).not.toBeNull();
+      expect(container.querySelector('.sidebar-map-children [data-name="orphan_iso"]')).toBeNull();
+
+      const topLevelIsosurfaces = Array.from(container.children)
+        .filter((child) => child.dataset.kind === 'isosurface');
+      expect(topLevelIsosurfaces).toEqual([row]);
+    });
+
+    it('map row click toggles map visibility but action button click does not', () => {
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const row = container.querySelector('[data-kind="map"]');
+      row.click();
+      expect(callbacks.onToggleMapVisibility).toHaveBeenCalledWith('density');
+
+      callbacks.onToggleMapVisibility.mockClear();
+      row.querySelector('.sidebar-btn').click();
+      expect(callbacks.onToggleMapVisibility).not.toHaveBeenCalled();
+    });
+
+    it('map menus expose create isosurface, bounding box, opacity, and solid color callbacks', () => {
+      const maps = new Map([['density', makeMap({ opacity: 0.5 })]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const buttons = container.querySelectorAll('[data-kind="map"] .sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="create_isosurface"]').click();
+      expect(callbacks.onCreateIsosurface).toHaveBeenCalledWith('density');
+
+      buttons[0].click();
+      const boundingBoxItem = document.querySelector('[data-value="show_bounding_box"]');
+      expect(boundingBoxItem.textContent).toContain('Show Bounding Box');
+      expect(boundingBoxItem.classList.contains('checked')).toBe(false);
+      boundingBoxItem.click();
+      expect(callbacks.onMapAction).toHaveBeenCalledWith('density', 'show_bounding_box');
+
+      sidebar.refresh(makeState({
+        maps: new Map([['density', makeMap({ opacity: 0.5, showBoundingBox: true })]]),
+      }));
+      buttons[0].click();
+      expect(document.querySelector('[data-value="show_bounding_box"]').classList.contains('checked')).toBe(true);
+
+      buttons[1].click();
+      expect(document.querySelector('[data-value="opacity:0.5"]').classList.contains('checked')).toBe(true);
+      document.querySelector('[data-value="opacity:0.25"]').click();
+      expect(callbacks.onMapStyle).toHaveBeenCalledWith('density', 'opacity:0.25');
+
+      buttons[2].click();
+      document.querySelector('.swatch-cell').click();
+      expect(callbacks.onMapColor).toHaveBeenCalledWith('density', '#0000FF');
+    });
+
+    it('map action menu routes normal actions through onMapAction', () => {
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const aButton = container.querySelector('[data-kind="map"] .sidebar-btn');
+      aButton.click();
+      document.querySelector('[data-value="center"]').click();
+
+      expect(callbacks.onMapAction).toHaveBeenCalledWith('density', 'center');
+      expect(callbacks.onCreateIsosurface).not.toHaveBeenCalled();
+    });
+
+    it('map create isosurface action is ignored when the create callback is absent', () => {
+      delete callbacks.onCreateIsosurface;
+      const maps = new Map([['density', makeMap()]]);
+      sidebar.refresh(makeState({ maps }));
+
+      const aButton = container.querySelector('[data-kind="map"] .sidebar-btn');
+      aButton.click();
+      document.querySelector('[data-value="create_isosurface"]').click();
+
+      expect(callbacks.onMapAction).not.toHaveBeenCalledWith('density', 'create_isosurface');
+    });
+
+    it('isosurface row click toggles visibility but action button clicks do not', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface()]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      row.click();
+      expect(callbacks.onToggleIsosurfaceVisibility).toHaveBeenCalledWith('isosurface_1');
+
+      for (const button of row.querySelectorAll('.sidebar-btn')) {
+        callbacks.onToggleIsosurfaceVisibility.mockClear();
+        button.click();
+        expect(callbacks.onToggleIsosurfaceVisibility).not.toHaveBeenCalled();
+      }
+    });
+
+    it('renders isosurface rows with contour, style, and color menus', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ level: -3 })]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      expect(row).not.toBeNull();
+      expect(row.querySelector('.sidebar-isosurface-icon')).not.toBeNull();
+      expect(Array.from(row.querySelectorAll('.sidebar-btn')).map(btn => btn.textContent)).toEqual(['A', 'S', 'C']);
+
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      buttons[0].click();
+      const contourItems = document.querySelectorAll('[data-value="contour"]');
+      expect(contourItems).toHaveLength(1);
+      expect(document.querySelectorAll('[data-value^="contour:"]')).toHaveLength(0);
+      for (const value of ['rename', 'delete', 'center', 'zoom']) {
+        expect(document.querySelector(`[data-value="${value}"]`)).not.toBeNull();
+      }
+
+      contourItems[0].click();
+      const popover = document.querySelector('.contour-popover');
+      expect(popover).not.toBeNull();
+      const title = popover.querySelector('.contour-popover-title');
+      const rangeLabel = popover.querySelector('.contour-range-label');
+      expect(popover.getAttribute('role')).toBe('dialog');
+      expect(popover.getAttribute('aria-labelledby')).toBe(title.id);
+      expect(title.id).not.toBe('');
+      expect(title.textContent).toContain('Contour');
+      expect(popover.querySelector('input[type="range"]')).not.toBeNull();
+      const slider = popover.querySelector('.contour-slider');
+      expect(slider).not.toBeNull();
+      expect(slider.getAttribute('aria-label')).toBe('Sigma contour level');
+      expect(slider.getAttribute('aria-describedby')).toBe(rangeLabel.id);
+      expect(rangeLabel.id).not.toBe('');
+      expect(popover.querySelector('.contour-level-input').value).toBe('-3');
+      expect(popover.querySelector('.contour-sigma-input').getAttribute('aria-label')).toBe('Sigma contour level');
+      expect(popover.querySelector('.contour-sigma-input').getAttribute('aria-describedby')).toBe(rangeLabel.id);
+      expect(popover.querySelector('.contour-level-input').getAttribute('aria-label')).toBe('Raw contour level');
+      expect(popover.querySelector('.contour-level-input').getAttribute('aria-describedby')).toBe(rangeLabel.id);
+      expect(rangeLabel.textContent).toContain('Sigma range');
+      expect(popover.querySelector('.contour-reset-auto').textContent).toBe('Reset Auto');
+
+      buttons[0].click();
+      document.querySelector('[data-value="delete"]').click();
+      expect(callbacks.onIsosurfaceAction).toHaveBeenCalledWith('isosurface_1', 'delete');
+
+      buttons[1].click();
+      expect(document.querySelector('[data-value="representation:mesh"]').classList.contains('checked')).toBe(true);
+      document.querySelector('[data-value="representation:surface"]').click();
+      expect(callbacks.onIsosurfaceStyle).toHaveBeenCalledWith('isosurface_1', 'representation:surface');
+
+      buttons[1].click();
+      document.querySelector('[data-value="opacity:0.25"]').click();
+      expect(callbacks.onIsosurfaceStyle).toHaveBeenCalledWith('isosurface_1', 'opacity:0.25');
+
+      buttons[2].click();
+      document.querySelector('.swatch-cell').click();
+      expect(callbacks.onIsosurfaceColor).toHaveBeenCalledWith('isosurface_1', '#0000FF');
+    });
+
+    it('debounces isosurface contour slider changes', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: {
+            min: 0,
+            max: 1,
+            robustMin: 0,
+            robustMax: 1,
+            mean: 0,
+            stdDev: 0.1,
+            suggestedLevel: 0.5,
+          },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.2, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      const actionButton = row.querySelector('.sidebar-btn');
+      actionButton.click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const slider = document.querySelector('.contour-slider');
+      expect(slider.min).toBe('-3');
+      expect(slider.max).toBe('6');
+      expect(document.querySelector('.contour-sigma-input').value).toBe('2');
+      expect(document.querySelector('.contour-raw-input').value).toBe('0.2');
+
+      slider.value = '3';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      slider.value = '4';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+      vi.advanceTimersByTime(149);
+      expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(11);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.4, source: 'slider' },
+      );
+    });
+
+    it('keeps raw and sigma contour inputs synchronized', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: {
+            min: -0.0003,
+            max: 0.0004,
+            robustMin: -0.0003,
+            robustMax: 0.0004,
+            mean: 0.0001,
+            stdDev: 0.00005,
+            suggestedLevel: 0.00015,
+          },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.0002, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"] .sidebar-btn').click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const rawInput = document.querySelector('.contour-raw-input');
+      const sigmaInput = document.querySelector('.contour-sigma-input');
+      const slider = document.querySelector('.contour-slider');
+
+      expect(rawInput.value).toBe('0.0002');
+      expect(sigmaInput.value).toBe('2');
+      expect(slider.value).toBe('2');
+
+      sigmaInput.value = '3';
+      sigmaInput.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(rawInput.value).toBe('0.00025');
+      expect(slider.value).toBe('3');
+      vi.advanceTimersByTime(150);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.00025, source: 'sigma' },
+      );
+
+      callbacks.onIsosurfaceContour.mockClear();
+      rawInput.value = '0.00005';
+      rawInput.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(sigmaInput.value).toBe('-1');
+      expect(slider.value).toBe('-1');
+      vi.advanceTimersByTime(150);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.00005, source: 'raw' },
+      );
+    });
+
+    it('flushes the latest pending contour change when the popover closes', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: { min: 0, max: 1, robustMin: 0, robustMax: 1, suggestedLevel: 0.5 },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.25, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const slider = document.querySelector('.contour-slider');
+      const levelInput = document.querySelector('.contour-level-input');
+      slider.value = '0.7';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      levelInput.value = '0.85';
+      levelInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+      vi.advanceTimersByTime(50);
+      expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
+
+      buttons[1].click();
+      expect(document.querySelector('.contour-popover')).toBeNull();
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.85, source: 'raw' },
+      );
+
+      vi.advanceTimersByTime(150);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not flush invalid pending contour input when the popover closes', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: { min: 0, max: 1, robustMin: 0, robustMax: 1, suggestedLevel: 0.5 },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.25, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const row = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+      const buttons = row.querySelectorAll('.sidebar-btn');
+      buttons[0].click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const slider = document.querySelector('.contour-slider');
+      const levelInput = document.querySelector('.contour-level-input');
+      slider.value = '0.7';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      levelInput.value = 'not-a-number';
+      levelInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+      buttons[1].click();
+      vi.advanceTimersByTime(150);
+
+      expect(callbacks.onIsosurfaceContour).not.toHaveBeenCalled();
+    });
+
+    it('reuses the cached isosurface action menu across repeated opens', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface({ mapName: 'density' })]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      const actionButton = container
+        .querySelector('[data-kind="isosurface"][data-name="isosurface_1"] .sidebar-btn');
+
+      actionButton.click();
+      actionButton.click();
+
+      const createElementSpy = vi.spyOn(document, 'createElement');
+      actionButton.click();
+
+      expect(createElementSpy).not.toHaveBeenCalled();
+      createElementSpy.mockRestore();
     });
   });
 

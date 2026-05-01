@@ -34,13 +34,39 @@ function makeSurface(overrides = {}) {
   };
 }
 
+function makeMap(overrides = {}) {
+  return {
+    name: 'density',
+    visible: true,
+    color: '#38BDF8',
+    opacity: 1,
+    ...overrides,
+  };
+}
+
+function makeIsosurface(overrides = {}) {
+  return {
+    name: 'isosurface_1',
+    mapName: 'density',
+    visible: true,
+    parentVisible: true,
+    level: 1,
+    representation: 'mesh',
+    opacity: 0.75,
+    color: '#FFFFFF',
+    ...overrides,
+  };
+}
+
 function makeTreeState({
   objects = new Map(),
   selections = new Map(),
   surfaces = new Map(),
+  maps = new Map(),
+  isosurfaces = new Map(),
   entryTree = [],
 } = {}) {
-  return { objects, selections, surfaces, entryTree };
+  return { objects, selections, surfaces, maps, isosurfaces, entryTree };
 }
 
 describe('Sidebar tree-based rendering', () => {
@@ -81,6 +107,15 @@ describe('Sidebar tree-based rendering', () => {
       onSurfaceStyle: vi.fn(),
       onSurfaceColor: vi.fn(),
       onCreateSurface: vi.fn(),
+      onToggleMapVisibility: vi.fn(),
+      onMapAction: vi.fn(),
+      onMapStyle: vi.fn(),
+      onMapColor: vi.fn(),
+      onCreateIsosurface: vi.fn(),
+      onToggleIsosurfaceVisibility: vi.fn(),
+      onIsosurfaceAction: vi.fn(),
+      onIsosurfaceStyle: vi.fn(),
+      onIsosurfaceColor: vi.fn(),
     };
 
     sidebar = createSidebar(container, callbacks);
@@ -513,7 +548,29 @@ describe('Sidebar tree-based rendering', () => {
       const secondRow = container.querySelector('[data-kind="surface"][data-name="surfaceA"]');
       expect(secondRow).toBe(firstRow);
       expect(secondRow.classList.contains('dimmed')).toBe(true);
-      expect(secondRow.querySelector('.sidebar-object-status').classList.contains('active')).toBe(false);
+      expect(secondRow.querySelector('.sidebar-object-status')).toBeNull();
+      expect(secondRow.querySelector('.sidebar-surface-icon').classList.contains('active')).toBe(false);
+    });
+
+    it('updates existing map and isosurface rows without rebuilding', () => {
+      const maps = new Map([['density', makeMap()]]);
+      const isosurfaces = new Map([['isosurface_1', makeIsosurface()]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeTreeState({ maps, isosurfaces, entryTree }));
+
+      const mapRow = container.querySelector('[data-kind="map"][data-name="density"]');
+      const isoRow = container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]');
+
+      maps.set('density', makeMap({ visible: false }));
+      isosurfaces.set('isosurface_1', makeIsosurface({ visible: false }));
+      sidebar.refresh(makeTreeState({ maps, isosurfaces, entryTree }));
+
+      expect(container.querySelector('[data-kind="map"][data-name="density"]')).toBe(mapRow);
+      expect(container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]')).toBe(isoRow);
+      expect(mapRow.classList.contains('dimmed')).toBe(true);
+      expect(isoRow.classList.contains('dimmed')).toBe(true);
     });
 
     it('adding an entry inserts without destroying existing rows', () => {

@@ -17,14 +17,36 @@ export function parseArgs(argsStr) {
 
 export function createCommandRegistry() {
   const commands = new Map();
+  const aliases = new Map();
+
+  function resolveCommandName(name) {
+    return aliases.get(name) || name;
+  }
 
   return {
-    register(name, { handler, usage, help }) {
-      commands.set(name.toLowerCase(), { handler, usage, help });
+    register(name, { aliases: commandAliases = [], handler, usage, help }) {
+      const canonicalName = name.toLowerCase();
+      const existingAliasTarget = aliases.get(canonicalName);
+      if (existingAliasTarget && existingAliasTarget !== canonicalName) {
+        throw new Error(`Command "${canonicalName}" conflicts with an existing alias`);
+      }
+      commands.set(canonicalName, { handler, usage, help });
+
+      for (const alias of commandAliases) {
+        const aliasName = alias.toLowerCase();
+        if (commands.has(aliasName) && aliasName !== canonicalName) {
+          throw new Error(`Alias "${aliasName}" conflicts with an existing command`);
+        }
+        const existingAlias = aliases.get(aliasName);
+        if (existingAlias && existingAlias !== canonicalName) {
+          throw new Error(`Alias "${aliasName}" conflicts with an existing alias`);
+        }
+        aliases.set(aliasName, canonicalName);
+      }
     },
     execute(input, ctx) {
       const { name, args } = parseCommandLine(input);
-      let cmd = commands.get(name);
+      let cmd = commands.get(resolveCommandName(name));
       if (!cmd) {
         // Try prefix matching
         const matches = [...commands.keys()].filter(k => k.startsWith(name));
@@ -42,20 +64,23 @@ export function createCommandRegistry() {
       return [...commands.keys()].sort();
     },
     getHelp(name) {
-      const cmd = commands.get(name.toLowerCase());
+      const cmd = commands.get(resolveCommandName(name.toLowerCase()));
       if (!cmd) return null;
       return { usage: cmd.usage, help: cmd.help };
     },
     has(name) {
-      return commands.has(name.toLowerCase());
+      const lower = name.toLowerCase();
+      return commands.has(lower) || aliases.has(lower);
     },
     completions(prefix) {
       const lower = prefix.toLowerCase();
-      return [...commands.keys()].filter(k => k.startsWith(lower)).sort();
+      return [...new Set([...commands.keys(), ...aliases.keys()])]
+        .filter(k => k.startsWith(lower))
+        .sort();
     },
   };
 }
 
-export function createCommandContext({ viewer, terminal, sidebar, state, surfaceService }) {
-  return { viewer, terminal, sidebar, state, surfaceService };
+export function createCommandContext({ viewer, terminal, sidebar, state, surfaceService, mapService }) {
+  return { viewer, terminal, sidebar, state, surfaceService, mapService };
 }

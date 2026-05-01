@@ -26,7 +26,9 @@ From the command terminal, fetch a structure from the RCSB PDB:
 fetch 1ubq
 ```
 
-Or use **File > Load...** to open a local structure file (PDB, SDF, MOL2, XYZ, CIF, CUBE, PQR, GRO).
+Or use **File > Load...** to open a local structure or density file. Supported
+inputs include PDB, SDF, MOL2, XYZ, CIF, PQR, GRO, CCP4/MAP/MRC density maps,
+and CUBE files. CUBE files create both a molecule entry and a sibling map entry.
 
 ## Building
 
@@ -76,6 +78,8 @@ and appears in the dialog only when `allowArbitraryUrls` is true.
 | select | `select <expression>` or `select <name>, <expression>` | Create `(sele)` or define a named selection |
 | count_atoms | `count_atoms [selection]` | Count atoms matching a selection |
 | get_model | `get_model [selection]` | Print summary info about a selection |
+| surface | `surface <parent> [, <type>]` or `surface <name>, <selection> [, <type>]` | Create or replace a molecular or solvent-accessible surface |
+| isosurface | `isosurface name, map [,level [,(selection) [,buffer [,carve [,representation]]]]]` | Create or replace an isosurface from a loaded density map |
 | show | `show <rep> [, selection]` | Show a representation |
 | hide | `hide <rep> [, selection]` | Hide a representation |
 | enable | `enable <object>` | Show a hidden object |
@@ -97,10 +101,38 @@ and appears in the dialog only when `allowArbitraryUrls` is true.
 | clip | `clip <near>, <far>` | Set clipping planes |
 | reset | `reset` | Reset the view |
 | remove | `remove <selection>` | Remove atoms from the viewer |
-| delete | `delete <name>` | Delete an object or selection |
-| set_name | `set_name <old>, <new>` | Rename an object or selection |
+| delete | `delete <name>` or `del <name>` | Delete an object, selection, group, surface, map, or isosurface |
+| clear | `clear` | Clear all objects, selections, surfaces, maps, isosurfaces, labels, and highlights |
+| set_name | `set_name <old>, <new>` | Rename an object, selection, group, surface, map, or isosurface |
 | png | `png [filename]` | Export the view as PNG |
 | help | `help [command]` | Show help for a command |
+
+## Density Maps
+
+Density maps load as first-class sidebar entries with a map glyph. The parsed
+volume data remains available for isosurface creation whether or not the map's
+3D bounding box is shown. The map **A** menu includes **Show Bounding Box** for
+toggling the bounds box, which is off by default. MAP and MRC files are treated
+as CCP4-compatible density maps.
+
+Use the map row **A** menu to create a default child isosurface at the map's
+one-sigma contour level, or use the terminal for explicit names and contour
+levels:
+
+```
+isosurface iso_auto, density_map
+isosurface iso_1, density_map, 1.0
+isosurface ligand_mesh, density_map, 2.0, ligand, 3
+isosurface pocket_mesh, density_map, 1.5, "chain A, resn LIG", 3, 2, mesh
+```
+
+Isosurface rows are children of their parent map and default to blue mesh
+representation. Their **A** menu includes **Contour...**, which opens a sigma
+slider with editable sigma and raw-value inputs. The terminal
+`isosurface name, map` form uses the raw value equivalent to `+1` sigma when no
+level is provided. Explicit terminal levels remain raw values. Their **S** menu
+switches between mesh and surface rendering and controls opacity. Selection
+expressions containing commas must be quoted in the terminal command.
 
 ## Selection Language
 
@@ -203,8 +235,10 @@ label active_site, resn
 ├── src/
 │   ├── main.js             Application bootstrap and wiring
 │   ├── actions.js          Shared color, label, show/hide, and view actions
+│   ├── scene-clear.js      Shared viewer and state clearing helper
 │   ├── viewer.js           3Dmol.js wrapper (init, load, select, highlight)
 │   ├── state.js            Observable application state store
+│   ├── maps.js             Density map and isosurface viewer service
 │   ├── presets.js           View preset definitions
 │   ├── commands/
 │   │   ├── registry.js     Command parsing and registry
@@ -217,6 +251,8 @@ label active_site, resn
 │   │   ├── loading.js      Fetch/load commands
 │   │   ├── preset.js       Preset command
 │   │   ├── selection.js    Select/count_atoms/get_model commands
+│   │   ├── surface.js      Surface creation command
+│   │   ├── isosurface.js   Density isosurface command
 │   │   └── styling.js      Color/set/bg_color/cartoon_style commands
 │   ├── parser/
 │   │   ├── selection.pegjs PEG grammar for selection language

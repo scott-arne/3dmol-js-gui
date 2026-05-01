@@ -30,6 +30,8 @@ const mockState = {
   objects: new Map(),
   selections: new Map(),
   surfaces: new Map(),
+  maps: new Map(),
+  isosurfaces: new Map(),
   selectionMode: 'atoms',
   settings: {
     bgColor: '#000000',
@@ -187,6 +189,7 @@ import { registerStylingCommands } from '../src/commands/styling.js';
 import { registerPresetCommands } from '../src/commands/preset.js';
 import { registerGroupingCommands } from '../src/commands/grouping.js';
 import { registerSurfaceCommands } from '../src/commands/surface.js';
+import { registerIsosurfaceCommands, splitIsosurfaceArgs } from '../src/commands/isosurface.js';
 import { registerAllCommands } from '../src/commands/index.js';
 
 import { getViewer, orientView, addTrackedLabel, clearAllLabels, fetchPDB, loadModelData, scheduleRender } from '../src/viewer.js';
@@ -239,8 +242,18 @@ function makeSurfaceService(overrides = {}) {
   };
 }
 
-function makeCtx(terminal, surfaceService) {
-  return { terminal, surfaceService };
+function makeMapService() {
+  return {
+    createIsosurface: vi.fn(async (entry) => ({ ...entry })),
+    removeMap: vi.fn(),
+    removeIsosurface: vi.fn(),
+    renameMap: vi.fn(),
+    renameIsosurface: vi.fn(),
+  };
+}
+
+function makeCtx(terminal, surfaceService, mapService) {
+  return { terminal, surfaceService, mapService };
 }
 
 function resetMocks() {
@@ -248,6 +261,8 @@ function resetMocks() {
   mockState.objects.clear();
   mockState.selections.clear();
   mockState.surfaces.clear();
+  mockState.maps.clear();
+  mockState.isosurfaces.clear();
   mockState.entryTree.length = 0;
   mockState.selectionMode = 'atoms';
   mockState.settings = {
@@ -1196,6 +1211,147 @@ describe('surface.js', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Isosurface Commands
+// ---------------------------------------------------------------------------
+
+describe('isosurface.js', () => {
+  let registry, terminal, ctx, mapService;
+
+  beforeEach(() => {
+    resetMocks();
+    registry = createCommandRegistry();
+    registerIsosurfaceCommands(registry);
+    terminal = makeTerminal();
+    mapService = makeMapService();
+    ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+    mockState.maps.set('density', { name: 'density' });
+  });
+
+  it('splits quoted comma arguments', () => {
+    expect(splitIsosurfaceArgs('mesh1, density, 1.5, "chain A, resn LIG", 3, 2, mesh')).toEqual([
+      'mesh1',
+      'density',
+      '1.5',
+      'chain A, resn LIG',
+      '3',
+      '2',
+      'mesh',
+    ]);
+  });
+
+  it('preserves empty positional arguments while splitting', () => {
+    expect(splitIsosurfaceArgs('mesh1, density, 1, , 3')).toEqual([
+      'mesh1',
+      'density',
+      '1',
+      '',
+      '3',
+    ]);
+  });
+
+  it('creates a default mesh isosurface from a map', async () => {
+    mapService.createIsosurface.mockResolvedValueOnce({
+      name: 'iso',
+      mapName: 'density',
+      level: 0.42,
+      representation: 'mesh',
+    });
+
+    await registry.execute('isosurface iso, density', ctx);
+
+    expect(mapService.createIsosurface).toHaveBeenCalledWith({
+      name: 'iso',
+      mapName: 'density',
+      level: null,
+      selectionText: null,
+      selection: null,
+      buffer: null,
+      carve: null,
+      representation: 'mesh',
+    });
+    expect(terminal.lines[0]).toEqual({
+      msg: 'Created mesh isosurface "iso" from map "density" at +0.42',
+      type: 'result',
+    });
+  });
+
+  it('preserves internal double quotes inside single-quoted selection text', async () => {
+    const selectionResult = { spec: { entry: 'my object' } };
+    const selectionSpec = { entry: 'my object' };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+
+    await registry.execute('isosurface mesh1, density, 1, \'entry "my object"\', 2', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('entry "my object"');
+    expect(mapService.createIsosurface).toHaveBeenCalledWith({
+      name: 'mesh1',
+      mapName: 'density',
+      level: 1,
+      selectionText: 'entry "my object"',
+      selection: selectionSpec,
+      buffer: 2,
+      carve: null,
+      representation: 'mesh',
+    });
+  });
+
+  it('creates an isosurface with selection, buffer, carve, and representation', async () => {
+    const selectionResult = { spec: { resn: ['LIG'] } };
+    const selectionSpec = { resn: ['LIG'] };
+    resolveSelection.mockReturnValueOnce(selectionResult);
+    getSelSpec.mockReturnValueOnce(selectionSpec);
+
+    await registry.execute('isosurface ligand_mesh, density, 2.5, "chain A, resn LIG", 3, 1.5, surface', ctx);
+
+    expect(resolveSelection).toHaveBeenCalledWith('chain A, resn LIG');
+    expect(mapService.createIsosurface).toHaveBeenCalledWith({
+      name: 'ligand_mesh',
+      mapName: 'density',
+      level: 2.5,
+      selectionText: 'chain A, resn LIG',
+      selection: selectionSpec,
+      buffer: 3,
+      carve: 1.5,
+      representation: 'surface',
+    });
+  });
+
+  it('rejects missing maps, bad numbers, bad representation, and unbalanced quotes', async () => {
+    await expect(registry.execute('isosurface mesh1, missing', ctx))
+      .rejects.toThrow('Map "missing" not found');
+    await expect(registry.execute('isosurface mesh1, density, no', ctx))
+      .rejects.toThrow('Invalid isosurface level "no"');
+    await expect(registry.execute('isosurface mesh1, density, 1, protein, nope', ctx))
+      .rejects.toThrow('Invalid isosurface buffer "nope"');
+    await expect(registry.execute('isosurface mesh1, density, 1, protein, 2, 3, sticks', ctx))
+      .rejects.toThrow('Unknown isosurface representation "sticks"');
+    await expect(registry.execute('isosurface mesh1, density, 1, "chain A', ctx))
+      .rejects.toThrow('Usage: isosurface');
+  });
+
+  it('rejects skipped optional positional fields', async () => {
+    await expect(registry.execute('isosurface iso, density, 1, , 3', ctx))
+      .rejects.toThrow('Usage: isosurface');
+    await expect(registry.execute('isosurface iso, density, 1, , , , surface', ctx))
+      .rejects.toThrow('Usage: isosurface');
+
+    expect(mapService.createIsosurface).not.toHaveBeenCalled();
+  });
+
+  it('rejects blank required name and map fields', async () => {
+    await expect(registry.execute('isosurface , density', ctx))
+      .rejects.toThrow('Usage: isosurface');
+    await expect(registry.execute('isosurface mesh1, ', ctx))
+      .rejects.toThrow('Usage: isosurface');
+    await expect(registry.execute('isosurface , ', ctx))
+      .rejects.toThrow('Usage: isosurface');
+
+    expect(mapService.createIsosurface).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Editing Commands
 // ---------------------------------------------------------------------------
 
@@ -1263,6 +1419,15 @@ describe('editing.js', () => {
       expect(() => registry.execute('delete', ctx)).toThrow('Usage: delete');
     });
 
+    it('allows del as a synonym for delete', () => {
+      mockState.selections.set('mysel', { spec: {}, atomCount: 5 });
+
+      registry.execute('del mysel', ctx);
+
+      expect(removeSelection).toHaveBeenCalledWith('mysel');
+      expect(terminal.lines[0].msg).toContain('Deleted selection');
+    });
+
     it('deletes a selection', () => {
       mockState.selections.set('mysel', { spec: {}, atomCount: 5 });
 
@@ -1291,6 +1456,14 @@ describe('editing.js', () => {
       expect(pruneSelections).toHaveBeenCalledWith([0, 1]);
       expect(terminal.lines[0].msg).toContain('Deleted object');
       expect(terminal.lines[0].msg).toContain('mol');
+    });
+
+    it('keeps de as an unambiguous prefix for delete', () => {
+      mockState.selections.set('mysel', { spec: {}, atomCount: 5 });
+
+      registry.execute('de mysel', ctx);
+
+      expect(removeSelection).toHaveBeenCalledWith('mysel');
     });
 
     it('deletes a surface through the surface service', () => {
@@ -1431,6 +1604,56 @@ describe('editing.js', () => {
       expect(removeGroup).toHaveBeenCalledWith('grp');
     });
 
+    it('removes grouped maps and direct grouped isosurfaces before deleting a group', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.maps.set('density', { name: 'density' });
+      mockState.maps.set('other_density', { name: 'other_density' });
+      mockState.isosurfaces.set('child_mesh', {
+        name: 'child_mesh',
+        mapName: 'density',
+      });
+      mockState.isosurfaces.set('direct_mesh', {
+        name: 'direct_mesh',
+        mapName: 'other_density',
+      });
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [
+          {
+            type: 'map',
+            name: 'density',
+            children: [{ type: 'isosurface', name: 'child_mesh' }],
+          },
+          { type: 'isosurface', name: 'direct_mesh' },
+        ],
+      });
+
+      registry.execute('delete grp', ctx);
+
+      expect(mapService.removeMap).toHaveBeenCalledWith('density');
+      expect(mapService.removeIsosurface).toHaveBeenCalledWith('direct_mesh');
+      expect(mapService.removeIsosurface).not.toHaveBeenCalledWith('child_mesh');
+      expect(mapService.removeMap.mock.invocationCallOrder[0])
+        .toBeLessThan(removeGroup.mock.invocationCallOrder[0]);
+      expect(removeGroup).toHaveBeenCalledWith('grp');
+    });
+
+    it('requires map service before group deletion when grouped density entries exist', () => {
+      mockState.maps.set('density', { name: 'density' });
+      mockState.entryTree.push({
+        type: 'group',
+        name: 'grp',
+        children: [{ type: 'map', name: 'density' }],
+      });
+
+      expect(() => registry.execute('delete grp', ctx))
+        .toThrow('Map service is unavailable');
+
+      expect(removeGroup).not.toHaveBeenCalled();
+    });
+
     it('requires surface service before group deletion when grouped surfaces exist', () => {
       mockState.surfaces.set('free_surface', { name: 'free_surface' });
       mockState.entryTree.push({
@@ -1472,6 +1695,103 @@ describe('editing.js', () => {
 
       registry.execute('delete mol', ctx);
       expect(hlClearHighlight).toHaveBeenCalled();
+    });
+
+    it('deletes maps through map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.maps.set('density', { name: 'density' });
+
+      registry.execute('delete density', ctx);
+
+      expect(mapService.removeMap).toHaveBeenCalledWith('density');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Deleted map "density"',
+        type: 'result',
+      });
+    });
+
+    it('deletes isosurfaces through map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.isosurfaces.set('mesh', { name: 'mesh', mapName: 'density' });
+
+      registry.execute('delete mesh', ctx);
+
+      expect(mapService.removeIsosurface).toHaveBeenCalledWith('mesh');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Deleted isosurface "mesh"',
+        type: 'result',
+      });
+    });
+
+    it('requires map service before deleting maps', () => {
+      mockState.maps.set('density', { name: 'density' });
+
+      expect(() => registry.execute('delete density', ctx))
+        .toThrow('Map service is unavailable');
+    });
+  });
+
+  describe('clear', () => {
+    it('throws when arguments are provided', () => {
+      expect(() => registry.execute('clear mol', ctx)).toThrow('Usage: clear');
+    });
+
+    it('clears viewer entries, selections, labels, and highlights', () => {
+      const surfaceService = makeSurfaceService();
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, surfaceService, mapService);
+      const modelRef = {};
+      mockState.objects.set('mol', {
+        model: modelRef,
+        visible: true,
+        representations: new Set(['cartoon']),
+      });
+      mockState.selections.set('sele', { spec: {}, atomCount: 2, visible: true });
+      mockState.surfaces.set('surf', { name: 'surf', handle: {} });
+      mockState.maps.set('density', { name: 'density' });
+      mockState.isosurfaces.set('mesh', { name: 'mesh', mapName: 'density' });
+      mockState.entryTree.push(
+        { type: 'object', name: 'mol' },
+        { type: 'surface', name: 'surf' },
+        { type: 'map', name: 'density', children: [{ type: 'isosurface', name: 'mesh' }] },
+        { type: 'selection', name: 'sele' },
+      );
+
+      registry.execute('clear', ctx);
+
+      expect(mockViewer.removeModel).toHaveBeenCalledWith(modelRef);
+      expect(surfaceService.removeSurface).toHaveBeenCalledWith('surf');
+      expect(mapService.removeMap).toHaveBeenCalledWith('density');
+      expect(mapService.removeIsosurface).not.toHaveBeenCalledWith('mesh');
+      expect(mockState.objects.size).toBe(0);
+      expect(mockState.selections.size).toBe(0);
+      expect(mockState.surfaces.size).toBe(0);
+      expect(mockState.maps.size).toBe(0);
+      expect(mockState.isosurfaces.size).toBe(0);
+      expect(mockState.entryTree).toEqual([]);
+      expect(clearAllLabels).toHaveBeenCalled();
+      expect(hlClearHighlight).toHaveBeenCalled();
+      expect(scheduleRender).toHaveBeenCalled();
+      expect(notifyStateChange).toHaveBeenCalled();
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Cleared viewer',
+        type: 'result',
+      });
+    });
+
+    it('removes orphan isosurfaces that are not parented to a loaded map', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, undefined, mapService);
+      mockState.isosurfaces.set('orphan', { name: 'orphan', mapName: 'missing_map' });
+      mockState.entryTree.push({ type: 'isosurface', name: 'orphan' });
+
+      registry.execute('clear', ctx);
+
+      expect(mapService.removeIsosurface).toHaveBeenCalledWith('orphan');
+      expect(mockState.isosurfaces.size).toBe(0);
+      expect(mockState.entryTree).toEqual([]);
     });
   });
 
@@ -1515,6 +1835,34 @@ describe('editing.js', () => {
       expect(renameObject).not.toHaveBeenCalled();
       expect(terminal.lines[0]).toEqual({
         msg: 'Renamed surface "oldSurf" to "newSurf"',
+        type: 'result',
+      });
+    });
+
+    it('renames a map through the map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.maps.set('oldMap', { name: 'oldMap' });
+
+      registry.execute('set_name oldMap, newMap', ctx);
+
+      expect(mapService.renameMap).toHaveBeenCalledWith('oldMap', 'newMap');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Renamed map "oldMap" to "newMap"',
+        type: 'result',
+      });
+    });
+
+    it('renames an isosurface through the map service', () => {
+      const mapService = makeMapService();
+      ctx = makeCtx(terminal, makeSurfaceService(), mapService);
+      mockState.isosurfaces.set('oldMesh', { name: 'oldMesh', mapName: 'density' });
+
+      registry.execute('set_name oldMesh, newMesh', ctx);
+
+      expect(mapService.renameIsosurface).toHaveBeenCalledWith('oldMesh', 'newMesh');
+      expect(terminal.lines[0]).toEqual({
+        msg: 'Renamed isosurface "oldMesh" to "newMesh"',
         type: 'result',
       });
     });
@@ -1881,6 +2229,9 @@ describe('loading.js', () => {
       expect(input.accept).toContain('.pdb');
       expect(input.accept).toContain('.sdf');
       expect(input.accept).toContain('.mol2');
+      expect(input.accept).toContain('.ccp4');
+      expect(input.accept).toContain('.map');
+      expect(input.accept).toContain('.mrc');
 
       vi.restoreAllMocks();
     });
@@ -2874,10 +3225,13 @@ describe('index.js', () => {
     // Editing commands
     expect(registry.has('remove')).toBe(true);
     expect(registry.has('delete')).toBe(true);
+    expect(registry.has('del')).toBe(true);
+    expect(registry.has('clear')).toBe(true);
     expect(registry.has('set_name')).toBe(true);
 
     // Surface commands
     expect(registry.has('surface')).toBe(true);
+    expect(registry.has('isosurface')).toBe(true);
 
     // Export commands
     expect(registry.has('png')).toBe(true);
@@ -2909,8 +3263,8 @@ describe('index.js', () => {
     const registry = createCommandRegistry();
     registerAllCommands(registry);
     const commands = registry.list();
-    // 9 camera + 4 display + 4 selection + 3 editing + 1 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 40
-    expect(commands.length).toBe(40);
+    // 9 camera + 4 display + 4 selection + 4 editing + 2 surface + 2 export + 2 labeling + 4 loading + 6 styling + 1 preset + 4 grouping = 42
+    expect(commands.length).toBe(42);
   });
 
   it('all registered commands have help text', () => {

@@ -41,6 +41,15 @@ function clickPopupItem(value) {
   document.querySelector(`[data-value="${value}"]`).click();
 }
 
+function makeBounds() {
+  return {
+    min: { x: 0, y: 0, z: 0 },
+    max: { x: 1, y: 1, z: 1 },
+    center: { x: 0.5, y: 0.5, z: 0.5 },
+    dimensions: { w: 1, h: 1, d: 1 },
+  };
+}
+
 describe('static offline smoke fixture', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -59,6 +68,7 @@ describe('static offline smoke fixture', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     delete window.__C3D_INIT__;
     delete globalThis.$3Dmol;
     delete globalThis.ResizeObserver;
@@ -194,6 +204,79 @@ describe('static offline smoke fixture', () => {
     expect(getState().surfaces.has('direct_surface')).toBe(false);
   });
 
+  it('group visibility toggles grouped maps and child isosurfaces through viewer handles', async () => {
+    const { mockViewer, addMapEntry, addIsosurfaceEntry, addGroup, getState } = await bootFixtureApp();
+    const boxHandle = { kind: 'box' };
+    const isoHandle = { kind: 'iso' };
+    const volumeData = { kind: 'volume' };
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData,
+      bounds: makeBounds(),
+      handles: [boxHandle],
+    });
+    addIsosurfaceEntry({
+      name: 'mesh',
+      mapName: 'density',
+      level: 1,
+      handle: isoHandle,
+      visible: true,
+      parentVisible: true,
+    });
+    addGroup('density_group', ['density']);
+    await flushStateUpdates();
+    mockViewer.removeShape.mockClear();
+    mockViewer.addIsosurface.mockClear();
+
+    document
+      .querySelector('.sidebar-group-header[data-name="density_group"] .sidebar-zone-toggle')
+      .click();
+
+    expect(getState().maps.get('density').visible).toBe(false);
+    expect(getState().isosurfaces.get('mesh').parentVisible).toBe(false);
+    expect(mockViewer.removeShape).toHaveBeenCalledWith(boxHandle);
+    expect(mockViewer.removeShape).toHaveBeenCalledWith(isoHandle);
+    expect(mockViewer.addIsosurface).toHaveBeenCalledWith(
+      volumeData,
+      expect.objectContaining({ opacity: 0 }),
+    );
+  });
+
+  it('group deletion removes grouped map and isosurface viewer handles', async () => {
+    const { mockViewer, addMapEntry, addIsosurfaceEntry, addGroup, getState } = await bootFixtureApp();
+    const boxHandle = { kind: 'box' };
+    const isoHandle = { kind: 'iso' };
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: makeBounds(),
+      handles: [boxHandle],
+    });
+    addIsosurfaceEntry({
+      name: 'mesh',
+      mapName: 'density',
+      level: 1,
+      handle: isoHandle,
+    });
+    addGroup('density_group', ['density']);
+    await flushStateUpdates();
+    mockViewer.removeShape.mockClear();
+
+    document.querySelector('.sidebar-group-header[data-name="density_group"] [data-btn="A"]').click();
+    clickPopupItem('delete');
+
+    expect(mockViewer.removeShape).toHaveBeenCalledWith(boxHandle);
+    expect(mockViewer.removeShape).toHaveBeenCalledWith(isoHandle);
+    expect(getState().maps.has('density')).toBe(false);
+    expect(getState().isosurfaces.has('mesh')).toBe(false);
+  });
+
   it('object rename reparents child surfaces to the new object name', async () => {
     const { addSurfaceEntry, getState } = await bootFixtureApp();
 
@@ -240,6 +323,153 @@ describe('static offline smoke fixture', () => {
       expect.objectContaining({ opacity: 0.75, wireframe: false }),
       { resn: 'LIG' },
       { resn: 'LIG' },
+    );
+  });
+
+  it('map action menu creates and recontours child isosurfaces', async () => {
+    const { mockViewer, addMapEntry, getState } = await bootFixtureApp();
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: makeBounds(),
+      handles: [],
+    });
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    clickPopupItem('create_isosurface');
+    await flushStateUpdates();
+
+    const iso = getState().isosurfaces.get('isosurface_1');
+    expect(iso).toMatchObject({
+      name: 'isosurface_1',
+      mapName: 'density',
+      level: 1,
+      representation: 'mesh',
+    });
+    expect(document.querySelector('[data-kind="isosurface"][data-name="isosurface_1"]')).not.toBeNull();
+    expect(mockViewer.addIsosurface).toHaveBeenLastCalledWith(
+      getState().maps.get('density').volumeData,
+      expect.objectContaining({ isoval: 1, wireframe: true }),
+    );
+
+    vi.useFakeTimers();
+
+    document.querySelector('[data-kind="isosurface"][data-name="isosurface_1"] [data-btn="A"]').click();
+    clickPopupItem('contour');
+    const contourInput = document.querySelector('.contour-level-input');
+    expect(contourInput).not.toBeNull();
+    contourInput.value = '0.42';
+    contourInput.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(150);
+    await flushStateUpdates();
+
+    expect(getState().isosurfaces.get('isosurface_1').level).toBe(0.42);
+    expect(mockViewer.addIsosurface).toHaveBeenLastCalledWith(
+      getState().maps.get('density').volumeData,
+      expect.objectContaining({ isoval: 0.42 }),
+    );
+  });
+
+  it('map action menu focuses map bounds', async () => {
+    const { mockViewer, addMapEntry } = await bootFixtureApp();
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: makeBounds(),
+      handles: [],
+    });
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    clickPopupItem('center');
+
+    expect(mockViewer.setView).toHaveBeenLastCalledWith([
+      -0.5, -0.5, -0.5, 0, 0, 0, 0, 1,
+    ]);
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    clickPopupItem('zoom');
+
+    const zoomView = mockViewer.setView.mock.calls.at(-1)[0];
+    expect(zoomView.slice(0, 3)).toEqual([-0.5, -0.5, -0.5]);
+    expect(zoomView[3]).not.toBe(0);
+  });
+
+  it('map action menu toggles the bounding box without hiding child isosurfaces', async () => {
+    const { mockViewer, addMapEntry, addIsosurfaceEntry, getState } = await bootFixtureApp();
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: makeBounds(),
+      handles: [],
+    });
+    addIsosurfaceEntry({
+      name: 'isosurface_1',
+      mapName: 'density',
+      handle: { id: 'iso' },
+      parentVisible: true,
+    });
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    const item = document.querySelector('[data-value="show_bounding_box"]');
+    expect(item.classList.contains('checked')).toBe(false);
+    item.click();
+    await flushStateUpdates();
+
+    expect(getState().maps.get('density')).toMatchObject({
+      showBoundingBox: true,
+      visible: true,
+    });
+    expect(getState().isosurfaces.get('isosurface_1')).toMatchObject({
+      parentVisible: true,
+    });
+    expect(mockViewer.addBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: makeBounds().center,
+      wireframe: true,
+    }));
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    expect(document.querySelector('[data-value="show_bounding_box"]').classList.contains('checked')).toBe(true);
+  });
+
+  it('terminal isosurface command uses the main map service context', async () => {
+    const { mockViewer, addMapEntry, getState } = await bootFixtureApp();
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: makeBounds(),
+      handles: [],
+    });
+    await flushStateUpdates();
+
+    const input = document.querySelector('.terminal-input');
+    input.value = 'isosurface command_iso, density, 2';
+    document.querySelector('.terminal-send').click();
+    await flushStateUpdates();
+
+    expect(getState().isosurfaces.get('command_iso')).toMatchObject({
+      name: 'command_iso',
+      mapName: 'density',
+      level: 2,
+      representation: 'mesh',
+    });
+    expect(mockViewer.addIsosurface).toHaveBeenLastCalledWith(
+      getState().maps.get('density').volumeData,
+      expect.objectContaining({ isoval: 2, wireframe: true }),
     );
   });
 

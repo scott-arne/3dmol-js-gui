@@ -16,12 +16,20 @@ import {
   updateSurfaceEntry,
 } from '../state.js';
 import { renderHighlight, clearHighlight } from '../highlight.js';
+import { clearScene } from '../scene-clear.js';
 
 function requireSurfaceService(ctx) {
   if (!ctx.surfaceService) {
     throw new Error('Surface service is unavailable');
   }
   return ctx.surfaceService;
+}
+
+function requireMapService(ctx) {
+  if (!ctx.mapService) {
+    throw new Error('Map service is unavailable');
+  }
+  return ctx.mapService;
 }
 
 function collectChildSurfaceNames(objectNames) {
@@ -39,6 +47,33 @@ function hasChildSurfaces(surfaceNamesByParent) {
     }
   }
   return false;
+}
+
+function getDirectGroupedIsosurfaceNames(entries, state) {
+  const groupedMaps = new Set(entries.maps);
+  return entries.isosurfaces.filter((isoName) => {
+    const iso = state.isosurfaces.get(isoName);
+    return iso && !groupedMaps.has(iso.mapName);
+  });
+}
+
+function removeGroupedDensityEntries(entries, state, ctx) {
+  const directIsosurfaceNames = getDirectGroupedIsosurfaceNames(entries, state);
+  if (entries.maps.length === 0 && directIsosurfaceNames.length === 0) {
+    return;
+  }
+
+  const mapService = requireMapService(ctx);
+  for (const mapName of entries.maps) {
+    if (state.maps.has(mapName)) {
+      mapService.removeMap(mapName);
+    }
+  }
+  for (const isoName of directIsosurfaceNames) {
+    if (state.isosurfaces.has(isoName)) {
+      mapService.removeIsosurface(isoName);
+    }
+  }
 }
 
 /**
@@ -93,6 +128,7 @@ export function registerEditingCommands(registry) {
   });
 
   registry.register('delete', {
+    aliases: ['del'],
     handler: (args, ctx) => {
       const name = args.trim();
       if (!name) {
@@ -117,6 +153,8 @@ export function registerEditingCommands(registry) {
           : ctx.surfaceService;
         const viewer = getViewer();
         const allRemovedIndices = [];
+
+        removeGroupedDensityEntries(entries, state, ctx);
 
         for (const objName of entries.objects) {
           const obj = state.objects.get(objName);
@@ -145,6 +183,18 @@ export function registerEditingCommands(registry) {
         }
 
         ctx.terminal.print(`Deleted group "${name}" (${entries.objects.length} objects, ${entries.selections.length} selections)`, 'result');
+        return;
+      }
+
+      if (state.maps.has(name)) {
+        requireMapService(ctx).removeMap(name);
+        ctx.terminal.print(`Deleted map "${name}"`, 'result');
+        return;
+      }
+
+      if (state.isosurfaces.has(name)) {
+        requireMapService(ctx).removeIsosurface(name);
+        ctx.terminal.print(`Deleted isosurface "${name}"`, 'result');
         return;
       }
 
@@ -211,7 +261,23 @@ export function registerEditingCommands(registry) {
       ctx.terminal.print(`Deleted object "${name}"`, 'result');
     },
     usage: 'delete <name>',
-    help: 'Delete a molecular object, named selection, or group.',
+    help: 'Delete an object, selection, group, surface, map, or isosurface.',
+  });
+
+  registry.register('clear', {
+    handler: (args, ctx) => {
+      if (args.trim()) {
+        throw new Error('Usage: clear');
+      }
+
+      clearScene({
+        surfaceService: ctx.surfaceService,
+        mapService: ctx.mapService,
+      });
+      ctx.terminal.print('Cleared viewer', 'result');
+    },
+    usage: 'clear',
+    help: 'Clear all objects, selections, surfaces, maps, isosurfaces, labels, and highlights from the viewer.',
   });
 
   registry.register('set_name', {
@@ -233,6 +299,12 @@ export function registerEditingCommands(registry) {
       } else if (state.surfaces.has(oldName)) {
         requireSurfaceService(ctx).renameSurface(oldName, newName);
         ctx.terminal.print(`Renamed surface "${oldName}" to "${newName}"`, 'result');
+      } else if (state.maps.has(oldName)) {
+        requireMapService(ctx).renameMap(oldName, newName);
+        ctx.terminal.print(`Renamed map "${oldName}" to "${newName}"`, 'result');
+      } else if (state.isosurfaces.has(oldName)) {
+        requireMapService(ctx).renameIsosurface(oldName, newName);
+        ctx.terminal.print(`Renamed isosurface "${oldName}" to "${newName}"`, 'result');
       } else if (state.objects.has(oldName)) {
         const childSurfaceNames = getChildSurfaceNames(oldName);
         renameObject(oldName, newName);
@@ -245,6 +317,6 @@ export function registerEditingCommands(registry) {
       }
     },
     usage: 'set_name <old_name>, <new_name>',
-    help: 'Rename a molecular object or named selection.',
+    help: 'Rename an object, selection, group, surface, map, or isosurface.',
   });
 }

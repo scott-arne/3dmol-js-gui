@@ -8,7 +8,7 @@
 import './ui/styles.css';
 import { initViewer, getViewer, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
 import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
-import { loadStructure } from './loading/structure-loader.js';
+import { loadStructure, loadStructureFile } from './loading/structure-loader.js';
 import {
   normalizeRemoteLoadingConfig,
   resolveArbitraryUrlRequest,
@@ -44,9 +44,11 @@ import {
   reparentEntry,
   findTreeNode,
   collectEntryNames,
+  getNextIsosurfaceName,
 } from './state.js';
 import { createCommandRegistry, createCommandContext } from './commands/registry.js';
 import { registerAllCommands } from './commands/index.js';
+import { clearScene } from './scene-clear.js';
 import { showLoadDialog, showExportDialog, showQuickstart, showRenameDialog } from './ui/dialogs.js';
 import { createContextMenu } from './ui/context-menu.js';
 import {
@@ -68,6 +70,23 @@ import {
   removeSurfacesForParent,
   findSingleSurfaceParent,
 } from './surfaces.js';
+import {
+  createIsosurface,
+  createMap,
+  removeIsosurface,
+  removeMap,
+  renameIsosurface,
+  renameMap,
+  setMapBoundingBoxVisibility,
+  setIsosurfaceColor,
+  setIsosurfaceLevel,
+  setIsosurfaceOpacity,
+  setIsosurfaceRepresentation,
+  setIsosurfaceVisibility,
+  setMapColor,
+  setMapOpacity,
+  setMapVisibility,
+} from './maps.js';
 
 // Guard: ensure 3Dmol.js is loaded
 if (typeof $3Dmol === 'undefined') {
@@ -76,6 +95,10 @@ if (typeof $3Dmol === 'undefined') {
   msg.textContent = 'Error: 3Dmol.js failed to load. Check your network connection or host the library locally. See index.html for instructions.';
   document.body.appendChild(msg);
   throw new Error('3Dmol.js not loaded');
+}
+
+function formatSignedLevel(level) {
+  return level > 0 ? `+${level}` : String(level);
 }
 
 const app = document.getElementById('app');
@@ -116,8 +139,34 @@ const surfaceService = {
   findSingleSurfaceParent,
 };
 
+const mapService = {
+  createMap,
+  removeMap,
+  renameMap,
+  setMapVisibility,
+  setMapBoundingBoxVisibility,
+  setMapColor,
+  setMapOpacity,
+  createIsosurface,
+  removeIsosurface,
+  renameIsosurface,
+  setIsosurfaceVisibility,
+  setIsosurfaceRepresentation,
+  setIsosurfaceOpacity,
+  setIsosurfaceColor,
+  setIsosurfaceLevel,
+};
+
 function isSurfaceEffectivelyVisible(surface) {
   return surface.visible !== false && surface.parentVisible !== false;
+}
+
+function isMapEffectivelyVisible(map) {
+  return map.visible !== false;
+}
+
+function isIsosurfaceEffectivelyVisible(iso) {
+  return iso.visible !== false && iso.parentVisible !== false;
 }
 
 function getDirectGroupedSurfaceNames(entries, state) {
@@ -132,6 +181,102 @@ function setDirectGroupedSurfaceVisibility(entries, state, visible) {
   for (const surfaceName of getDirectGroupedSurfaceNames(entries, state)) {
     surfaceService.setSurfaceVisibility(surfaceName, visible);
   }
+}
+
+function getDirectGroupedIsosurfaceNames(entries, state) {
+  const groupedMaps = new Set(entries.maps);
+  return entries.isosurfaces.filter((isoName) => {
+    const iso = state.isosurfaces.get(isoName);
+    return iso && !groupedMaps.has(iso.mapName);
+  });
+}
+
+function setGroupedMapVisibility(entries, state, visible) {
+  for (const mapName of entries.maps) {
+    if (state.maps.has(mapName)) {
+      mapService.setMapVisibility(mapName, visible);
+    }
+  }
+  for (const isoName of getDirectGroupedIsosurfaceNames(entries, state)) {
+    if (state.isosurfaces.has(isoName)) {
+      mapService.setIsosurfaceVisibility(isoName, visible);
+    }
+  }
+}
+
+function removeGroupedDensityEntries(entries, state) {
+  for (const mapName of entries.maps) {
+    if (state.maps.has(mapName)) {
+      mapService.removeMap(mapName);
+    }
+  }
+  for (const isoName of getDirectGroupedIsosurfaceNames(entries, state)) {
+    if (state.isosurfaces.has(isoName)) {
+      mapService.removeIsosurface(isoName);
+    }
+  }
+}
+
+function getBoundsView(bounds, { includeZoom = false } = {}) {
+  const viewer = getViewer();
+  if (
+    !bounds?.center ||
+    !Number.isFinite(bounds.center.x) ||
+    !Number.isFinite(bounds.center.y) ||
+    !Number.isFinite(bounds.center.z) ||
+    typeof viewer.getView !== 'function' ||
+    typeof viewer.setView !== 'function'
+  ) {
+    return null;
+  }
+
+  const view = viewer.getView();
+  if (!Array.isArray(view) || view.length < 8) {
+    return null;
+  }
+
+  const nextView = [...view];
+  nextView[0] = -bounds.center.x;
+  nextView[1] = -bounds.center.y;
+  nextView[2] = -bounds.center.z;
+
+  if (includeZoom) {
+    const dimensions = bounds.dimensions || {};
+    const diagonal = Math.hypot(
+      dimensions.w || 0,
+      dimensions.h || 0,
+      dimensions.d || 0,
+    );
+    const minDistance = viewer.config?.minimumZoomToDistance || 5;
+    const maxDistance = Math.max(diagonal, minDistance);
+    const fov = viewer.camera?.fov;
+    const cameraZ = viewer.CAMERA_Z;
+    if (Number.isFinite(fov) && Number.isFinite(cameraZ)) {
+      let zoomZ = -(
+        (maxDistance * 0.5) / Math.tan(Math.PI / 180 * fov / 2) -
+        cameraZ
+      );
+      if (typeof viewer.adjustZoomToLimits === 'function') {
+        zoomZ = viewer.adjustZoomToLimits(zoomZ);
+      }
+      nextView[3] = zoomZ;
+    }
+  }
+
+  return nextView;
+}
+
+function focusBounds(bounds, { zoom = false } = {}) {
+  const viewer = getViewer();
+  const view = getBoundsView(bounds, { includeZoom: zoom });
+  if (view) {
+    viewer.setView(view);
+  } else if (zoom) {
+    viewer.zoomTo();
+  } else {
+    viewer.center();
+  }
+  scheduleRender();
 }
 
 function resolveSidebarActionTarget(name, kind = 'object') {
@@ -406,6 +551,209 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     }
   },
 
+  onToggleMapVisibility(name) {
+    const map = getState().maps.get(name);
+    if (!map) return;
+    try {
+      const updated = mapService.setMapVisibility(name, !map.visible);
+      if (updated) {
+        terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} map "${name}"`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  async onCreateIsosurface(mapName) {
+    const name = getNextIsosurfaceName();
+    try {
+      const iso = await mapService.createIsosurface({
+        name,
+        mapName,
+        representation: 'mesh',
+      });
+      terminal.print(
+        `Created ${iso.representation} isosurface "${iso.name}" from map "${iso.mapName}" at ${formatSignedLevel(iso.level)}`,
+        'result',
+      );
+    } catch (e) {
+      terminal.print(`Failed to create isosurface from map "${mapName}": ${e.message}`, 'error');
+    }
+  },
+
+  onMapAction(name, action) {
+    const map = getState().maps.get(name);
+    if (!map) return;
+
+    switch (action) {
+      case 'show_bounding_box':
+        try {
+          const updated = mapService.setMapBoundingBoxVisibility(name, !map.showBoundingBox);
+          if (updated) {
+            terminal.print(
+              `${updated.showBoundingBox ? 'Showing' : 'Hiding'} bounding box for map "${name}"`,
+              'result',
+            );
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
+        }
+        break;
+      case 'delete':
+        try {
+          if (mapService.removeMap(name)) {
+            terminal.print(`Deleted map "${name}"`, 'result');
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
+        }
+        break;
+      case 'rename':
+        showRenameDialog(name, (newName) => {
+          try {
+            if (mapService.renameMap(name, newName)) {
+              terminal.print(`Renamed map "${name}" to "${newName}"`, 'result');
+            }
+          } catch (e) {
+            terminal.print(e.message, 'error');
+          }
+        });
+        break;
+      case 'center':
+        focusBounds(map.bounds);
+        terminal.print(`Centered on map "${name}"`, 'result');
+        break;
+      case 'zoom':
+        focusBounds(map.bounds, { zoom: true });
+        terminal.print(`Zoomed to map "${name}"`, 'result');
+        break;
+    }
+  },
+
+  onMapStyle(name, value) {
+    const [kind, rawValue] = String(value).split(':');
+    if (kind === 'opacity') {
+      const opacity = Number(rawValue);
+      if (!Number.isFinite(opacity)) {
+        terminal.print(`Invalid map opacity "${rawValue}"`, 'error');
+        return;
+      }
+      try {
+        const updated = mapService.setMapOpacity(name, opacity);
+        if (updated) {
+          terminal.print(`Set map "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+        }
+      } catch (e) {
+        terminal.print(e.message, 'error');
+      }
+    }
+  },
+
+  onMapColor(name, color) {
+    try {
+      const updated = mapService.setMapColor(name, color);
+      if (updated) {
+        terminal.print(`Colored map "${name}" ${color}`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  onToggleIsosurfaceVisibility(name) {
+    const iso = getState().isosurfaces.get(name);
+    if (!iso) return;
+    try {
+      const updated = mapService.setIsosurfaceVisibility(name, !iso.visible);
+      if (updated) {
+        terminal.print(`${updated.visible ? 'Showing' : 'Hiding'} isosurface "${name}"`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  onIsosurfaceContour(name, { level }) {
+    try {
+      const updated = mapService.setIsosurfaceLevel(name, level);
+      if (updated) {
+        terminal.print(`Set isosurface "${name}" contour to ${level > 0 ? `+${level}` : level}`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  onIsosurfaceAction(name, action) {
+    const iso = getState().isosurfaces.get(name);
+    if (!iso) return;
+
+    switch (action) {
+      case 'delete':
+        try {
+          if (mapService.removeIsosurface(name)) {
+            terminal.print(`Deleted isosurface "${name}"`, 'result');
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
+        }
+        break;
+      case 'rename':
+        showRenameDialog(name, (newName) => {
+          try {
+            if (mapService.renameIsosurface(name, newName)) {
+              terminal.print(`Renamed isosurface "${name}" to "${newName}"`, 'result');
+            }
+          } catch (e) {
+            terminal.print(e.message, 'error');
+          }
+        });
+        break;
+      case 'center':
+        focusBounds(getState().maps.get(iso.mapName)?.bounds);
+        terminal.print(`Centered on isosurface "${name}"`, 'result');
+        break;
+      case 'zoom':
+        focusBounds(getState().maps.get(iso.mapName)?.bounds, { zoom: true });
+        terminal.print(`Zoomed to isosurface "${name}"`, 'result');
+        break;
+    }
+  },
+
+  onIsosurfaceStyle(name, value) {
+    const [kind, rawValue] = String(value).split(':');
+    try {
+      if (kind === 'representation') {
+        const updated = mapService.setIsosurfaceRepresentation(name, rawValue);
+        if (updated) {
+          terminal.print(`Set isosurface "${name}" representation to ${rawValue}`, 'result');
+        }
+      } else if (kind === 'opacity') {
+        const opacity = Number(rawValue);
+        if (!Number.isFinite(opacity)) {
+          throw new Error(`Invalid isosurface opacity "${rawValue}"`);
+        }
+        const updated = mapService.setIsosurfaceOpacity(name, opacity);
+        if (updated) {
+          terminal.print(`Set isosurface "${name}" opacity to ${Math.round(opacity * 100)}%`, 'result');
+        }
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
+  onIsosurfaceColor(name, color) {
+    try {
+      const updated = mapService.setIsosurfaceColor(name, color);
+      if (updated) {
+        terminal.print(`Colored isosurface "${name}" ${color}`, 'result');
+      }
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
+  },
+
   onShow(name, rep, kind) {
     handleSidebarEntryShow(name, rep, kind);
   },
@@ -467,20 +815,42 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         }
       }
     }
-    const show = !anyVisible;
-    const viewer = getViewer();
-    for (const objName of entries.objects) {
-      const obj = state.objects.get(objName);
-      if (obj) {
-        obj.visible = show;
-        if (obj.visible) obj.model.show();
-        else obj.model.hide();
-        surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+    if (!anyVisible) {
+      for (const mapName of entries.maps) {
+        const map = state.maps.get(mapName);
+        if (map && isMapEffectivelyVisible(map)) {
+          anyVisible = true;
+          break;
+        }
       }
     }
-    setDirectGroupedSurfaceVisibility(entries, state, show);
-    scheduleRender();
-    notifyStateChange();
+    if (!anyVisible) {
+      for (const isoName of getDirectGroupedIsosurfaceNames(entries, state)) {
+        const iso = state.isosurfaces.get(isoName);
+        if (iso && isIsosurfaceEffectivelyVisible(iso)) {
+          anyVisible = true;
+          break;
+        }
+      }
+    }
+    const show = !anyVisible;
+    try {
+      for (const objName of entries.objects) {
+        const obj = state.objects.get(objName);
+        if (obj) {
+          obj.visible = show;
+          if (obj.visible) obj.model.show();
+          else obj.model.hide();
+          surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+        }
+      }
+      setDirectGroupedSurfaceVisibility(entries, state, show);
+      setGroupedMapVisibility(entries, state, show);
+      scheduleRender();
+      notifyStateChange();
+    } catch (e) {
+      terminal.print(e.message, 'error');
+    }
   },
 
   onGroupAction(name, action) {
@@ -492,19 +862,23 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         const found = findTreeNode(state.entryTree, name, 'group');
         if (!found) return;
         const entries = collectEntryNames(found.node);
-        const viewer = getViewer();
-        for (const objName of entries.objects) {
-          const obj = state.objects.get(objName);
-          if (obj) {
-            obj.visible = show;
-            if (show) obj.model.show();
-            else obj.model.hide();
-            surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+        try {
+          for (const objName of entries.objects) {
+            const obj = state.objects.get(objName);
+            if (obj) {
+              obj.visible = show;
+              if (show) obj.model.show();
+              else obj.model.hide();
+              surfaceService.setSurfaceParentVisibility(objName, obj.visible);
+            }
           }
+          setDirectGroupedSurfaceVisibility(entries, state, show);
+          setGroupedMapVisibility(entries, state, show);
+          scheduleRender();
+          notifyStateChange();
+        } catch (e) {
+          terminal.print(e.message, 'error');
         }
-        setDirectGroupedSurfaceVisibility(entries, state, show);
-        scheduleRender();
-        notifyStateChange();
         break;
       }
       case 'delete': {
@@ -513,6 +887,12 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         const entries = collectEntryNames(found.node);
         const viewer = getViewer();
         const allRemovedIndices = [];
+        try {
+          removeGroupedDensityEntries(entries, state);
+        } catch (e) {
+          terminal.print(e.message, 'error');
+          return;
+        }
         for (const objName of entries.objects) {
           const obj = state.objects.get(objName);
           if (obj) {
@@ -642,6 +1022,11 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
           result.ok ? 'result' : 'error',
         );
       },
+      onLoadFile: async (file) => {
+        const result = await loadStructureFile(file);
+        terminal.print(result.message, result.ok ? 'result' : 'error');
+        return result;
+      },
       onRemoteSource: async ({ sourceId, path, name, format }) => {
         let resolved;
         try {
@@ -678,6 +1063,11 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
     }, {
       remoteLoading,
     });
+  },
+
+  onClear() {
+    clearScene({ surfaceService, mapService });
+    terminal.print('Cleared viewer', 'result');
   },
 
   onExport() {
@@ -942,6 +1332,7 @@ const ctx = createCommandContext({
   sidebar,
   state: getState(),
   surfaceService,
+  mapService,
 });
 registerAllCommands(registry, { remoteLoading });
 

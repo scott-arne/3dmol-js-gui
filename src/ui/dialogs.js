@@ -8,12 +8,19 @@
 import { getViewer } from '../viewer.js';
 import { normalizeRemoteLoadingConfig } from '../loading/remote-loading.js';
 
+const MAP_ONLY_FORMATS = new Set(['ccp4', 'map', 'mrc']);
+
 /**
  * Show a Load dialog with local and optional remote loading tabs.
  *
  * @param {object} callbacks - Callback functions.
  * @param {function} callbacks.onFetch - Called with (pdbId).
- * @param {function} callbacks.onLoad - Called with (data, format, filename).
+ * @param {function} callbacks.onLoad - Fallback local-file callback called with
+ *   (data, format, filename). Map-only files pass ArrayBuffer data; other files
+ *   pass text data.
+ * @param {function} [callbacks.onLoadFile] - Preferred local-file callback
+ *   called with a File object. Should return a structured {ok, message} result;
+ *   missing or falsy ok values are treated as load failures.
  * @param {function} [callbacks.onRemoteSource] - Called with configured source input.
  * @param {function} [callbacks.onLoadUrl] - Called with arbitrary URL input.
  * @param {object} [options] - Optional dialog configuration.
@@ -30,13 +37,23 @@ export function showLoadDialog(callbacks, options = {}) {
   // Header
   const header = document.createElement('div');
   header.className = 'modal-header';
+  const titleGroup = document.createElement('div');
+  titleGroup.className = 'modal-title-group';
   const title = document.createElement('span');
-  title.textContent = 'Load Structure';
+  title.className = 'modal-title';
+  title.textContent = 'Load';
+  const subtitle = document.createElement('span');
+  subtitle.className = 'modal-subtitle';
+  subtitle.textContent = 'Structure or density map';
+  titleGroup.appendChild(title);
+  titleGroup.appendChild(subtitle);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'modal-close';
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Close load dialog');
   closeBtn.textContent = '\u00d7';
   closeBtn.addEventListener('click', () => overlay.remove());
-  header.appendChild(title);
+  header.appendChild(titleGroup);
   header.appendChild(closeBtn);
   dialog.appendChild(header);
 
@@ -45,10 +62,12 @@ export function showLoadDialog(callbacks, options = {}) {
   tabBar.className = 'modal-tabs';
   const tabFetch = document.createElement('button');
   tabFetch.className = 'modal-tab active';
-  tabFetch.textContent = 'Fetch PDB';
+  tabFetch.type = 'button';
+  tabFetch.textContent = 'PDB ID';
   const tabFile = document.createElement('button');
   tabFile.className = 'modal-tab';
-  tabFile.textContent = 'Local File';
+  tabFile.type = 'button';
+  tabFile.textContent = 'File';
   tabBar.appendChild(tabFetch);
   tabBar.appendChild(tabFile);
   dialog.appendChild(tabBar);
@@ -74,13 +93,20 @@ export function showLoadDialog(callbacks, options = {}) {
   // Fetch PDB panel
   const fetchPanel = document.createElement('div');
   fetchPanel.className = 'modal-panel';
+  const pdbRow = document.createElement('div');
+  pdbRow.className = 'modal-form-row';
+  const pdbField = document.createElement('label');
+  pdbField.className = 'modal-field';
+  const pdbLabel = document.createElement('span');
+  pdbLabel.textContent = 'PDB ID';
   const pdbInput = document.createElement('input');
   pdbInput.type = 'text';
   pdbInput.className = 'modal-input';
-  pdbInput.placeholder = 'Enter PDB ID (e.g. 1UBQ)';
+  pdbInput.placeholder = '1UBQ';
   pdbInput.maxLength = 4;
   const fetchBtn = document.createElement('button');
   fetchBtn.className = 'modal-btn';
+  fetchBtn.type = 'button';
   fetchBtn.textContent = 'Fetch';
   fetchBtn.addEventListener('click', () => {
     const pdbId = pdbInput.value.trim().toUpperCase();
@@ -95,8 +121,11 @@ export function showLoadDialog(callbacks, options = {}) {
   pdbInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') fetchBtn.click();
   });
-  fetchPanel.appendChild(pdbInput);
-  fetchPanel.appendChild(fetchBtn);
+  pdbField.appendChild(pdbLabel);
+  pdbField.appendChild(pdbInput);
+  pdbRow.appendChild(pdbField);
+  pdbRow.appendChild(fetchBtn);
+  fetchPanel.appendChild(pdbRow);
   content.appendChild(fetchPanel);
   panels.push(fetchPanel);
 
@@ -105,22 +134,59 @@ export function showLoadDialog(callbacks, options = {}) {
   filePanel.className = 'modal-panel hidden';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif';
+  fileInput.className = 'modal-file-input';
+  fileInput.accept = '.pdb,.sdf,.mol2,.xyz,.cube,.pqr,.gro,.cif,.mmcif,.ccp4,.map,.mrc';
+  const fileTarget = document.createElement('label');
+  fileTarget.className = 'modal-file-target';
+  const filePrompt = document.createElement('span');
+  filePrompt.className = 'modal-file-prompt';
+  const fileTitle = document.createElement('strong');
+  fileTitle.textContent = 'Choose local file';
+  const fileHint = document.createElement('span');
+  fileHint.textContent = 'PDB, CIF, SDF, MOL2, CUBE, CCP4, MAP, MRC';
+  filePrompt.appendChild(fileTitle);
+  filePrompt.appendChild(fileHint);
+  const fileBrowse = document.createElement('span');
+  fileBrowse.className = 'modal-file-browse';
+  fileBrowse.textContent = 'Browse';
+  const selectedFileName = document.createElement('div');
+  selectedFileName.className = 'modal-file-name';
+  selectedFileName.textContent = 'No file selected';
+  fileInput.addEventListener('change', () => {
+    selectedFileName.textContent = fileInput.files?.[0]?.name || 'No file selected';
+    clearStatus();
+  });
+  fileTarget.appendChild(filePrompt);
+  fileTarget.appendChild(fileBrowse);
+  fileTarget.appendChild(fileInput);
+  const fileActions = document.createElement('div');
+  fileActions.className = 'modal-actions';
   const loadBtn = document.createElement('button');
   loadBtn.className = 'modal-btn';
+  loadBtn.type = 'button';
   loadBtn.textContent = 'Load';
-  loadBtn.addEventListener('click', () => {
+  loadBtn.addEventListener('click', async () => {
     const file = fileInput.files[0];
     if (!file) {
-      setStatus('Choose a structure file to load.', 'error');
+      setStatus('Choose a structure or map file to load.', 'error');
       return;
     }
     clearStatus();
+    if (callbacks.onLoadFile) {
+      await runRemoteLoad(callbacks.onLoadFile, file, [fileInput, loadBtn]);
+      return;
+    }
     const format = file.name.split('.').pop().toLowerCase();
+    const isMapOnly = MAP_ONLY_FORMATS.has(format);
     const reader = new FileReader();
     reader.onload = (ev) => {
       const data = ev.target.result;
-      if (typeof data !== 'string' || data.trim() === '') {
+      if (isMapOnly) {
+        if (!(data instanceof ArrayBuffer) || data.byteLength === 0) {
+          setStatus(`"${file.name}" is empty.`, 'error');
+          return;
+        }
+      } else if (typeof data !== 'string' || data.trim() === '') {
         setStatus(`"${file.name}" is empty.`, 'error');
         return;
       }
@@ -133,10 +199,16 @@ export function showLoadDialog(callbacks, options = {}) {
         'error',
       );
     };
-    reader.readAsText(file);
+    if (isMapOnly) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
   });
-  filePanel.appendChild(fileInput);
-  filePanel.appendChild(loadBtn);
+  fileActions.appendChild(loadBtn);
+  filePanel.appendChild(fileTarget);
+  filePanel.appendChild(selectedFileName);
+  filePanel.appendChild(fileActions);
   content.appendChild(filePanel);
   panels.push(filePanel);
 
@@ -178,12 +250,17 @@ export function showLoadDialog(callbacks, options = {}) {
   if (remoteLoading.sources.length > 0) {
     const tabRemote = document.createElement('button');
     tabRemote.className = 'modal-tab';
-    tabRemote.textContent = 'Remote Source';
+    tabRemote.type = 'button';
+    tabRemote.textContent = 'Remote';
     tabBar.appendChild(tabRemote);
     tabs.push(tabRemote);
 
     const remotePanel = document.createElement('div');
     remotePanel.className = 'modal-panel hidden';
+    const remoteSourceField = document.createElement('label');
+    remoteSourceField.className = 'modal-field';
+    const remoteSourceLabel = document.createElement('span');
+    remoteSourceLabel.textContent = 'Source';
     const sourceSelect = document.createElement('select');
     sourceSelect.className = 'modal-source-select modal-input';
     for (const source of remoteLoading.sources) {
@@ -192,20 +269,47 @@ export function showLoadDialog(callbacks, options = {}) {
       option.textContent = source.name;
       sourceSelect.appendChild(option);
     }
+    remoteSourceField.appendChild(remoteSourceLabel);
+    remoteSourceField.appendChild(sourceSelect);
+    const sourcePathField = document.createElement('label');
+    sourcePathField.className = 'modal-field';
+    const sourcePathLabel = document.createElement('span');
+    sourcePathLabel.textContent = 'Path';
     const sourcePathInput = document.createElement('input');
     sourcePathInput.type = 'text';
     sourcePathInput.className = 'modal-source-path modal-input';
     sourcePathInput.placeholder = 'Remote path (e.g. poses/ligand.pdb)';
+    sourcePathField.appendChild(sourcePathLabel);
+    sourcePathField.appendChild(sourcePathInput);
+    const sourceMetaRow = document.createElement('div');
+    sourceMetaRow.className = 'modal-two-column';
+    const sourceNameField = document.createElement('label');
+    sourceNameField.className = 'modal-field';
+    const sourceNameLabel = document.createElement('span');
+    sourceNameLabel.textContent = 'Name';
     const sourceNameInput = document.createElement('input');
     sourceNameInput.type = 'text';
     sourceNameInput.className = 'modal-source-name modal-input';
     sourceNameInput.placeholder = 'Name (optional)';
+    sourceNameField.appendChild(sourceNameLabel);
+    sourceNameField.appendChild(sourceNameInput);
+    const sourceFormatField = document.createElement('label');
+    sourceFormatField.className = 'modal-field';
+    const sourceFormatLabel = document.createElement('span');
+    sourceFormatLabel.textContent = 'Format';
     const sourceFormatInput = document.createElement('input');
     sourceFormatInput.type = 'text';
     sourceFormatInput.className = 'modal-source-format modal-input';
     sourceFormatInput.placeholder = 'Format (optional)';
+    sourceFormatField.appendChild(sourceFormatLabel);
+    sourceFormatField.appendChild(sourceFormatInput);
+    sourceMetaRow.appendChild(sourceNameField);
+    sourceMetaRow.appendChild(sourceFormatField);
+    const sourceActions = document.createElement('div');
+    sourceActions.className = 'modal-actions';
     const sourceBtn = document.createElement('button');
     sourceBtn.className = 'modal-btn';
+    sourceBtn.type = 'button';
     sourceBtn.textContent = 'Load';
     sourceBtn.addEventListener('click', () => {
       const path = sourcePathInput.value.trim();
@@ -227,11 +331,11 @@ export function showLoadDialog(callbacks, options = {}) {
     sourcePathInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sourceBtn.click();
     });
-    remotePanel.appendChild(sourceSelect);
-    remotePanel.appendChild(sourcePathInput);
-    remotePanel.appendChild(sourceNameInput);
-    remotePanel.appendChild(sourceFormatInput);
-    remotePanel.appendChild(sourceBtn);
+    sourceActions.appendChild(sourceBtn);
+    remotePanel.appendChild(remoteSourceField);
+    remotePanel.appendChild(sourcePathField);
+    remotePanel.appendChild(sourceMetaRow);
+    remotePanel.appendChild(sourceActions);
     content.appendChild(remotePanel);
     panels.push(remotePanel);
   }
@@ -239,26 +343,52 @@ export function showLoadDialog(callbacks, options = {}) {
   if (remoteLoading.allowArbitraryUrls) {
     const tabUrl = document.createElement('button');
     tabUrl.className = 'modal-tab';
+    tabUrl.type = 'button';
     tabUrl.textContent = 'URL';
     tabBar.appendChild(tabUrl);
     tabs.push(tabUrl);
 
     const urlPanel = document.createElement('div');
     urlPanel.className = 'modal-panel hidden';
+    const urlMetaRow = document.createElement('div');
+    urlMetaRow.className = 'modal-two-column';
+    const urlNameField = document.createElement('label');
+    urlNameField.className = 'modal-field';
+    const urlNameLabel = document.createElement('span');
+    urlNameLabel.textContent = 'Name';
     const urlNameInput = document.createElement('input');
     urlNameInput.type = 'text';
     urlNameInput.className = 'modal-url-name modal-input';
     urlNameInput.placeholder = 'Name';
+    urlNameField.appendChild(urlNameLabel);
+    urlNameField.appendChild(urlNameInput);
+    const urlFormatField = document.createElement('label');
+    urlFormatField.className = 'modal-field';
+    const urlFormatLabel = document.createElement('span');
+    urlFormatLabel.textContent = 'Format';
     const urlFormatInput = document.createElement('input');
     urlFormatInput.type = 'text';
     urlFormatInput.className = 'modal-url-format modal-input';
     urlFormatInput.placeholder = 'Format';
+    urlFormatField.appendChild(urlFormatLabel);
+    urlFormatField.appendChild(urlFormatInput);
+    urlMetaRow.appendChild(urlNameField);
+    urlMetaRow.appendChild(urlFormatField);
+    const urlField = document.createElement('label');
+    urlField.className = 'modal-field';
+    const urlLabel = document.createElement('span');
+    urlLabel.textContent = 'URL';
     const urlInput = document.createElement('input');
     urlInput.type = 'url';
     urlInput.className = 'modal-url-input modal-input';
     urlInput.placeholder = 'URL';
+    urlField.appendChild(urlLabel);
+    urlField.appendChild(urlInput);
+    const urlActions = document.createElement('div');
+    urlActions.className = 'modal-actions';
     const urlBtn = document.createElement('button');
     urlBtn.className = 'modal-btn';
+    urlBtn.type = 'button';
     urlBtn.textContent = 'Load';
     urlBtn.addEventListener('click', () => {
       const name = urlNameInput.value.trim();
@@ -285,10 +415,10 @@ export function showLoadDialog(callbacks, options = {}) {
     urlInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') urlBtn.click();
     });
-    urlPanel.appendChild(urlNameInput);
-    urlPanel.appendChild(urlFormatInput);
-    urlPanel.appendChild(urlInput);
-    urlPanel.appendChild(urlBtn);
+    urlActions.appendChild(urlBtn);
+    urlPanel.appendChild(urlMetaRow);
+    urlPanel.appendChild(urlField);
+    urlPanel.appendChild(urlActions);
     content.appendChild(urlPanel);
     panels.push(urlPanel);
   }
