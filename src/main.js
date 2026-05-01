@@ -77,6 +77,7 @@ import {
   removeMap,
   renameIsosurface,
   renameMap,
+  setMapBoundingBoxVisibility,
   setIsosurfaceColor,
   setIsosurfaceLevel,
   setIsosurfaceOpacity,
@@ -143,6 +144,7 @@ const mapService = {
   removeMap,
   renameMap,
   setMapVisibility,
+  setMapBoundingBoxVisibility,
   setMapColor,
   setMapOpacity,
   createIsosurface,
@@ -584,6 +586,19 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
     if (!map) return;
 
     switch (action) {
+      case 'show_bounding_box':
+        try {
+          const updated = mapService.setMapBoundingBoxVisibility(name, !map.showBoundingBox);
+          if (updated) {
+            terminal.print(
+              `${updated.showBoundingBox ? 'Showing' : 'Hiding'} bounding box for map "${name}"`,
+              'result',
+            );
+          }
+        } catch (e) {
+          terminal.print(e.message, 'error');
+        }
+        break;
       case 'delete':
         try {
           if (mapService.removeMap(name)) {

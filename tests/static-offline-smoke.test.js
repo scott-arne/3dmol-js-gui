@@ -402,6 +402,47 @@ describe('static offline smoke fixture', () => {
     expect(zoomView[3]).not.toBe(0);
   });
 
+  it('map action menu toggles the bounding box without hiding child isosurfaces', async () => {
+    const { mockViewer, addMapEntry, addIsosurfaceEntry, getState } = await bootFixtureApp();
+
+    addMapEntry({
+      name: 'density',
+      format: 'ccp4',
+      sourceFormat: 'ccp4',
+      volumeData: {},
+      bounds: makeBounds(),
+      handles: [],
+    });
+    addIsosurfaceEntry({
+      name: 'isosurface_1',
+      mapName: 'density',
+      handle: { id: 'iso' },
+      parentVisible: true,
+    });
+    await flushStateUpdates();
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    const item = document.querySelector('[data-value="show_bounding_box"]');
+    expect(item.classList.contains('checked')).toBe(false);
+    item.click();
+    await flushStateUpdates();
+
+    expect(getState().maps.get('density')).toMatchObject({
+      showBoundingBox: true,
+      visible: true,
+    });
+    expect(getState().isosurfaces.get('isosurface_1')).toMatchObject({
+      parentVisible: true,
+    });
+    expect(mockViewer.addBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: makeBounds().center,
+      wireframe: true,
+    }));
+
+    document.querySelector('[data-kind="map"][data-name="density"] [data-btn="A"]').click();
+    expect(document.querySelector('[data-value="show_bounding_box"]').classList.contains('checked')).toBe(true);
+  });
+
   it('terminal isosurface command uses the main map service context', async () => {
     const { mockViewer, addMapEntry, getState } = await bootFixtureApp();
 

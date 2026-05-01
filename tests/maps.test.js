@@ -17,6 +17,7 @@ import {
   setIsosurfaceOpacity,
   setIsosurfaceRepresentation,
   setIsosurfaceVisibility,
+  setMapBoundingBoxVisibility,
   setMapColor,
   setMapOpacity,
   setMapVisibility,
@@ -136,13 +137,21 @@ describe('map viewer service', () => {
   it('computes robust contour statistics from finite density values', () => {
     const stats = computeContourStats({ data: createOutlierDensityValues() });
 
-    expect(stats).toEqual({
+    expect(stats).toMatchObject({
       min: -1000,
       max: 1000,
       robustMin: 0,
       robustMax: 98,
-      suggestedLevel: 49,
     });
+    expect(stats.suggestedLevel).toBeCloseTo(stats.mean + stats.stdDev);
+  });
+
+  it('computes mean and standard deviation for sigma contour controls', () => {
+    const stats = computeContourStats({ data: [0, 2, 4] });
+
+    expect(stats.mean).toBeCloseTo(2);
+    expect(stats.stdDev).toBeCloseTo(Math.sqrt(8 / 3));
+    expect(stats.suggestedLevel).toBeCloseTo(stats.mean + stats.stdDev);
   });
 
   it('interpolates robust percentiles from indexed finite density values', () => {
@@ -163,7 +172,7 @@ describe('map viewer service', () => {
     expect(stats.max).toBe(300);
     expect(stats.robustMin).toBeCloseTo(3);
     expect(stats.robustMax).toBeCloseTo(297);
-    expect(stats.suggestedLevel).toBeCloseTo(150);
+    expect(stats.suggestedLevel).toBeCloseTo(stats.mean + stats.stdDev);
   });
 
   it('ignores non-number density values even when they are numerically coercible', () => {
@@ -175,7 +184,7 @@ describe('map viewer service', () => {
     expect(stats.max).toBe(3);
     expect(stats.robustMin).toBeCloseTo(1.02);
     expect(stats.robustMax).toBeCloseTo(2.98);
-    expect(stats.suggestedLevel).toBeCloseTo(2);
+    expect(stats.suggestedLevel).toBeCloseTo(3);
   });
 
   it('caps the sorted percentile sample for large density arrays', () => {
@@ -234,11 +243,13 @@ describe('map viewer service', () => {
       max: 1,
       robustMin: 0,
       robustMax: 1,
+      mean: 0,
+      stdDev: 1,
       suggestedLevel: 1,
     });
   });
 
-  it('creates a VolumeData-backed map entry and renders its bounding box', () => {
+  it('creates a VolumeData-backed map entry with its bounding box hidden by default', () => {
     const volumeData = createCornerVolume();
     installVolumeData(volumeData);
     const boxHandle = { box: true };
@@ -265,19 +276,14 @@ describe('map viewer service', () => {
         dimensions: { w: 4, h: 3, d: 4 },
       },
       visible: true,
+      showBoundingBox: false,
       color: '#123456',
       opacity: 0.6,
-      handles: [boxHandle],
+      handles: [],
     });
     expect(getState().maps.get('density')).toBe(map);
-    expect(mockViewer.addBox).toHaveBeenCalledWith({
-      center: { x: 3, y: 3.5, z: 5 },
-      dimensions: { w: 4, h: 3, d: 4 },
-      color: '#123456',
-      opacity: 0.6,
-      wireframe: true,
-    });
-    expect(scheduleRender).toHaveBeenCalled();
+    expect(mockViewer.addBox).not.toHaveBeenCalled();
+    expect(scheduleRender).not.toHaveBeenCalled();
   });
 
   it('stores contour statistics from parsed map data and returns the suggested level', () => {
@@ -293,13 +299,26 @@ describe('map viewer service', () => {
       robustMin: 0,
       robustMax: 98,
     });
-    expect(map.contourStats.suggestedLevel).toBeCloseTo(49);
-    expect(getSuggestedIsosurfaceLevel(map)).toBeCloseTo(49);
+    expect(map.contourStats.suggestedLevel).toBeCloseTo(
+      map.contourStats.mean + map.contourStats.stdDev,
+    );
+    expect(getSuggestedIsosurfaceLevel(map)).toBeCloseTo(map.contourStats.suggestedLevel);
     expect(getSuggestedIsosurfaceLevel({ contourStats: { suggestedLevel: Infinity } })).toBe(1);
+    expect(getSuggestedIsosurfaceLevel({ contourStats: null })).toBe(1);
     expect(getSuggestedIsosurfaceLevel(null)).toBe(1);
   });
 
-  it('creates the initial map box without rendering when render is false', () => {
+  it('uses one sigma above the map mean as the default isosurface level', () => {
+    expect(getSuggestedIsosurfaceLevel({
+      contourStats: {
+        mean: 0.25,
+        stdDev: 0.1,
+        suggestedLevel: -0.5,
+      },
+    })).toBeCloseTo(0.35);
+  });
+
+  it('creates the initial map box without rendering when showBoundingBox is true and render is false', () => {
     const boxHandle = { box: true };
     mockViewer.addBox.mockReturnValue(boxHandle);
 
@@ -307,6 +326,7 @@ describe('map viewer service', () => {
       name: 'density',
       data: 'map data',
       format: 'ccp4',
+      showBoundingBox: true,
       render: false,
     });
 
@@ -319,18 +339,36 @@ describe('map viewer service', () => {
     expect(scheduleRender).not.toHaveBeenCalled();
   });
 
-  it('updates map visibility, color, and opacity by rebuilding box handles', () => {
+  it('toggles map bounding boxes independently from map visibility', () => {
     const handles = [{ id: 'box-1' }, { id: 'box-2' }, { id: 'box-3' }];
     mockViewer.addBox
       .mockReturnValueOnce(handles[0])
       .mockReturnValueOnce(handles[1])
       .mockReturnValueOnce(handles[2]);
     createMap({ name: 'density', data: 'map data', format: 'ccp4' });
-    scheduleRender.mockClear();
+    expect(getState().maps.get('density')).toMatchObject({
+      visible: true,
+      showBoundingBox: false,
+      handles: [],
+    });
+    expect(mockViewer.addBox).not.toHaveBeenCalled();
 
+    setMapBoundingBoxVisibility('density', true);
+    expect(getState().maps.get('density')).toMatchObject({
+      visible: true,
+      showBoundingBox: true,
+      handles: [handles[0]],
+    });
+    expect(mockViewer.addBox).toHaveBeenCalledTimes(1);
+
+    scheduleRender.mockClear();
     setMapVisibility('density', false);
     expect(mockViewer.removeShape).toHaveBeenLastCalledWith(handles[0]);
-    expect(getState().maps.get('density').handles).toEqual([]);
+    expect(getState().maps.get('density')).toMatchObject({
+      visible: false,
+      showBoundingBox: true,
+      handles: [],
+    });
     expect(mockViewer.addBox).toHaveBeenCalledTimes(1);
     expect(scheduleRender).toHaveBeenCalledTimes(1);
 
@@ -340,6 +378,7 @@ describe('map viewer service', () => {
     expect(getState().maps.get('density')).toMatchObject({
       color: '#FF0000',
       visible: false,
+      showBoundingBox: true,
       handles: [],
     });
 
@@ -360,12 +399,26 @@ describe('map viewer service', () => {
     }));
     expect(getState().maps.get('density').handles).toEqual([handles[2]]);
     expect(scheduleRender).toHaveBeenCalledTimes(1);
+
+    setMapBoundingBoxVisibility('density', false);
+    expect(mockViewer.removeShape).toHaveBeenLastCalledWith(handles[2]);
+    expect(getState().maps.get('density')).toMatchObject({
+      visible: true,
+      showBoundingBox: false,
+      handles: [],
+    });
   });
 
   it('keeps the existing visible map handle when addBox throws during redraw', () => {
     const oldHandle = { id: 'box-old' };
     mockViewer.addBox.mockReturnValue(oldHandle);
-    createMap({ name: 'density', data: 'map data', format: 'ccp4', opacity: 1 });
+    createMap({
+      name: 'density',
+      data: 'map data',
+      format: 'ccp4',
+      opacity: 1,
+      showBoundingBox: true,
+    });
     mockViewer.removeShape.mockClear();
     mockViewer.addBox.mockImplementationOnce(() => {
       throw new Error('box failed');
@@ -385,9 +438,12 @@ describe('map viewer service', () => {
       throw new Error('box failed');
     });
 
-    expect(() => createMap({ name: 'density', data: 'map data', format: 'ccp4' })).toThrow(
-      'box failed',
-    );
+    expect(() => createMap({
+      name: 'density',
+      data: 'map data',
+      format: 'ccp4',
+      showBoundingBox: true,
+    })).toThrow('box failed');
 
     expect(getState().maps.has('density')).toBe(false);
     expect(getState().entryTree).toEqual([]);
@@ -535,23 +591,45 @@ describe('map viewer service', () => {
     expect(getState().isosurfaces.has('mesh')).toBe(false);
   });
 
+  it('defaults newly created isosurfaces to blue', () => {
+    const isoHandle = { id: 'iso-blue' };
+    mockViewer.addIsosurface.mockReturnValueOnce(isoHandle);
+    const map = createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+
+    const iso = createIsosurface({ name: 'mesh', mapName: 'density', level: 1 });
+
+    expect(iso).toMatchObject({
+      name: 'mesh',
+      color: '#0000FF',
+      handle: isoHandle,
+    });
+    expect(mockViewer.addIsosurface).toHaveBeenCalledWith(map.volumeData, expect.objectContaining({
+      color: '#0000FF',
+    }));
+  });
+
   it('uses the parent map suggested contour level when no isosurface level is provided', () => {
     const isoHandle = { id: 'iso-suggested' };
     mockViewer.addIsosurface.mockReturnValueOnce(isoHandle);
 
     const map = createMap({ name: 'density', data: 'map data', format: 'mrc' });
-    map.contourStats = { ...map.contourStats, suggestedLevel: 0.42 };
+    map.contourStats = {
+      ...map.contourStats,
+      mean: 0.25,
+      stdDev: 0.1,
+      suggestedLevel: 0.35,
+    };
 
     const iso = createIsosurface({ name: 'mesh', mapName: 'density' });
 
     expect(iso).toMatchObject({
       name: 'mesh',
       mapName: 'density',
-      level: 0.42,
+      level: 0.35,
       handle: isoHandle,
     });
     expect(mockViewer.addIsosurface).toHaveBeenCalledWith(map.volumeData, expect.objectContaining({
-      isoval: 0.42,
+      isoval: 0.35,
     }));
   });
 
@@ -660,7 +738,12 @@ describe('map viewer service', () => {
       .mockReturnValueOnce(isoHandles[0])
       .mockReturnValueOnce(isoHandles[1])
       .mockReturnValueOnce(isoHandles[2]);
-    const map = createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    const map = createMap({
+      name: 'density',
+      data: 'map data',
+      format: 'ccp4',
+      showBoundingBox: true,
+    });
     createIsosurface({
       name: 'mesh',
       mapName: 'density',
@@ -695,7 +778,12 @@ describe('map viewer service', () => {
     const oldIsoHandle = { id: 'iso-old' };
     mockViewer.addBox.mockReturnValueOnce(oldMapHandle);
     mockViewer.addIsosurface.mockReturnValueOnce(oldIsoHandle);
-    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    createMap({
+      name: 'density',
+      data: 'map data',
+      format: 'ccp4',
+      showBoundingBox: true,
+    });
     createIsosurface({ name: 'mesh', mapName: 'density' });
     mockViewer.removeShape.mockClear();
     mockViewer.addBox.mockReturnValueOnce(newMapHandle);
@@ -723,7 +811,12 @@ describe('map viewer service', () => {
     const isoHandle = { id: 'iso' };
     mockViewer.addBox.mockReturnValue(mapHandle);
     mockViewer.addIsosurface.mockReturnValue(isoHandle);
-    createMap({ name: 'density', data: 'map data', format: 'ccp4' });
+    createMap({
+      name: 'density',
+      data: 'map data',
+      format: 'ccp4',
+      showBoundingBox: true,
+    });
     createIsosurface({ name: 'mesh', mapName: 'density' });
 
     const removed = removeMap('density');

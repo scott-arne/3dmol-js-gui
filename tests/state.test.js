@@ -571,7 +571,7 @@ describe('map and isosurface entries', () => {
       representation: 'mesh',
       visible: true,
       parentVisible: true,
-      color: '#FFFFFF',
+      color: '#0000FF',
       opacity: 0.75,
     });
     expect(getState().entryTree[0].children).toEqual([

@@ -450,17 +450,27 @@ const SURFACE_COLOR_MENU = [
   { label: 'Solid', value: 'solid', submenu: 'solid-swatches' },
 ];
 
-const MAP_ACTION_MENU = [
-  { label: 'Create Isosurface', value: 'create_isosurface' },
-  { separator: true },
-  { label: 'Rename...', value: 'rename' },
-  { label: 'Delete', value: 'delete' },
-  { separator: true },
-  { label: 'Center', value: 'center' },
-  { label: 'Zoom', value: 'zoom' },
-];
+function buildMapActionMenu(map = {}) {
+  return [
+    { label: 'Create Isosurface', value: 'create_isosurface' },
+    {
+      label: 'Show Bounding Box',
+      value: 'show_bounding_box',
+      checked: map.showBoundingBox === true,
+    },
+    { separator: true },
+    { label: 'Rename...', value: 'rename' },
+    { label: 'Delete', value: 'delete' },
+    { separator: true },
+    { label: 'Center', value: 'center' },
+    { label: 'Zoom', value: 'zoom' },
+  ];
+}
 
 const CONTOUR_DEBOUNCE_MS = 150;
+const CONTOUR_SIGMA_MIN = -3;
+const CONTOUR_SIGMA_MAX = 6;
+const CONTOUR_SIGMA_STEP = 0.01;
 
 const ISOSURFACE_ACTION_MENU = [
   { label: 'Contour...', value: 'contour' },
@@ -511,29 +521,22 @@ function clampValue(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getContourRange(currentLevel, stats = {}) {
-  if (isFiniteNumber(stats.robustMin) && isFiniteNumber(stats.robustMax) && stats.robustMin !== stats.robustMax) {
-    return {
-      min: Math.min(stats.robustMin, stats.robustMax),
-      max: Math.max(stats.robustMin, stats.robustMax),
-      source: 'Auto range',
-    };
-  }
-
-  const center = isFiniteNumber(currentLevel) ? currentLevel : 1;
-  const radius = Math.max(Math.abs(center) * 0.5, 1);
-  return {
-    min: center - radius,
-    max: center + radius,
-    source: 'Auto range fallback',
-  };
+function getContourSigmaScale(stats = {}) {
+  const mean = isFiniteNumber(stats.mean) ? stats.mean : 0;
+  const stdDev = isFiniteNumber(stats.stdDev) && stats.stdDev > 0 ? stats.stdDev : 1;
+  return { mean, stdDev };
 }
 
-function getContourStep(min, max) {
-  const span = max - min;
-  if (!Number.isFinite(span) || span <= 0) return 0.01;
-  const step = Number((span / 100).toPrecision(3));
-  return Number.isFinite(step) && step > 0 ? step : 0.01;
+function rawLevelToSigma(level, scale) {
+  return (level - scale.mean) / scale.stdDev;
+}
+
+function sigmaToRawLevel(sigma, scale) {
+  return scale.mean + sigma * scale.stdDev;
+}
+
+function formatSigmaValue(value) {
+  return formatContourLevel(value);
 }
 
 function positionContourPopover(popover, anchor) {
@@ -564,8 +567,8 @@ function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) 
   const stats = map.contourStats || {};
   const suggestedLevel = isFiniteNumber(stats.suggestedLevel) ? stats.suggestedLevel : null;
   const currentLevel = isFiniteNumber(iso.level) ? iso.level : (suggestedLevel ?? 1);
-  const range = getContourRange(currentLevel, stats);
-  const step = getContourStep(range.min, range.max);
+  const scale = getContourSigmaScale(stats);
+  const currentSigma = rawLevelToSigma(currentLevel, scale);
   const id = ++contourPopoverId;
   const titleId = `contour-popover-title-${id}`;
   const rangeId = `contour-range-label-${id}`;
@@ -594,7 +597,7 @@ function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) 
   const rangeLabel = document.createElement('div');
   rangeLabel.className = 'contour-range-label';
   rangeLabel.id = rangeId;
-  rangeLabel.textContent = `${range.source}: ${formatContourLevel(range.min)} to ${formatContourLevel(range.max)}`;
+  rangeLabel.textContent = `Sigma range: ${CONTOUR_SIGMA_MIN}\u03c3 to +${CONTOUR_SIGMA_MAX}\u03c3; mean ${formatContourLevel(scale.mean)}, \u03c3 ${formatContourLevel(scale.stdDev)}`;
   popover.appendChild(rangeLabel);
 
   const controlRow = document.createElement('div');
@@ -603,23 +606,38 @@ function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) 
   const slider = document.createElement('input');
   slider.className = 'contour-slider';
   slider.type = 'range';
-  slider.min = String(range.min);
-  slider.max = String(range.max);
-  slider.step = String(step);
-  slider.value = String(clampValue(currentLevel, range.min, range.max));
-  slider.setAttribute('aria-label', 'Contour level');
+  slider.min = String(CONTOUR_SIGMA_MIN);
+  slider.max = String(CONTOUR_SIGMA_MAX);
+  slider.step = String(CONTOUR_SIGMA_STEP);
+  slider.value = String(clampValue(currentSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
+  slider.setAttribute('aria-label', 'Sigma contour level');
   slider.setAttribute('aria-describedby', rangeId);
   controlRow.appendChild(slider);
 
+  const sigmaInput = document.createElement('input');
+  sigmaInput.className = 'contour-sigma-input';
+  sigmaInput.type = 'number';
+  sigmaInput.step = 'any';
+  sigmaInput.value = formatSigmaValue(currentSigma);
+  sigmaInput.setAttribute('aria-label', 'Sigma contour level');
+  sigmaInput.setAttribute('aria-describedby', rangeId);
+  controlRow.appendChild(sigmaInput);
+  popover.appendChild(controlRow);
+
+  const rawRow = document.createElement('label');
+  rawRow.className = 'contour-raw-row';
+  const rawLabel = document.createElement('span');
+  rawLabel.textContent = 'Raw level';
   const levelInput = document.createElement('input');
-  levelInput.className = 'contour-level-input';
+  levelInput.className = 'contour-level-input contour-raw-input';
   levelInput.type = 'number';
   levelInput.step = 'any';
   levelInput.value = formatContourLevel(currentLevel);
-  levelInput.setAttribute('aria-label', 'Contour level');
+  levelInput.setAttribute('aria-label', 'Raw contour level');
   levelInput.setAttribute('aria-describedby', rangeId);
-  controlRow.appendChild(levelInput);
-  popover.appendChild(controlRow);
+  rawRow.appendChild(rawLabel);
+  rawRow.appendChild(levelInput);
+  popover.appendChild(rawRow);
 
   const footer = document.createElement('div');
   footer.className = 'contour-popover-footer';
@@ -664,7 +682,9 @@ function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) 
 
   function setLevelDisplay(nextLevel) {
     levelInput.value = formatContourLevel(nextLevel);
-    slider.value = String(clampValue(nextLevel, range.min, range.max));
+    const nextSigma = rawLevelToSigma(nextLevel, scale);
+    sigmaInput.value = formatSigmaValue(nextSigma);
+    slider.value = String(clampValue(nextSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
   }
 
   function scheduleContourChange(nextLevel, source) {
@@ -676,11 +696,26 @@ function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) 
   }
 
   slider.addEventListener('input', () => {
-    const nextLevel = parseFiniteValue(slider.value);
-    if (nextLevel === null) return;
+    const nextSigma = parseFiniteValue(slider.value);
+    if (nextSigma === null) return;
+    const nextLevel = sigmaToRawLevel(nextSigma, scale);
     setLevelDisplay(nextLevel);
     setStatus('');
     scheduleContourChange(nextLevel, 'slider');
+  });
+
+  sigmaInput.addEventListener('input', () => {
+    const nextSigma = parseFiniteValue(sigmaInput.value);
+    if (nextSigma === null) {
+      clearPendingContourChange();
+      setStatus('Enter a finite sigma value.', true);
+      return;
+    }
+    const nextLevel = sigmaToRawLevel(nextSigma, scale);
+    levelInput.value = formatContourLevel(nextLevel);
+    slider.value = String(clampValue(nextSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
+    setStatus('');
+    scheduleContourChange(nextLevel, 'sigma');
   });
 
   levelInput.addEventListener('input', () => {
@@ -690,9 +725,11 @@ function createContourPopover(anchor, name, iso = {}, map = {}, callbacks = {}) 
       setStatus('Enter a finite contour level.', true);
       return;
     }
-    slider.value = String(clampValue(nextLevel, range.min, range.max));
+    const nextSigma = rawLevelToSigma(nextLevel, scale);
+    sigmaInput.value = formatSigmaValue(nextSigma);
+    slider.value = String(clampValue(nextSigma, CONTOUR_SIGMA_MIN, CONTOUR_SIGMA_MAX));
     setStatus('');
-    scheduleContourChange(nextLevel, 'input');
+    scheduleContourChange(nextLevel, 'raw');
   });
 
   resetButton.addEventListener('click', (e) => {
@@ -961,7 +998,8 @@ export function createSidebar(container, callbacks) {
       }
     } else if (kind === 'map') {
       if (label === 'A') {
-        createPopupMenu(btn, MAP_ACTION_MENU, (value) => {
+        const map = currentState.maps.get(name);
+        createPopupMenu(btn, buildMapActionMenu(map), (value) => {
           if (value === 'create_isosurface') {
             if (callbacks.onCreateIsosurface) {
               callbacks.onCreateIsosurface(name);

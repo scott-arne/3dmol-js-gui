@@ -109,13 +109,14 @@ and appears in the dialog only when `allowArbitraryUrls` is true.
 
 ## Density Maps
 
-Density maps load as first-class sidebar entries with a map glyph. When visible,
-a map row shows its 3D bounding box; hiding the row keeps the parsed volume data
-available for later isosurface creation. MAP and MRC files are treated as
-CCP4-compatible density maps.
+Density maps load as first-class sidebar entries with a map glyph. The parsed
+volume data remains available for isosurface creation whether or not the map's
+3D bounding box is shown. The map **A** menu includes **Show Bounding Box** for
+toggling the bounds box, which is off by default. MAP and MRC files are treated
+as CCP4-compatible density maps.
 
 Use the map row **A** menu to create a default child isosurface at the map's
-suggested contour level, or use the terminal for explicit names and contour
+one-sigma contour level, or use the terminal for explicit names and contour
 levels:
 
 ```
@@ -125,10 +126,10 @@ isosurface ligand_mesh, density_map, 2.0, ligand, 3
 isosurface pocket_mesh, density_map, 1.5, "chain A, resn LIG", 3, 2, mesh
 ```
 
-Isosurface rows are children of their parent map and default to mesh
-representation. Their **A** menu includes **Contour...**, which opens a slider
-and raw-value input. The slider range is derived from the parent map values, and
-the terminal `isosurface name, map` form uses the map's suggested contour when no
+Isosurface rows are children of their parent map and default to blue mesh
+representation. Their **A** menu includes **Contour...**, which opens a sigma
+slider with editable sigma and raw-value inputs. The terminal
+`isosurface name, map` form uses the raw value equivalent to `+1` sigma when no
 level is provided. Explicit terminal levels remain raw values. Their **S** menu
 switches between mesh and surface rendering and controls opacity. Selection
 expressions containing commas must be quoted in the terminal command.

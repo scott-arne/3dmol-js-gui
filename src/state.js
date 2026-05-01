@@ -697,6 +697,7 @@ const DEFAULT_MAP_ENTRY = {
   contourStats: null,
   handles: [],
   visible: true,
+  showBoundingBox: false,
   color: '#38BDF8',
   opacity: 1,
 };
@@ -711,7 +712,7 @@ const DEFAULT_ISOSURFACE_ENTRY = {
   handle: null,
   visible: true,
   parentVisible: true,
-  color: '#FFFFFF',
+  color: '#0000FF',
   opacity: 0.75,
 };
 

@@ -116,6 +116,15 @@ describe('showLoadDialog', () => {
     expect(fileInput.accept).toContain('.mrc');
   });
 
+  it('local file target does not render format chips', () => {
+    showLoadDialog(callbacks);
+    const overlay = document.querySelector('.modal-overlay');
+    const filePanel = overlay.querySelectorAll('.modal-panel')[1];
+
+    expect(filePanel.querySelector('.modal-format-chips')).toBeNull();
+    expect(filePanel.querySelector('.modal-format-chip')).toBeNull();
+  });
+
   it('local file target shows the selected filename', () => {
     showLoadDialog(callbacks);
     const overlay = document.querySelector('.modal-overlay');

@@ -26,12 +26,15 @@ const VOLUME_FORMATS = {
 };
 
 const ISOSURFACE_REPRESENTATIONS = new Set(['mesh', 'surface']);
+const DEFAULT_ISOSURFACE_COLOR = '#0000FF';
 
 const CONTOUR_STATS_FALLBACK = {
   min: 0,
   max: 1,
   robustMin: 0,
   robustMax: 1,
+  mean: 0,
+  stdDev: 1,
   suggestedLevel: 1,
 };
 
@@ -119,7 +122,7 @@ export function computeVolumeBounds(volumeData) {
  * Compute lightweight contour statistics from parsed density values.
  *
  * @param {object} volumeData - 3Dmol VolumeData-like object.
- * @returns {{min: number, max: number, robustMin: number, robustMax: number, suggestedLevel: number}} Contour statistics.
+ * @returns {{min: number, max: number, robustMin: number, robustMax: number, mean: number, stdDev: number, suggestedLevel: number}} Contour statistics.
  */
 export function computeContourStats(volumeData) {
   const summary = getFiniteVolumeSummary(volumeData);
@@ -150,7 +153,9 @@ export function computeContourStats(volumeData) {
     max,
     robustMin,
     robustMax,
-    suggestedLevel: getSuggestedLevelFromRange(robustMin, robustMax),
+    mean: summary.mean,
+    stdDev: summary.stdDev,
+    suggestedLevel: getSuggestedContourLevel(summary, robustMin, robustMax),
   };
 }
 
@@ -158,12 +163,14 @@ function getFiniteVolumeSummary(volumeData) {
   const data = volumeData?.data;
   const values = [];
   if (!data || !Number.isFinite(data.length)) {
-    return { values, min: 0, max: 0, finiteCount: 0 };
+    return { values, min: 0, max: 0, mean: 0, stdDev: 1, finiteCount: 0 };
   }
 
   let finiteCount = 0;
   let min = Infinity;
   let max = -Infinity;
+  let sum = 0;
+  let sumSquares = 0;
 
   for (let index = 0; index < data.length; index++) {
     const value = data[index];
@@ -171,22 +178,34 @@ function getFiniteVolumeSummary(volumeData) {
       finiteCount += 1;
       min = Math.min(min, value);
       max = Math.max(max, value);
+      sum += value;
+      sumSquares += value * value;
       if (values.length < MAX_CONTOUR_SAMPLE_SIZE) {
         values.push(value);
       }
     }
   }
 
+  if (finiteCount === 0) {
+    return { values: [], min: 0, max: 0, mean: 0, stdDev: 1, finiteCount: 0 };
+  }
+
+  const mean = sum / finiteCount;
+  const variance = Math.max(0, (sumSquares / finiteCount) - (mean * mean));
+  const stdDev = Math.sqrt(variance);
+
   if (finiteCount > MAX_CONTOUR_SAMPLE_SIZE) {
     return {
       values: sampleFiniteVolumeValues(data, finiteCount),
       min,
       max,
+      mean,
+      stdDev,
       finiteCount,
     };
   }
 
-  return { values, min, max, finiteCount };
+  return { values, min, max, mean, stdDev, finiteCount };
 }
 
 function sampleFiniteVolumeValues(data, finiteCount) {
@@ -226,8 +245,24 @@ function isFiniteDensityValue(value) {
  * @returns {number} Suggested raw isosurface level.
  */
 export function getSuggestedIsosurfaceLevel(map) {
-  const suggestedLevel = map?.contourStats?.suggestedLevel;
+  const suggestedLevel = getOneSigmaContourLevel(map?.contourStats)
+    ?? map?.contourStats?.suggestedLevel;
   return Number.isFinite(suggestedLevel) ? suggestedLevel : 1;
+}
+
+function getSuggestedContourLevel(summary, robustMin, robustMax) {
+  return getOneSigmaContourLevel(summary) ?? getSuggestedLevelFromRange(robustMin, robustMax);
+}
+
+function getOneSigmaContourLevel(stats = {}) {
+  if (!stats || typeof stats !== 'object') {
+    return null;
+  }
+  const { mean, stdDev } = stats;
+  if (!Number.isFinite(mean) || !Number.isFinite(stdDev) || stdDev <= 0) {
+    return null;
+  }
+  return mean + stdDev;
 }
 
 function getSortedPercentile(sortedValues, percentile) {
@@ -291,7 +326,7 @@ export function buildIsosurfaceSpec(iso) {
     isoval: iso.level,
     wireframe: representation === 'mesh',
     opacity: visible ? (iso.opacity ?? 0.75) : 0,
-    color: iso.color || '#FFFFFF',
+    color: iso.color || DEFAULT_ISOSURFACE_COLOR,
   };
 
   if (iso.selection != null) {
@@ -316,6 +351,7 @@ export function createMap({
   format,
   color = '#38BDF8',
   opacity = 1,
+  showBoundingBox = false,
   render = true,
 }) {
   const normalized = normalizeVolumeFormat(format);
@@ -330,6 +366,7 @@ export function createMap({
     bounds,
     contourStats,
     visible: true,
+    showBoundingBox,
     color,
     opacity,
     handles: [],
@@ -467,6 +504,17 @@ export function setMapOpacity(name, opacity) {
 }
 
 /**
+ * Set map bounding-box visibility and redraw only the map box.
+ *
+ * @param {string} name - Map name.
+ * @param {boolean} showBoundingBox - Whether to draw the map bounds box.
+ * @returns {object|undefined} Updated map entry.
+ */
+export function setMapBoundingBoxVisibility(name, showBoundingBox) {
+  return updateAndRedrawMap(name, { showBoundingBox });
+}
+
+/**
  * Create a volume-backed isosurface under an existing map.
  *
  * @param {object} options - Isosurface creation options.
@@ -589,7 +637,7 @@ export function setIsosurfaceLevel(name, level) {
 function redrawMapBox(map, { render = true } = {}) {
   if (!map) return undefined;
 
-  if (map.visible === false) {
+  if (map.visible === false || map.showBoundingBox !== true) {
     const removedShape = removeViewerShapes(map.handles);
     const updated = updateMapEntry(map.name, { handles: [] });
     if (removedShape && render) {

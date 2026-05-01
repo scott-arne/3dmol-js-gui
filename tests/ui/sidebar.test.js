@@ -567,7 +567,7 @@ describe('Sidebar', () => {
       expect(callbacks.onToggleMapVisibility).not.toHaveBeenCalled();
     });
 
-    it('map menus expose create isosurface, opacity, and solid color callbacks', () => {
+    it('map menus expose create isosurface, bounding box, opacity, and solid color callbacks', () => {
       const maps = new Map([['density', makeMap({ opacity: 0.5 })]]);
       sidebar.refresh(makeState({ maps }));
 
@@ -575,6 +575,19 @@ describe('Sidebar', () => {
       buttons[0].click();
       document.querySelector('[data-value="create_isosurface"]').click();
       expect(callbacks.onCreateIsosurface).toHaveBeenCalledWith('density');
+
+      buttons[0].click();
+      const boundingBoxItem = document.querySelector('[data-value="show_bounding_box"]');
+      expect(boundingBoxItem.textContent).toContain('Show Bounding Box');
+      expect(boundingBoxItem.classList.contains('checked')).toBe(false);
+      boundingBoxItem.click();
+      expect(callbacks.onMapAction).toHaveBeenCalledWith('density', 'show_bounding_box');
+
+      sidebar.refresh(makeState({
+        maps: new Map([['density', makeMap({ opacity: 0.5, showBoundingBox: true })]]),
+      }));
+      buttons[0].click();
+      expect(document.querySelector('[data-value="show_bounding_box"]').classList.contains('checked')).toBe(true);
 
       buttons[1].click();
       expect(document.querySelector('[data-value="opacity:0.5"]').classList.contains('checked')).toBe(true);
@@ -663,13 +676,15 @@ describe('Sidebar', () => {
       expect(popover.querySelector('input[type="range"]')).not.toBeNull();
       const slider = popover.querySelector('.contour-slider');
       expect(slider).not.toBeNull();
-      expect(slider.getAttribute('aria-label')).toBe('Contour level');
+      expect(slider.getAttribute('aria-label')).toBe('Sigma contour level');
       expect(slider.getAttribute('aria-describedby')).toBe(rangeLabel.id);
       expect(rangeLabel.id).not.toBe('');
       expect(popover.querySelector('.contour-level-input').value).toBe('-3');
-      expect(popover.querySelector('.contour-level-input').getAttribute('aria-label')).toBe('Contour level');
+      expect(popover.querySelector('.contour-sigma-input').getAttribute('aria-label')).toBe('Sigma contour level');
+      expect(popover.querySelector('.contour-sigma-input').getAttribute('aria-describedby')).toBe(rangeLabel.id);
+      expect(popover.querySelector('.contour-level-input').getAttribute('aria-label')).toBe('Raw contour level');
       expect(popover.querySelector('.contour-level-input').getAttribute('aria-describedby')).toBe(rangeLabel.id);
-      expect(rangeLabel.textContent).toContain('Auto range');
+      expect(rangeLabel.textContent).toContain('Sigma range');
       expect(popover.querySelector('.contour-reset-auto').textContent).toBe('Reset Auto');
 
       buttons[0].click();
@@ -695,12 +710,20 @@ describe('Sidebar', () => {
       const maps = new Map([[
         'density',
         makeMap({
-          contourStats: { min: 0, max: 1, robustMin: 0, robustMax: 1, suggestedLevel: 0.5 },
+          contourStats: {
+            min: 0,
+            max: 1,
+            robustMin: 0,
+            robustMax: 1,
+            mean: 0,
+            stdDev: 0.1,
+            suggestedLevel: 0.5,
+          },
         }),
       ]]);
       const isosurfaces = new Map([[
         'isosurface_1',
-        makeIsosurface({ level: 0.25, mapName: 'density' }),
+        makeIsosurface({ level: 0.2, mapName: 'density' }),
       ]]);
       const entryTree = [
         { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
@@ -713,9 +736,14 @@ describe('Sidebar', () => {
       document.querySelector('[data-value="contour"]').click();
 
       const slider = document.querySelector('.contour-slider');
-      slider.value = '0.7';
+      expect(slider.min).toBe('-3');
+      expect(slider.max).toBe('6');
+      expect(document.querySelector('.contour-sigma-input').value).toBe('2');
+      expect(document.querySelector('.contour-raw-input').value).toBe('0.2');
+
+      slider.value = '3';
       slider.dispatchEvent(new Event('input', { bubbles: true }));
-      slider.value = '0.8';
+      slider.value = '4';
       slider.dispatchEvent(new Event('input', { bubbles: true }));
 
       vi.advanceTimersByTime(149);
@@ -725,7 +753,65 @@ describe('Sidebar', () => {
       expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
       expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
         'isosurface_1',
-        { level: 0.8, source: 'slider' },
+        { level: 0.4, source: 'slider' },
+      );
+    });
+
+    it('keeps raw and sigma contour inputs synchronized', () => {
+      vi.useFakeTimers();
+      const maps = new Map([[
+        'density',
+        makeMap({
+          contourStats: {
+            min: -0.0003,
+            max: 0.0004,
+            robustMin: -0.0003,
+            robustMax: 0.0004,
+            mean: 0.0001,
+            stdDev: 0.00005,
+            suggestedLevel: 0.00015,
+          },
+        }),
+      ]]);
+      const isosurfaces = new Map([[
+        'isosurface_1',
+        makeIsosurface({ level: 0.0002, mapName: 'density' }),
+      ]]);
+      const entryTree = [
+        { type: 'map', name: 'density', collapsed: false, children: [{ type: 'isosurface', name: 'isosurface_1' }] },
+      ];
+      sidebar.refresh(makeState({ maps, isosurfaces, entryTree }));
+
+      container.querySelector('[data-kind="isosurface"][data-name="isosurface_1"] .sidebar-btn').click();
+      document.querySelector('[data-value="contour"]').click();
+
+      const rawInput = document.querySelector('.contour-raw-input');
+      const sigmaInput = document.querySelector('.contour-sigma-input');
+      const slider = document.querySelector('.contour-slider');
+
+      expect(rawInput.value).toBe('0.0002');
+      expect(sigmaInput.value).toBe('2');
+      expect(slider.value).toBe('2');
+
+      sigmaInput.value = '3';
+      sigmaInput.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(rawInput.value).toBe('0.00025');
+      expect(slider.value).toBe('3');
+      vi.advanceTimersByTime(150);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.00025, source: 'sigma' },
+      );
+
+      callbacks.onIsosurfaceContour.mockClear();
+      rawInput.value = '0.00005';
+      rawInput.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(sigmaInput.value).toBe('-1');
+      expect(slider.value).toBe('-1');
+      vi.advanceTimersByTime(150);
+      expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
+        'isosurface_1',
+        { level: 0.00005, source: 'raw' },
       );
     });
 
@@ -766,7 +852,7 @@ describe('Sidebar', () => {
       expect(callbacks.onIsosurfaceContour).toHaveBeenCalledTimes(1);
       expect(callbacks.onIsosurfaceContour).toHaveBeenCalledWith(
         'isosurface_1',
-        { level: 0.85, source: 'input' },
+        { level: 0.85, source: 'raw' },
       );
 
       vi.advanceTimersByTime(150);

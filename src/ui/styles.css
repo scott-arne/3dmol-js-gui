@@ -967,23 +967,6 @@ body {
   white-space: nowrap;
 }
 
-.modal-format-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 10px;
-}
-
-.modal-format-chip {
-  padding: 2px 7px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--inactive);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
 .modal-status {
   margin-top: 12px;
   padding: 8px;
@@ -1151,6 +1134,7 @@ body {
   min-width: 0;
 }
 
+.contour-sigma-input,
 .contour-level-input {
   width: 72px;
   padding: 3px 5px;
@@ -1159,6 +1143,20 @@ body {
   border: 1px solid var(--border);
   border-radius: 3px;
   font: inherit;
+}
+
+.contour-raw-row {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--inactive);
+  font-size: 11px;
+}
+
+.contour-raw-input {
+  width: 100%;
 }
 
 .contour-reset-auto {

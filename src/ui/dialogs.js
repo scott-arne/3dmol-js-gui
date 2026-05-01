@@ -159,14 +159,6 @@ export function showLoadDialog(callbacks, options = {}) {
   fileTarget.appendChild(filePrompt);
   fileTarget.appendChild(fileBrowse);
   fileTarget.appendChild(fileInput);
-  const formatChips = document.createElement('div');
-  formatChips.className = 'modal-format-chips';
-  for (const label of ['structure', 'density', 'maps']) {
-    const chip = document.createElement('span');
-    chip.className = 'modal-format-chip';
-    chip.textContent = label;
-    formatChips.appendChild(chip);
-  }
   const fileActions = document.createElement('div');
   fileActions.className = 'modal-actions';
   const loadBtn = document.createElement('button');
@@ -216,7 +208,6 @@ export function showLoadDialog(callbacks, options = {}) {
   fileActions.appendChild(loadBtn);
   filePanel.appendChild(fileTarget);
   filePanel.appendChild(selectedFileName);
-  filePanel.appendChild(formatChips);
   filePanel.appendChild(fileActions);
   content.appendChild(filePanel);
   panels.push(filePanel);
