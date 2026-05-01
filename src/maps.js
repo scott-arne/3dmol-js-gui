@@ -27,6 +27,14 @@ const VOLUME_FORMATS = {
 
 const ISOSURFACE_REPRESENTATIONS = new Set(['mesh', 'surface']);
 
+const CONTOUR_STATS_FALLBACK = {
+  min: 0,
+  max: 1,
+  robustMin: 0,
+  robustMax: 1,
+  suggestedLevel: 1,
+};
+
 /**
  * Normalize map file formats into 3Dmol VolumeData parser formats.
  *
@@ -105,6 +113,98 @@ export function computeVolumeBounds(volumeData) {
   };
 }
 
+/**
+ * Compute lightweight contour statistics from parsed density values.
+ *
+ * @param {object} volumeData - 3Dmol VolumeData-like object.
+ * @returns {{min: number, max: number, robustMin: number, robustMax: number, suggestedLevel: number}} Contour statistics.
+ */
+export function computeContourStats(volumeData) {
+  const values = getFiniteVolumeValues(volumeData)
+    .sort((a, b) => a - b);
+
+  if (values.length === 0) {
+    return { ...CONTOUR_STATS_FALLBACK };
+  }
+
+  const min = values[0];
+  const max = values[values.length - 1];
+  let robustMin = getSortedPercentile(values, 0.01);
+  let robustMax = getSortedPercentile(values, 0.99);
+
+  if (!hasPositiveRange(robustMin, robustMax)) {
+    robustMin = min;
+    robustMax = max;
+
+    if (!hasPositiveRange(robustMin, robustMax)) {
+      const halfRange = Math.max(Math.abs(min) * 0.01, 1e-6);
+      robustMin = min - halfRange;
+      robustMax = min + halfRange;
+    }
+  }
+
+  return {
+    min,
+    max,
+    robustMin,
+    robustMax,
+    suggestedLevel: getSuggestedLevelFromRange(robustMin, robustMax),
+  };
+}
+
+function getFiniteVolumeValues(volumeData) {
+  const data = volumeData?.data;
+  const values = [];
+  if (!data || !Number.isFinite(data.length)) {
+    return values;
+  }
+
+  for (let index = 0; index < data.length; index++) {
+    const value = data[index];
+    if (Number.isFinite(value)) {
+      values.push(value);
+    }
+  }
+
+  return values;
+}
+
+/**
+ * Return the stored contour suggestion for a map entry.
+ *
+ * @param {object} map - Map state entry.
+ * @returns {number} Suggested raw isosurface level.
+ */
+export function getSuggestedIsosurfaceLevel(map) {
+  const suggestedLevel = map?.contourStats?.suggestedLevel;
+  return Number.isFinite(suggestedLevel) ? suggestedLevel : 1;
+}
+
+function getSortedPercentile(sortedValues, percentile) {
+  const position = (sortedValues.length - 1) * percentile;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  const lowerValue = sortedValues[lowerIndex];
+  const upperValue = sortedValues[upperIndex];
+
+  if (lowerIndex === upperIndex) {
+    return lowerValue;
+  }
+
+  return lowerValue + (upperValue - lowerValue) * (position - lowerIndex);
+}
+
+function getSuggestedLevelFromRange(robustMin, robustMax) {
+  if (robustMax > 0) {
+    return (Math.max(robustMin, 0) + robustMax) / 2;
+  }
+  return (robustMin + robustMax) / 2;
+}
+
+function hasPositiveRange(min, max) {
+  return Number.isFinite(min) && Number.isFinite(max) && max > min;
+}
+
 function getVolumeCornerCoordinate(volumeData, x, y, z) {
   if (hasVolumeMatrix(volumeData)) {
     return transformPoint(volumeData.matrix.elements, x, y, z);
@@ -171,12 +271,14 @@ export function createMap({
   const normalized = normalizeVolumeFormat(format);
   const volumeData = new globalThis.$3Dmol.VolumeData(data, normalized.format);
   const bounds = computeVolumeBounds(volumeData);
+  const contourStats = computeContourStats(volumeData);
   const map = addMapEntry({
     name,
     format: normalized.format,
     sourceFormat: normalized.sourceFormat,
     volumeData,
     bounds,
+    contourStats,
     visible: true,
     color,
     opacity,

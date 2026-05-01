@@ -28,7 +28,7 @@ const state = {
   /** @type {Map<string, {name: string, selection: object, type: string, surfaceType: string, parentName: string|null, handle: *, pending: boolean, visible: boolean, parentVisible: boolean, mode: string, opacity: number, color: string}>} */
   surfaces: new Map(),
 
-  /** @type {Map<string, {name: string, format: string, sourceFormat: string, volumeData: object, bounds: object, handles: Array<*>, visible: boolean, color: string, opacity: number}>} */
+  /** @type {Map<string, {name: string, format: string, sourceFormat: string, volumeData: object, bounds: object, contourStats: object|null, handles: Array<*>, visible: boolean, color: string, opacity: number}>} */
   maps: new Map(),
 
   /** @type {Map<string, {name: string, mapName: string, level: number, selectionText: string|null, selection: object|null, buffer: number|null, carve: number|null, representation: string, handle: *, visible: boolean, parentVisible: boolean, color: string, opacity: number}>} */
@@ -694,6 +694,7 @@ function normalizeHierarchyParent(node) {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAP_ENTRY = {
+  contourStats: null,
   handles: [],
   visible: true,
   color: '#38BDF8',

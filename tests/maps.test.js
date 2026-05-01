@@ -4,9 +4,11 @@ import { getState } from '../src/state.js';
 import { getViewer, scheduleRender } from '../src/viewer.js';
 import {
   buildIsosurfaceSpec,
+  computeContourStats,
   computeVolumeBounds,
   createIsosurface,
   createMap,
+  getSuggestedIsosurfaceLevel,
   normalizeVolumeFormat,
   removeIsosurface,
   removeMap,
@@ -39,10 +41,11 @@ function resetState() {
   state.selectionMode = 'atoms';
 }
 
-function createCornerVolume() {
+function createCornerVolume(data = []) {
   const size = { x: 3, y: 2, z: 2 };
   return {
     size,
+    data,
     origin: { x: 1, y: 2, z: 3 },
     unit: { x: 2, y: 3, z: 4 },
     getCoordinates: vi.fn((index) => {
@@ -64,6 +67,18 @@ function installVolumeData(volumeData) {
   globalThis.$3Dmol = {
     VolumeData: vi.fn(() => volumeData),
   };
+}
+
+function createOutlierDensityValues() {
+  return [
+    -1000,
+    ...Array.from({ length: 99 }, (_, index) => index),
+    1000,
+    NaN,
+    Infinity,
+    -Infinity,
+    'ignored',
+  ];
 }
 
 describe('map viewer service', () => {
@@ -118,6 +133,83 @@ describe('map viewer service', () => {
     expect(volumeData.getCoordinates).not.toHaveBeenCalled();
   });
 
+  it('computes robust contour statistics from finite density values', () => {
+    const stats = computeContourStats({ data: createOutlierDensityValues() });
+
+    expect(stats).toEqual({
+      min: -1000,
+      max: 1000,
+      robustMin: 0,
+      robustMax: 98,
+      suggestedLevel: 49,
+    });
+  });
+
+  it('interpolates robust percentiles from indexed finite density values', () => {
+    const data = {
+      length: 4,
+      0: 0,
+      1: 100,
+      2: 200,
+      3: 300,
+      [Symbol.iterator]: () => {
+        throw new Error('data should be read by index');
+      },
+    };
+
+    const stats = computeContourStats({ data });
+
+    expect(stats.min).toBe(0);
+    expect(stats.max).toBe(300);
+    expect(stats.robustMin).toBeCloseTo(3);
+    expect(stats.robustMax).toBeCloseTo(297);
+    expect(stats.suggestedLevel).toBeCloseTo(150);
+  });
+
+  it('ignores non-number density values even when they are numerically coercible', () => {
+    const stats = computeContourStats({
+      data: [1, '2', null, false, '', 3],
+    });
+
+    expect(stats.min).toBe(1);
+    expect(stats.max).toBe(3);
+    expect(stats.robustMin).toBeCloseTo(1.02);
+    expect(stats.robustMax).toBeCloseTo(2.98);
+    expect(stats.suggestedLevel).toBeCloseTo(2);
+  });
+
+  it('uses a small centered robust range when finite density values collapse', () => {
+    const stats = computeContourStats({ data: new Float32Array([NaN, 2.5, Infinity]) });
+
+    expect(stats.min).toBeCloseTo(2.5);
+    expect(stats.max).toBeCloseTo(2.5);
+    expect(stats.robustMin).toBeLessThan(2.5);
+    expect(stats.robustMax).toBeGreaterThan(2.5);
+    expect((stats.robustMin + stats.robustMax) / 2).toBeCloseTo(2.5);
+    expect(stats.suggestedLevel).toBeCloseTo(2.5);
+  });
+
+  it('uses the final robust range rule when collapsed zero density values expand', () => {
+    const stats = computeContourStats({ data: new Float32Array([0, 0, 0]) });
+
+    expect(stats.min).toBe(0);
+    expect(stats.max).toBe(0);
+    expect(stats.robustMin).toBeCloseTo(-1e-6);
+    expect(stats.robustMax).toBeCloseTo(1e-6);
+    expect(stats.suggestedLevel).toBeGreaterThan(0);
+    expect(stats.suggestedLevel).toBeCloseTo(5e-7, 12);
+  });
+
+  it('returns fallback contour statistics when density data has no finite values', () => {
+    expect(computeContourStats({ data: [NaN, Infinity, -Infinity, 'ignored'] })).toEqual({
+      min: 0,
+      max: 1,
+      robustMin: 0,
+      robustMax: 1,
+      suggestedLevel: 1,
+    });
+  });
+
   it('creates a VolumeData-backed map entry and renders its bounding box', () => {
     const volumeData = createCornerVolume();
     installVolumeData(volumeData);
@@ -158,6 +250,25 @@ describe('map viewer service', () => {
       wireframe: true,
     });
     expect(scheduleRender).toHaveBeenCalled();
+  });
+
+  it('stores contour statistics from parsed map data and returns the suggested level', () => {
+    const volumeData = createCornerVolume(new Float32Array(createOutlierDensityValues()));
+    installVolumeData(volumeData);
+    mockViewer.addBox.mockReturnValue({ box: true });
+
+    const map = createMap({ name: 'density', data: 'map data', format: 'map' });
+
+    expect(map.contourStats).toMatchObject({
+      min: -1000,
+      max: 1000,
+      robustMin: 0,
+      robustMax: 98,
+    });
+    expect(map.contourStats.suggestedLevel).toBeCloseTo(49);
+    expect(getSuggestedIsosurfaceLevel(map)).toBeCloseTo(49);
+    expect(getSuggestedIsosurfaceLevel({ contourStats: { suggestedLevel: Infinity } })).toBe(1);
+    expect(getSuggestedIsosurfaceLevel(null)).toBe(1);
   });
 
   it('creates the initial map box without rendering when render is false', () => {
