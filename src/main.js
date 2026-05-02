@@ -48,6 +48,7 @@ import {
 } from './state.js';
 import { createCommandRegistry, createCommandContext } from './commands/registry.js';
 import { registerAllCommands } from './commands/index.js';
+import { applyInitSceneOperation } from './init-operations.js';
 import { clearScene } from './scene-clear.js';
 import { showLoadDialog, showExportDialog, showQuickstart, showRenameDialog } from './ui/dialogs.js';
 import { createContextMenu } from './ui/context-menu.js';
@@ -1795,6 +1796,12 @@ if (init) {
             for (const rep of reps) styleObj[repKey(rep)] = { color: op.color };
             model.setStyle({ index: indices }, styleObj);
           }
+        }
+      } else {
+        try {
+          await applyInitSceneOperation(op, { surfaceService, mapService });
+        } catch (e) {
+          terminal.print(`Initialization operation "${op.op}" failed: ${e.message}`, 'error');
         }
       }
     }
