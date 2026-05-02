@@ -98,7 +98,7 @@ body {
     "menubar  menubar"
     "viewer   sidebar"
     "terminal terminal";
-  grid-template-rows: 28px 1fr auto;
+  grid-template-rows: 28px minmax(0, 1fr) auto;
   grid-template-columns: 1fr var(--sidebar-width);
 }
 
@@ -114,14 +114,14 @@ body {
   grid-template-areas:
     "menubar  menubar"
     "viewer   sidebar";
-  grid-template-rows: 28px 1fr;
+  grid-template-rows: 28px minmax(0, 1fr);
 }
 
 #app.sidebar-hidden.terminal-hidden {
   grid-template-areas:
     "menubar  menubar"
     "viewer   viewer";
-  grid-template-rows: 28px 1fr;
+  grid-template-rows: 28px minmax(0, 1fr);
   grid-template-columns: 1fr 0px;
 }
 
@@ -129,7 +129,7 @@ body {
   grid-template-areas:
     "viewer   sidebar"
     "terminal terminal";
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 #app.menubar-hidden .menubar {
@@ -140,20 +140,20 @@ body {
   grid-template-areas:
     "viewer   viewer"
     "terminal terminal";
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   grid-template-columns: 1fr 0px;
 }
 
 #app.menubar-hidden.terminal-hidden {
   grid-template-areas:
     "viewer   sidebar";
-  grid-template-rows: 1fr;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 #app.menubar-hidden.sidebar-hidden.terminal-hidden {
   grid-template-areas:
     "viewer   viewer";
-  grid-template-rows: 1fr;
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns: 1fr 0px;
 }
 
@@ -315,7 +315,7 @@ body {
   grid-area: viewer;
   position: relative;
   overflow: hidden;
-  min-height: 200px;
+  min-height: 0;
 }
 
 /* --- Sidebar --- */

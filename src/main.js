@@ -1813,7 +1813,7 @@ if (init) {
     if (init.ui.sidebar === false) {
       app.classList.add('sidebar-hidden');
     }
-    if (init.ui.terminal === false) {
+    if (init.ui.console === false || init.ui.terminal === false) {
       app.classList.add('terminal-hidden');
     }
     if (init.ui.menubar === false) {

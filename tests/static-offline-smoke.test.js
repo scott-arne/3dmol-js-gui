@@ -135,6 +135,30 @@ describe('static offline smoke fixture', () => {
     expect(mockViewer.render).toHaveBeenCalled();
   });
 
+  it('accepts console as an initialization visibility alias', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.ui = {
+      sidebar: true,
+      menubar: true,
+      console: false,
+    };
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(document.getElementById('app').classList.contains('terminal-hidden')).toBe(true);
+  });
+
+  it('keeps the viewer row shrinkable so console input remains visible', () => {
+    const css = readFileSync(resolve(__dirname, '../src/ui/styles.css'), 'utf8');
+
+    expect(css).toContain('grid-template-rows: 28px minmax(0, 1fr) auto;');
+    expect(css).toMatch(/\.viewer-container\s*{[^}]*min-height:\s*0;/s);
+  });
+
   it('applies initialization remove_style operations', async () => {
     const html = readFileSync(fixturePath, 'utf8');
     const mockViewer = createMockViewer();
