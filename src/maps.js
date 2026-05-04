@@ -332,7 +332,9 @@ export function buildIsosurfaceSpec(iso) {
   if (iso.selection != null) {
     spec.selection = iso.selection;
   }
-  if (iso.buffer != null) {
+  if (iso.carve != null) {
+    spec.seldist = iso.carve;
+  } else if (iso.buffer != null) {
     spec.seldist = iso.buffer;
   }
 

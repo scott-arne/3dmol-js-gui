@@ -215,10 +215,14 @@ EntryName
 // ---------------------------------------------------------------------------
 
 NonpolarHSpec
-  = ("nonpolar_hydrogen"i / "apolarh"i) !IdentChar { return { type: 'nonpolar_hydrogen' }; }
+  = ("nonpolar_hydrogens"i / "nonpolar_hydrogen"i / "apolarh"i) !IdentChar {
+      return { type: 'nonpolar_hydrogen' };
+    }
 
 PolarHSpec
-  = ("polar_hydrogen"i / "polarh"i) !IdentChar { return { type: 'polar_hydrogen' }; }
+  = ("polar_hydrogens"i / "polar_hydrogen"i / "polarh"i) !IdentChar {
+      return { type: 'polar_hydrogen' };
+    }
 
 HeavySpec
   = "heavy"i !IdentChar { return { type: 'heavy' }; }

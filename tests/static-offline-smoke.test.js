@@ -50,6 +50,26 @@ function makeBounds() {
   };
 }
 
+function installMockVolumeData(volumeData = createVolumeData()) {
+  globalThis.$3Dmol.VolumeData = vi.fn(() => volumeData);
+  return volumeData;
+}
+
+function createVolumeData() {
+  return {
+    size: { x: 2, y: 2, z: 2 },
+    matrix: {
+      elements: [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ],
+    },
+    data: new Float32Array([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]),
+  };
+}
+
 describe('static offline smoke fixture', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -113,6 +133,164 @@ describe('static offline smoke fixture', () => {
     );
     expect(mockViewer.zoomTo).toHaveBeenCalled();
     expect(mockViewer.render).toHaveBeenCalled();
+  });
+
+  it('accepts console as an initialization visibility alias', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.ui = {
+      sidebar: true,
+      menubar: true,
+      console: false,
+    };
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(document.getElementById('app').classList.contains('terminal-hidden')).toBe(true);
+  });
+
+  it('keeps the viewer row shrinkable so console input remains visible', () => {
+    const css = readFileSync(resolve(__dirname, '../src/ui/styles.css'), 'utf8');
+
+    expect(css).toContain('grid-template-rows: 28px minmax(0, 1fr) auto;');
+    expect(css).toMatch(/\.viewer-container\s*{[^}]*min-height:\s*0;/s);
+  });
+
+  it('applies initialization remove_style operations', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+    mockViewer._addAtoms([
+      {
+        serial: 1,
+        style: { cartoon: { color: 'red' }, stick: { radius: 0.25 } },
+      },
+    ]);
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.operations = [
+      { op: 'style', selection: null, style: { cartoon: { color: 'red' } } },
+      { op: 'remove_style', selection: null, style: { cartoon: {} } },
+    ];
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(mockViewer.addStyle).toHaveBeenCalledWith(
+      {},
+      { cartoon: { color: 'red' } }
+    );
+    expect(mockViewer.setStyle).toHaveBeenCalledWith(
+      { model: expect.any(Object) },
+      { stick: { radius: 0.25 } }
+    );
+  });
+
+  it('applies initialization remove_style everything to nonpolar hydrogens', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+    mockViewer._addAtoms([
+      { serial: 1, elem: 'C', x: 0, y: 0, z: 0, style: { stick: {} } },
+      { serial: 2, elem: 'H', x: 1, y: 0, z: 0, style: { stick: {} } },
+    ]);
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.operations = [
+      {
+        op: 'remove_style',
+        selection: 'nonpolar_hydrogens',
+        style: { everything: {} },
+      },
+    ];
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(mockViewer.setStyle).toHaveBeenCalledWith(
+      { serial: [2], model: expect.any(Object) },
+      {}
+    );
+  });
+
+  it('applies initialization surface add and remove operations in order', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.molecules = [
+      {
+        name: 'complex',
+        format: 'pdb',
+        data: 'HETATM    1  C   LIG A   1       0.000   0.000   0.000  1.00  0.00           C',
+      },
+    ];
+    window.__C3D_INIT__.operations = [
+      {
+        op: 'add_surface',
+        selection: 'complex',
+        name: 'complex_surface',
+        type: 'molecular',
+        color: '#FFFFFF',
+        opacity: 0.75,
+        mode: 'surface',
+      },
+      { op: 'remove_surface', name: 'complex_surface' },
+    ];
+    installMock3Dmol(mockViewer);
+
+    const { getState } = await import('../src/state.js');
+    await import('../src/main.js');
+
+    expect(mockViewer.addSurface).toHaveBeenCalled();
+    expect(mockViewer.removeSurface).toHaveBeenCalled();
+    expect(getState().surfaces.has('complex_surface')).toBe(false);
+  });
+
+  it('applies initialization map, isosurface, and map removal operations in order', async () => {
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+    const isoHandle = { id: 'iso' };
+    mockViewer.addIsosurface.mockReturnValue(isoHandle);
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.operations = [
+      {
+        op: 'add_map',
+        name: 'density',
+        format: 'ccp4',
+        encoding: 'base64',
+        data: 'AQIDBA==',
+        color: '#38BDF8',
+        opacity: 1,
+        showBoundingBox: true,
+      },
+      {
+        op: 'add_isosurface',
+        name: 'mesh',
+        mapName: 'density',
+        level: null,
+        representation: 'mesh',
+        color: '#0000FF',
+        opacity: 0.75,
+      },
+      { op: 'remove_map', name: 'density' },
+    ];
+    installMock3Dmol(mockViewer);
+    installMockVolumeData();
+
+    const { getState } = await import('../src/state.js');
+    await import('../src/main.js');
+
+    expect(globalThis.$3Dmol.VolumeData).toHaveBeenCalledWith(expect.any(ArrayBuffer), 'ccp4');
+    expect(mockViewer.addIsosurface).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ color: '#0000FF', wireframe: true }),
+    );
+    expect(mockViewer.removeShape).toHaveBeenCalled();
+    expect(getState().maps.has('density')).toBe(false);
+    expect(getState().isosurfaces.has('mesh')).toBe(false);
   });
 
   it('group visibility toggles direct grouped surfaces', async () => {

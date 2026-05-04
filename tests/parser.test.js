@@ -122,8 +122,10 @@ describe('Selection Parser', () => {
       ['hydrogen', 'hydrogen'],
       ['h', 'hydrogen'],
       ['polar_hydrogen', 'polar_hydrogen'],
+      ['polar_hydrogens', 'polar_hydrogen'],
       ['polarh', 'polar_hydrogen'],
       ['nonpolar_hydrogen', 'nonpolar_hydrogen'],
+      ['nonpolar_hydrogens', 'nonpolar_hydrogen'],
       ['apolarh', 'nonpolar_hydrogen'],
     ])('parses "%s" as %s', (input, expected) => {
       const ast = parse(input);

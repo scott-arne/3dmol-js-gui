@@ -449,7 +449,7 @@ describe('map viewer service', () => {
     expect(getState().entryTree).toEqual([]);
   });
 
-  it('builds isosurface specs for representations, visibility, selection, and buffer', () => {
+  it('builds isosurface specs for representations, visibility, selection, buffer, and carve', () => {
     expect(buildIsosurfaceSpec({
       level: 1.5,
       representation: 'mesh',
@@ -473,13 +473,14 @@ describe('map viewer service', () => {
       opacity: 0.7,
       selection: { chain: 'A' },
       buffer: 4,
+      carve: 2,
     })).toEqual({
       isoval: -2,
       wireframe: false,
       opacity: 0.7,
       color: '#AA00FF',
       selection: { chain: 'A' },
-      seldist: 4,
+      seldist: 2,
     });
 
     expect(buildIsosurfaceSpec({
