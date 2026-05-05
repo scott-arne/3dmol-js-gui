@@ -234,7 +234,7 @@ describe('Sidebar tree-based rendering', () => {
       expect(childContainer.classList.contains('collapsed')).toBe(true);
     });
 
-    it('expanded group shows ▼ toggle icon', () => {
+    it('expanded group shows expanded chevron', () => {
       const objects = new Map([['mol1', makeObject()]]);
       const entryTree = [
         { type: 'group', name: 'grp', collapsed: false, children: [
@@ -243,11 +243,12 @@ describe('Sidebar tree-based rendering', () => {
       ];
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
-      const toggle = container.querySelector('.sidebar-group-toggle');
-      expect(toggle.textContent).toBe('\u25BC');
+      const toggle = container.querySelector('.sidebar-chevron');
+      expect(toggle.textContent).toBe('\u25B8');
+      expect(toggle.classList.contains('expanded')).toBe(true);
     });
 
-    it('collapsed group shows ▶ toggle icon', () => {
+    it('collapsed group shows collapsed chevron', () => {
       const objects = new Map([['mol1', makeObject()]]);
       const entryTree = [
         { type: 'group', name: 'grp', collapsed: true, children: [
@@ -256,8 +257,9 @@ describe('Sidebar tree-based rendering', () => {
       ];
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
-      const toggle = container.querySelector('.sidebar-group-toggle');
-      expect(toggle.textContent).toBe('\u25B6');
+      const toggle = container.querySelector('.sidebar-chevron');
+      expect(toggle.textContent).toBe('\u25B8');
+      expect(toggle.classList.contains('expanded')).toBe(false);
     });
 
     it('clicking group toggle fires onToggleCollapsed', () => {
@@ -269,7 +271,7 @@ describe('Sidebar tree-based rendering', () => {
       ];
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
-      const toggle = container.querySelector('.sidebar-group-toggle');
+      const toggle = container.querySelector('.sidebar-chevron');
       toggle.click();
       expect(callbacks.onToggleCollapsed).toHaveBeenCalledWith('grp');
     });
@@ -423,12 +425,13 @@ describe('Sidebar tree-based rendering', () => {
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
       const parentRow = container.querySelector('[data-kind="object"][data-name="parent"]');
-      const toggle = parentRow.querySelector('.sidebar-hierarchy-toggle');
+      const toggle = parentRow.querySelector('.sidebar-chevron');
       expect(toggle).not.toBeNull();
-      expect(toggle.textContent).toBe('[\u2212]');
+      expect(toggle.textContent).toBe('\u25b8');
+      expect(toggle.classList.contains('expanded')).toBe(true);
     });
 
-    it('collapsed hierarchy parent shows [+] icon', () => {
+    it('collapsed hierarchy parent shows collapsed chevron', () => {
       const objects = new Map([
         ['parent', makeObject()],
         ['child', makeObject()],
@@ -441,8 +444,9 @@ describe('Sidebar tree-based rendering', () => {
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
       const parentRow = container.querySelector('[data-kind="object"][data-name="parent"]');
-      const toggle = parentRow.querySelector('.sidebar-hierarchy-toggle');
-      expect(toggle.textContent).toBe('[+]');
+      const toggle = parentRow.querySelector('.sidebar-chevron');
+      expect(toggle.textContent).toBe('▸');
+      expect(toggle.classList.contains('expanded')).toBe(false);
     });
 
     it('collapsed hierarchy hides children container', () => {
@@ -474,7 +478,7 @@ describe('Sidebar tree-based rendering', () => {
       sidebar.refresh(makeTreeState({ objects, entryTree }));
 
       const parentRow = container.querySelector('[data-kind="object"][data-name="parent"]');
-      const toggle = parentRow.querySelector('.sidebar-hierarchy-toggle');
+      const toggle = parentRow.querySelector('.sidebar-chevron');
       toggle.click();
       expect(callbacks.onToggleCollapsed).toHaveBeenCalledWith('parent');
     });

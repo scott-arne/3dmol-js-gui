@@ -26,6 +26,30 @@ let currentMenuOnClick = null;
 
 let contourPopoverId = 0;
 
+const BUTTON_TOOLTIPS = {
+  A: 'Actions',
+  S: 'Show',
+  H: 'Hide',
+  L: 'Label',
+  C: 'Color',
+};
+
+const TYPE_GLYPHS = {
+  object: '◆',
+  surface: '○',
+  map: '□',
+  isosurface: '◇',
+  selection: '&',
+  group: 'G',
+};
+
+function buildTypeGlyph(type) {
+  const span = document.createElement('span');
+  span.className = `sidebar-type-glyph type-${type}`;
+  span.textContent = TYPE_GLYPHS[type] || '';
+  return span;
+}
+
 /**
  * Close any currently open popup menu and remove its outside-click listener.
  */
@@ -1058,6 +1082,7 @@ export function createSidebar(container, callbacks) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
+      btn.title = BUTTON_TOOLTIPS[label] || label;
       btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
@@ -1071,6 +1096,7 @@ export function createSidebar(container, callbacks) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
+      btn.title = BUTTON_TOOLTIPS[label] || label;
       btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
@@ -1081,6 +1107,7 @@ export function createSidebar(container, callbacks) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
+      btn.title = BUTTON_TOOLTIPS[label] || label;
       btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
@@ -1102,6 +1129,7 @@ export function createSidebar(container, callbacks) {
       const btn = document.createElement('button');
       btn.className = 'sidebar-btn';
       btn.textContent = label;
+      btn.title = BUTTON_TOOLTIPS[label] || label;
       btn.dataset.btn = label;
       btnGroup.appendChild(btn);
     }
@@ -1143,8 +1171,8 @@ export function createSidebar(container, callbacks) {
       });
 
       const toggle = document.createElement('span');
-      toggle.className = 'sidebar-hierarchy-toggle';
-      toggle.textContent = '[\u2212]'; // [−]
+      toggle.className = 'sidebar-chevron expanded';
+      toggle.textContent = '\u25B8';
       collapseZone.appendChild(toggle);
       row.appendChild(collapseZone);
 
@@ -1163,6 +1191,7 @@ export function createSidebar(container, callbacks) {
       }
       toggleZone.appendChild(status);
 
+      toggleZone.appendChild(buildTypeGlyph('object'));
       const nameEl = document.createElement('span');
       nameEl.className = 'sidebar-object-name';
       nameEl.textContent = name;
@@ -1182,6 +1211,8 @@ export function createSidebar(container, callbacks) {
         status.classList.add('active');
       }
       row.appendChild(status);
+
+      row.appendChild(buildTypeGlyph('object'));
 
       // Object name
       const nameEl = document.createElement('span');
@@ -1222,6 +1253,7 @@ export function createSidebar(container, callbacks) {
       status.classList.add('active');
     }
     row.appendChild(status);
+    row.appendChild(buildTypeGlyph('selection'));
 
     // Name (parenthesized)
     const nameEl = document.createElement('span');
@@ -1402,8 +1434,8 @@ export function createSidebar(container, callbacks) {
     });
 
     const toggle = document.createElement('span');
-    toggle.className = 'sidebar-group-toggle';
-    toggle.textContent = node.collapsed ? '\u25B6' : '\u25BC'; // ▶ or ▼
+    toggle.className = node.collapsed ? 'sidebar-chevron' : 'sidebar-chevron expanded';
+    toggle.textContent = '\u25B8';
     collapseZone.appendChild(toggle);
     header.appendChild(collapseZone);
 
@@ -1417,6 +1449,7 @@ export function createSidebar(container, callbacks) {
       }
     });
 
+    toggleZone.appendChild(buildTypeGlyph('group'));
     const nameEl = document.createElement('span');
     nameEl.className = 'sidebar-group-name';
     nameEl.textContent = node.name;
@@ -1461,9 +1494,9 @@ export function createSidebar(container, callbacks) {
     row.dataset.name = node.name;
 
     // Update the toggle icon based on collapsed state
-    const toggle = row.querySelector('.sidebar-hierarchy-toggle');
+    const toggle = row.querySelector('.sidebar-chevron');
     if (toggle) {
-      toggle.textContent = node.collapsed ? '[+]' : '[\u2212]';
+      toggle.classList.toggle('expanded', !node.collapsed);
     }
 
     frag.appendChild(row);
@@ -1641,9 +1674,9 @@ export function createSidebar(container, callbacks) {
    * Update a group header row in place (toggle icon).
    */
   function updateGroupHeader(header, node) {
-    const toggle = header.querySelector('.sidebar-group-toggle');
+    const toggle = header.querySelector('.sidebar-chevron');
     if (toggle) {
-      toggle.textContent = node.collapsed ? '\u25B6' : '\u25BC';
+      toggle.classList.toggle('expanded', !node.collapsed);
     }
   }
 
@@ -1670,9 +1703,9 @@ export function createSidebar(container, callbacks) {
     if (obj) {
       updateObjectRow(row, obj);
     }
-    const toggle = row.querySelector('.sidebar-hierarchy-toggle');
+    const toggle = row.querySelector('.sidebar-chevron');
     if (toggle) {
-      toggle.textContent = node.collapsed ? '[+]' : '[\u2212]';
+      toggle.classList.toggle('expanded', !node.collapsed);
     }
   }
 
@@ -1734,9 +1767,9 @@ export function createSidebar(container, callbacks) {
         const row = buildObjectRow(desc.node.name, obj || { visible: true }, true);
         row.dataset.kind = 'object';
         row.dataset.name = desc.node.name;
-        const toggle = row.querySelector('.sidebar-hierarchy-toggle');
+        const toggle = row.querySelector('.sidebar-chevron');
         if (toggle) {
-          toggle.textContent = desc.node.collapsed ? '[+]' : '[\u2212]';
+          toggle.classList.toggle('expanded', !desc.node.collapsed);
         }
         return row;
       }
