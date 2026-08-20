@@ -1612,6 +1612,56 @@ let dismissQuickstart = null;
 if (init) {
   const v = getViewer();
 
+  // Appearance is applied BEFORE the molecule loop below. None of it depends on
+  // loaded models, and the loop awaits arbitrary network I/O — applying these
+  // afterwards leaves an embedder's viewer showing the built-in defaults (full
+  // four-panel chrome, dark theme, black canvas) for the whole download, then
+  // snapping to the requested look once it finishes.
+
+  // Configure UI visibility
+  if (init.ui) {
+    if (init.ui.sidebar === false) {
+      app.classList.add('sidebar-hidden');
+    }
+    if (init.ui.console === false || init.ui.terminal === false) {
+      app.classList.add('terminal-hidden');
+    }
+    if (init.ui.menubar === false) {
+      app.classList.add('menubar-hidden');
+    }
+  }
+
+  // Apply theme (resolve "auto" to concrete value)
+  {
+    let resolvedTheme = init.theme;
+    if (resolvedTheme === 'auto') {
+      resolvedTheme = resolveTheme(resolvedTheme);
+    }
+
+    if (resolvedTheme === 'light' || resolvedTheme === 'dark') {
+      const state = getState();
+      state.settings.theme = resolvedTheme;
+      document.body.dataset.theme = resolvedTheme === 'light' ? 'light' : '';
+      menubar.setTheme(resolvedTheme);
+      if (!state.settings.userSetBgColor) {
+        const bgColor = resolvedTheme === 'light' ? '#ffffff' : '#000000';
+        state.settings.bgColor = bgColor;
+        v.setBackgroundColor(bgColor);
+      }
+      refreshLabels();
+      notifyStateChange();
+    }
+  }
+
+  // Set background color (overrides the theme's implicit background)
+  if (init.background) {
+    v.setBackgroundColor(init.background);
+    const state = getState();
+    state.settings.bgColor = init.background;
+    state.settings.userSetBgColor = true;
+    notifyStateChange();
+  }
+
   // Load molecules (addModel only, no per-molecule styling/zoom/render)
   // Supports: flat entries, { children: [...] } for hierarchies,
   // and { group: 'name', entries: [...] } for groups.
@@ -1806,50 +1856,6 @@ if (init) {
       }
     }
     scheduleRender();
-  }
-
-  // Configure UI visibility
-  if (init.ui) {
-    if (init.ui.sidebar === false) {
-      app.classList.add('sidebar-hidden');
-    }
-    if (init.ui.console === false || init.ui.terminal === false) {
-      app.classList.add('terminal-hidden');
-    }
-    if (init.ui.menubar === false) {
-      app.classList.add('menubar-hidden');
-    }
-  }
-
-  // Apply theme (resolve "auto" to concrete value)
-  {
-    let resolvedTheme = init.theme;
-    if (resolvedTheme === 'auto') {
-      resolvedTheme = resolveTheme(resolvedTheme);
-    }
-
-    if (resolvedTheme === 'light' || resolvedTheme === 'dark') {
-      const state = getState();
-      state.settings.theme = resolvedTheme;
-      document.body.dataset.theme = resolvedTheme === 'light' ? 'light' : '';
-      menubar.setTheme(resolvedTheme);
-      if (!state.settings.userSetBgColor) {
-        const bgColor = resolvedTheme === 'light' ? '#ffffff' : '#000000';
-        state.settings.bgColor = bgColor;
-        v.setBackgroundColor(bgColor);
-      }
-      refreshLabels();
-      notifyStateChange();
-    }
-  }
-
-  // Set background color
-  if (init.background) {
-    v.setBackgroundColor(init.background);
-    const state = getState();
-    state.settings.bgColor = init.background;
-    state.settings.userSetBgColor = true;
-    notifyStateChange();
   }
 
   // Apply view, orient, or zoom (wrapped in try-catch so failures don't prevent render)

@@ -152,6 +152,38 @@ describe('static offline smoke fixture', () => {
     expect(document.getElementById('app').classList.contains('terminal-hidden')).toBe(true);
   });
 
+  it('applies chrome and theme before the first model is loaded', async () => {
+    // Molecule loading awaits arbitrary network I/O, so appearance applied after
+    // it leaves an embedder showing the built-in defaults — full chrome, dark
+    // theme, black canvas — for the whole download. Sampling the DOM from inside
+    // addModel pins the ordering rather than the end state, which both orders
+    // satisfy.
+    const html = readFileSync(fixturePath, 'utf8');
+    const mockViewer = createMockViewer();
+    let atFirstModel = null;
+    mockViewer.addModel.mockImplementation(() => {
+      atFirstModel ??= {
+        appClass: document.getElementById('app').className,
+        theme: document.body.dataset.theme,
+        background: mockViewer.setBackgroundColor.mock.calls.at(-1)?.[0],
+      };
+      return { getID: () => 0 };
+    });
+
+    installFixtureDom(html);
+    window.__C3D_INIT__.theme = 'light';
+    installMock3Dmol(mockViewer);
+
+    await import('../src/main.js');
+
+    expect(atFirstModel).not.toBeNull();
+    expect(atFirstModel.appClass).toContain('sidebar-hidden');
+    expect(atFirstModel.appClass).toContain('terminal-hidden');
+    expect(atFirstModel.appClass).toContain('menubar-hidden');
+    expect(atFirstModel.theme).toBe('light');
+    expect(atFirstModel.background).toBe('#ffffff');
+  });
+
   it('keeps the viewer row shrinkable so console input remains visible', () => {
     const css = readFileSync(resolve(__dirname, '../src/ui/styles.css'), 'utf8');
 
