@@ -400,6 +400,34 @@ describe('structure-loader', () => {
     );
   });
 
+  it('calls the default fetch with the global object as its receiver', async () => {
+    // Regression: fetch() rejects any receiver other than Window, so storing
+    // the bare globalThis.fetch reference and invoking it as deps.fetchImpl(url)
+    // throws "Illegal invocation" for every URL-backed load. Asserting the
+    // receiver is the point — an injected mock ignores `this` and would pass
+    // against the broken default.
+    let receiver = 'never called';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(function () {
+      receiver = this;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => 'ATOM      1  CA  ALA A   1',
+      });
+    });
+
+    const result = await loadStructure({
+      kind: 'url',
+      name: 'remote',
+      format: 'pdb',
+      url: 'https://example.test/remote.pdb',
+    }, { deps: makeDeps({ fetchImpl: undefined }) });
+
+    expect(result).toMatchObject({ ok: true, name: 'remote' });
+    expect(receiver).toBe(globalThis);
+  });
+
   it('fetches binary URL data for map formats', async () => {
     const data = new ArrayBuffer(8);
     const deps = makeDeps({

@@ -30,7 +30,9 @@ function getDeps(deps = {}) {
   return {
     addObject: deps.addObject || addObject,
     createMap: deps.createMap || createMap,
-    fetchImpl: deps.fetchImpl || globalThis.fetch,
+    // Wrapped, not referenced: fetch() rejects any receiver other than the
+    // global object, and this value is invoked as deps.fetchImpl(url).
+    fetchImpl: deps.fetchImpl || ((...args) => globalThis.fetch(...args)),
     fetchPDB: deps.fetchPDB || fetchPDB,
     getViewer: getViewerImpl,
     loadModelData: deps.loadModelData || loadModelData,
