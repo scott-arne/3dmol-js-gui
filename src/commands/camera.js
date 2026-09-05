@@ -1,6 +1,6 @@
 import { parseArgs } from './registry.js';
 import { resolveSelection, getSelSpec } from './resolve-selection.js';
-import { getViewer, orientView, scheduleRender } from '../viewer.js';
+import { getViewer, fitView, orientView, scheduleRender } from '../viewer.js';
 
 /**
  * Register the camera commands (zoom, center, orient, rotate, translate, clip,
@@ -11,13 +11,12 @@ import { getViewer, orientView, scheduleRender } from '../viewer.js';
 export function registerCameraCommands(registry) {
   registry.register('zoom', {
     handler: (args, ctx) => {
-      const viewer = getViewer();
       if (args.trim()) {
         const result = resolveSelection(args.trim());
         const selSpec = getSelSpec(result);
-        viewer.zoomTo(selSpec);
+        fitView(selSpec);
       } else {
-        viewer.zoomTo();
+        fitView();
       }
       scheduleRender();
       ctx.terminal.print('Zoomed to selection', 'result');
@@ -123,8 +122,7 @@ export function registerCameraCommands(registry) {
 
   registry.register('reset', {
     handler: (args, ctx) => {
-      const viewer = getViewer();
-      viewer.zoomTo();
+      fitView();
       scheduleRender();
       ctx.terminal.print('View reset', 'result');
     },

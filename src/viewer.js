@@ -138,6 +138,45 @@ export function renderNow() {
 }
 
 /**
+ * How much of the frame's tighter axis a fitted selection may fill.
+ *
+ * 3Dmol's own fit leaves none: it places the camera so the selection's
+ * bounding sphere exactly meets the frame edge, which puts the outermost
+ * atom's centre on that edge and its radius past it. The remainder here is
+ * also what keeps a little of the surrounding structure in view.
+ */
+const FIT_MARGIN = 0.8;
+
+/**
+ * Frame a selection with the whole of it actually inside the viewport.
+ *
+ * This is the GUI's fit. Every camera action meaning "frame this" goes
+ * through it rather than calling zoomTo directly, because zoomTo alone does
+ * not manage it: zoomTo fits the selection's bounding sphere to the camera's
+ * VERTICAL field of view with no margin, and the camera's aspect is
+ * width/height — so on a viewport taller than it is wide the horizontal
+ * half-extent is only `radius * aspect`, and a selection wider than it is
+ * tall gets clipped at the sides. Backing the camera off by
+ * `1 / (FIT_MARGIN * min(1, aspect))` pays for both at once, since zoom(f)
+ * divides the distance zoomTo just set by f.
+ *
+ * The aspect is read back from the viewer rather than measured from the
+ * container because ASPECT is the very value 3Dmol assigns to camera.aspect,
+ * so the two can never disagree. A viewer not reporting a usable one falls
+ * back to the square case — the vertical fit plus the margin.
+ *
+ * Callers are responsible for rendering afterwards; this only moves the
+ * camera, and it does so immediately (no animation).
+ *
+ * @param {object} [selSpec] - A 3Dmol atom selection spec. Defaults to all atoms.
+ */
+export function fitView(selSpec) {
+  viewer.zoomTo(selSpec || {});
+  const aspect = typeof viewer.ASPECT === 'number' && viewer.ASPECT > 0 ? viewer.ASPECT : 1;
+  viewer.zoom(FIT_MARGIN * Math.min(1, aspect));
+}
+
+/**
  * Initialize the 3Dmol.js viewer inside the given container element.
  *
  * Creates a child div with id "viewer-canvas" that fills the container,
@@ -159,6 +198,11 @@ export function initViewer(container) {
     backgroundColor: '#000000',
     antialias: true,
   });
+
+  // Hand embedders the GUI's fit on the instance itself. Anything holding this
+  // viewer — a page hosting the GUI in an iframe, say — otherwise has only
+  // 3Dmol's flush zoomTo and would have to rediscover the correction.
+  viewer.fitView = fitView;
 
   // Intercept wheel events before 3Dmol.js to dampen zoom speed and clamp
   // the zoom level. Using capture phase on the parent element ensures this
@@ -246,7 +290,7 @@ export async function fetchPDB(pdbId) {
   const data = await response.text();
   const model = viewer.addModel(data, 'pdb', { keepH: true, assignBonds: true });
   viewer.setStyle({ model: model }, repStyle('line'));
-  viewer.zoomTo();
+  fitView();
   registerClickable();
   scheduleRender();
 
@@ -280,7 +324,7 @@ export function loadModelData(data, format, options = {}) {
     viewer.setStyle({ model: model }, repStyle('line'));
   }
   if (zoom) {
-    viewer.zoomTo();
+    fitView();
   }
   registerClickable();
   if (render) {
@@ -428,7 +472,7 @@ function matToQuat(R) {
 export function orientView(selSpec) {
   const atoms = viewer.selectedAtoms(selSpec || {});
   if (atoms.length < 2) {
-    viewer.zoomTo(selSpec || {});
+    fitView(selSpec);
     scheduleRender();
     return;
   }
@@ -472,8 +516,8 @@ export function orientView(selSpec) {
   // Rotation matrix: rows are principal axes → maps PC directions to screen axes
   const q = matToQuat([pc1, pc2, pc3]);
 
-  // Zoom to set correct center and zoom level, then override rotation
-  viewer.zoomTo(selSpec || {});
+  // Fit to set correct center and zoom level, then override rotation
+  fitView(selSpec);
   const view = viewer.getView();
   view[4] = q[0];
   view[5] = q[1];

@@ -6,7 +6,7 @@
  */
 
 import './ui/styles.css';
-import { initViewer, getViewer, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, orientView, scheduleRender } from './viewer.js';
+import { initViewer, getViewer, setupClickHandler, updateClickableModels, repStyle, repKey, refreshLabels, fitView, orientView, scheduleRender } from './viewer.js';
 import { initHighlight, renderHighlight, clearHighlight } from './highlight.js';
 import { loadStructure, loadStructureFile } from './loading/structure-loader.js';
 import {
@@ -274,7 +274,7 @@ function focusBounds(bounds, { zoom = false } = {}) {
   if (view) {
     viewer.setView(view);
   } else if (zoom) {
-    viewer.zoomTo();
+    fitView();
   } else {
     viewer.center();
   }
@@ -323,7 +323,7 @@ function handleSidebarEntryAction(name, action, kind = 'object') {
       terminal.print(`Oriented ${target.label}`, 'result');
       break;
     case 'zoom':
-      viewer.zoomTo(target.selection);
+      fitView(target.selection);
       scheduleRender();
       terminal.print(`Zoomed to ${target.label}`, 'result');
       break;
@@ -516,7 +516,7 @@ const sidebar = createSidebar(document.getElementById('sidebar-container'), {
         terminal.print(`Centered on surface "${name}"`, 'result');
         break;
       case 'zoom':
-        getViewer().zoomTo(surface.selection);
+        fitView(surface.selection);
         scheduleRender();
         terminal.print(`Zoomed to surface "${name}"`, 'result');
         break;
@@ -1259,7 +1259,7 @@ const menubar = createMenuBar(document.getElementById('menubar-container'), {
         terminal.print('Centered on selection', 'result');
         break;
       case 'zoom':
-        v.zoomTo(selSpec);
+        fitView(selSpec);
         scheduleRender();
         terminal.print('Zoomed to selection', 'result');
         break;
@@ -1514,7 +1514,7 @@ createContextMenu(document.getElementById('viewer-container'), {
         terminal.print('Centered on selection', 'result');
         break;
       case 'zoom':
-        v.zoomTo(selSpec);
+        fitView(selSpec);
         scheduleRender();
         terminal.print('Zoomed to selection', 'result');
         break;
@@ -1876,16 +1876,16 @@ if (init) {
       if (typeof init.zoomTo === 'string') {
         const result = resolveSelection(init.zoomTo);
         const selSpec = getSelSpec(result);
-        v.zoomTo(selSpec);
+        fitView(selSpec);
       } else {
-        v.zoomTo(init.zoomTo);
+        fitView(init.zoomTo);
       }
     } else {
-      v.zoomTo();
+      fitView();
     }
   } catch (e) {
     terminal.print(`Zoom failed: ${e.message}`, 'error');
-    v.zoomTo();
+    fitView();
   }
 
   scheduleRender();

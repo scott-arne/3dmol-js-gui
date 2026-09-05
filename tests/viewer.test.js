@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mock 3Dmol and fetch globally before importing the module under test
@@ -43,6 +43,7 @@ import {
   getViewer,
   getViewerElement,
   fetchPDB,
+  fitView,
   loadModelData,
   removeModel,
   getAllAtoms,
@@ -155,6 +156,67 @@ describe('viewer.js', () => {
       const el = getViewerElement();
       expect(el).not.toBeNull();
       expect(el.id).toBe('viewer-canvas');
+    });
+
+    it('exposes fitView on the viewer instance for embedders', () => {
+      const v = initViewer(makeContainer());
+      expect(typeof v.fitView).toBe('function');
+
+      v.fitView({ resn: 'LIG' });
+      expect(mockViewer.zoomTo).toHaveBeenCalledWith({ resn: 'LIG' });
+      expect(mockViewer.zoom).toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // fitView
+  // -----------------------------------------------------------------------
+  describe('fitView', () => {
+    beforeEach(() => {
+      initViewer(makeContainer());
+      mockViewer.zoomTo.mockClear();
+      mockViewer.zoom.mockClear();
+    });
+
+    afterEach(() => {
+      delete mockViewer.ASPECT;
+    });
+
+    it('aims at the selection, then backs the camera off by the margin', () => {
+      mockViewer.ASPECT = 1;
+      fitView({ chain: 'A' });
+
+      expect(mockViewer.zoomTo).toHaveBeenCalledWith({ chain: 'A' });
+      expect(mockViewer.zoom).toHaveBeenCalledWith(0.8);
+    });
+
+    it('fits every atom when given no selection', () => {
+      mockViewer.ASPECT = 1;
+      fitView();
+
+      expect(mockViewer.zoomTo).toHaveBeenCalledWith({});
+    });
+
+    it('backs off further on a viewport taller than it is wide', () => {
+      // zoomTo fits the VERTICAL field of view only, so a portrait viewport
+      // has just `radius * aspect` of horizontal room to spend.
+      mockViewer.ASPECT = 0.5;
+      fitView({ chain: 'A' });
+
+      expect(mockViewer.zoom.mock.calls[0][0]).toBeCloseTo(0.4);
+    });
+
+    it('does not tighten the fit on a viewport wider than it is tall', () => {
+      mockViewer.ASPECT = 2;
+      fitView({ chain: 'A' });
+
+      expect(mockViewer.zoom).toHaveBeenCalledWith(0.8);
+    });
+
+    it('falls back to the square case when the viewer reports no usable aspect', () => {
+      fitView({ chain: 'A' });
+
+      expect(mockViewer.zoom).toHaveBeenCalledWith(0.8);
     });
   });
 

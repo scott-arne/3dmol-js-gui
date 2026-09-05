@@ -57,6 +57,10 @@ vi.mock('../src/viewer.js', () => ({
     return { [rep]: {} };
   }),
   repKey: vi.fn((rep) => (rep === 'line' ? 'stick' : rep)),
+  // Mirrors the real fitView's aim so the camera-command assertions below
+  // still read back the selection that was framed. The margin fitView applies
+  // on top is covered in viewer.test.js, not here.
+  fitView: vi.fn((selSpec) => mockViewer.zoomTo(selSpec || {})),
   orientView: vi.fn(),
   addTrackedLabel: vi.fn(),
   clearAllLabels: vi.fn(),
@@ -291,7 +295,7 @@ describe('camera.js', () => {
   describe('zoom', () => {
     it('zooms to all atoms when no arguments', () => {
       registry.execute('zoom', ctx);
-      expect(mockViewer.zoomTo).toHaveBeenCalledWith();
+      expect(mockViewer.zoomTo).toHaveBeenCalledWith({});
       expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('Zoomed to selection');
     });
@@ -445,7 +449,7 @@ describe('camera.js', () => {
   describe('reset', () => {
     it('resets the view', () => {
       registry.execute('reset', ctx);
-      expect(mockViewer.zoomTo).toHaveBeenCalledWith();
+      expect(mockViewer.zoomTo).toHaveBeenCalledWith({});
       expect(scheduleRender).toHaveBeenCalled();
       expect(terminal.lines[0].msg).toBe('View reset');
     });

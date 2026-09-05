@@ -1,4 +1,4 @@
-import { fetchPDB, getViewer, loadModelData, scheduleRender } from '../viewer.js';
+import { fetchPDB, fitView, getViewer, loadModelData, scheduleRender } from '../viewer.js';
 import { addObject, removeObject } from '../state.js';
 import { createMap } from '../maps.js';
 
@@ -39,7 +39,7 @@ function getDeps(deps = {}) {
     removeModel: deps.removeModel || ((model) => getViewerImpl().removeModel(model)),
     removeObject: deps.removeObject || removeObject,
     scheduleRender: deps.scheduleRender || scheduleRender,
-    zoomTo: deps.zoomTo || (() => getViewerImpl().zoomTo()),
+    zoomTo: deps.zoomTo || (() => fitView()),
   };
 }
 
