@@ -830,4 +830,39 @@ describe('static offline smoke fixture', () => {
       );
     });
   });
+
+  describe('initialization color operation', () => {
+    it('recolours each atom only in the representations it already shows', async () => {
+      const html = readFileSync(fixturePath, 'utf8');
+      const mockViewer = createMockViewer();
+      const model = { setStyle: vi.fn() };
+      mockViewer.getModel = vi.fn(() => model);
+      // What the simple preset leaves behind: cartoon-only polymer atoms and a
+      // stick-only ligand carbon. The object's representation set is the union
+      // of both, which is exactly what a recolour must NOT paint onto every atom.
+      mockViewer._addAtoms([
+        { serial: 1, index: 0, model: 0, elem: 'C', hetflag: false, style: { cartoon: { color: '#A3C4F3' } } },
+        { serial: 2, index: 1, model: 0, elem: 'N', hetflag: false, style: { cartoon: { colorscheme: 'Jmol' } } },
+        { serial: 3, index: 2, model: 0, elem: 'C', hetflag: true, style: { stick: { colorscheme: 'Jmol' } } },
+      ]);
+
+      installFixtureDom(html);
+      window.__C3D_INIT__.operations = [
+        { op: 'preset', name: 'simple' },
+        { op: 'color', color: '#AAAAAA', selection: 'static-water', hets: false },
+      ];
+      installMock3Dmol(mockViewer);
+
+      await import('../src/main.js');
+
+      const calls = model.setStyle.mock.calls;
+      // Carbons take the colour in their own representation and no other: the
+      // cartoon carbon gains no stick and the ligand carbon gains no cartoon.
+      expect(calls).toContainEqual([{ index: [0] }, { cartoon: { color: '#AAAAAA' } }]);
+      expect(calls).toContainEqual([{ index: [2] }, { stick: { color: '#AAAAAA' } }]);
+      // Other elements keep element colouring, again only where they are drawn.
+      expect(calls).toContainEqual([{ index: [1] }, { cartoon: { colorscheme: 'Jmol' } }]);
+      for (const [, style] of calls) expect(Object.keys(style)).toHaveLength(1);
+    });
+  });
 });

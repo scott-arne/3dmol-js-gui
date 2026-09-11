@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-09-11
+
+### Fixed
+
+- The `color` initialization operation recolours each atom only in the representations it already shows. It used to paint the union of every loaded object's representations onto every matched atom, so a cartoon-only polymer gained the sticks its ligands had and an object coloured after a `simple` preset rendered as thick sticks.
+
 ## [0.3.5] - 2026-09-10
 
 ### Added

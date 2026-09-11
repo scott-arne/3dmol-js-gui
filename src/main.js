@@ -1819,55 +1819,37 @@ if (init) {
         const sel = resolveInitSelection(op.selection);
         applyInitRemoveStyle(sel, op.style);
       } else if (op.op === 'color') {
-        const st = getState();
-        const reps = new Set();
-        for (const [, obj] of st.objects) {
-          for (const rep of obj.representations) reps.add(rep);
-        }
-        if (reps.size === 0) reps.add('line');
-
         const sel = resolveInitSelection(op.selection);
 
-        // Only restyle atoms that currently have a visible style.
-        // This prevents bringing back atoms hidden by hideNonpolarH.
-        const matchedAtoms = v.selectedAtoms(sel);
-        const visibleByModel = new Map();
-        for (const a of matchedAtoms) {
-          if (!a.style || Object.keys(a.style).length === 0) continue;
+        // Recolour each atom in the representations it already shows, and no
+        // others. setStyle replaces an atom's whole style, so painting the
+        // union of every object's representations onto every matched atom
+        // would give a cartoon-only polymer the sticks its ligands have. Atoms
+        // with no style stay untouched, so those hidden by hideNonpolarH stay
+        // hidden. `hets: false` means carbon colouring: carbons take the
+        // colour, every other element keeps element colours.
+        const carbonsOnly = op.hets === false;
+        const groups = new Map();
+        for (const a of v.selectedAtoms(sel)) {
+          if (!a.style) continue;
+          const keys = Object.keys(a.style).sort();
+          if (keys.length === 0) continue;
           const mid = a.model !== undefined ? a.model : 0;
-          if (!visibleByModel.has(mid)) visibleByModel.set(mid, []);
-          visibleByModel.get(mid).push(a.index);
-        }
-
-        for (const [mid, indices] of visibleByModel) {
-          const model = v.getModel(mid);
-          if (!model) continue;
-
-          if (op.hets === false) {
-            // Carbon atoms: apply the requested color
-            const carbonIndices = [];
-            const hetIndices = [];
-            for (const a of matchedAtoms) {
-              if (a.model !== mid) continue;
-              if (!a.style || Object.keys(a.style).length === 0) continue;
-              if (a.elem === 'C') carbonIndices.push(a.index);
-              else hetIndices.push(a.index);
-            }
-            if (carbonIndices.length > 0) {
-              const carbonStyle = {};
-              for (const rep of reps) carbonStyle[repKey(rep)] = { color: op.color };
-              model.setStyle({ index: carbonIndices }, carbonStyle);
-            }
-            if (hetIndices.length > 0) {
-              const hetStyle = {};
-              for (const rep of reps) hetStyle[repKey(rep)] = { colorscheme: 'Jmol' };
-              model.setStyle({ index: hetIndices }, hetStyle);
-            }
-          } else {
-            const styleObj = {};
-            for (const rep of reps) styleObj[repKey(rep)] = { color: op.color };
-            model.setStyle({ index: indices }, styleObj);
+          const colored = !carbonsOnly || a.elem === 'C';
+          const groupKey = `${mid} ${colored ? 'c' : 'e'} ${keys.join('|')}`;
+          let group = groups.get(groupKey);
+          if (!group) {
+            const style = {};
+            for (const key of keys) style[key] = colored ? { color: op.color } : { colorscheme: 'Jmol' };
+            group = { mid, style, indices: [] };
+            groups.set(groupKey, group);
           }
+          group.indices.push(a.index);
+        }
+        for (const group of groups.values()) {
+          const model = v.getModel(group.mid);
+          if (!model) continue;
+          model.setStyle({ index: group.indices }, group.style);
         }
       } else {
         try {
