@@ -336,6 +336,25 @@ export function toggleObjectVisibility(name) {
   return obj;
 }
 
+/**
+ * Set the visibility flag on the named object.
+ *
+ * The absolute form of toggleObjectVisibility, for callers that know the state
+ * they want rather than the change they want.
+ *
+ * @param {string} name - The name of the object.
+ * @param {boolean} visible - The flag to set; coerced to a boolean.
+ * @returns {object|undefined} The object entry, or undefined if not found.
+ */
+export function setObjectVisibility(name, visible) {
+  const obj = state.objects.get(name);
+  if (obj) {
+    obj.visible = Boolean(visible);
+    _notify();
+  }
+  return obj;
+}
+
 // ---------------------------------------------------------------------------
 // Selection mode
 // ---------------------------------------------------------------------------

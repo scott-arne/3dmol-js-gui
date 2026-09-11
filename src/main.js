@@ -23,7 +23,7 @@ import { SpatialGrid } from './spatial-grid.js';
 import {
   getState,
   onStateChange,
-  toggleObjectVisibility,
+  setObjectVisibility,
   getNextSurfaceName,
   getChildSurfaceNames,
   updateSurfaceEntry,
@@ -158,6 +158,35 @@ const mapService = {
   setIsosurfaceColor,
   setIsosurfaceLevel,
 };
+
+/**
+ * Show or hide one loaded object by name, through the same path the sidebar
+ * toggle takes, so state, surfaces, clickability and the sidebar agree.
+ * setObjectVisibility notifies the state listeners, which refresh the sidebar
+ * and the clickable model set on their own.
+ *
+ * @param {string} name - The object's sidebar name.
+ * @param {boolean} visible - Whether it should be shown.
+ * @returns {boolean} false when no object has that name.
+ */
+function applyObjectVisibility(name, visible) {
+  const obj = setObjectVisibility(name, visible);
+  if (!obj) return false;
+  if (obj.visible) {
+    obj.model.show();
+  } else {
+    obj.model.hide();
+  }
+  surfaceService.setSurfaceParentVisibility(name, obj.visible);
+  scheduleRender();
+  return true;
+}
+
+// Hand embedders the two calls a host needs to drive visibility from outside
+// the chrome, on the instance itself like fitView: a page hosting the GUI in an
+// iframe has no other way to reach the object registry.
+viewer.setObjectVisible = (name, visible) => applyObjectVisibility(name, visible);
+viewer.getObjectModel = (name) => getState().objects.get(name)?.model ?? null;
 
 function isSurfaceEffectivelyVisible(surface) {
   return surface.visible !== false && surface.parentVisible !== false;
@@ -459,15 +488,8 @@ function handleSidebarEntryColor(name, rawScheme, kind = 'object') {
 // --- Create the sidebar with callbacks ---
 const sidebar = createSidebar(document.getElementById('sidebar-container'), {
   onToggleVisibility(name) {
-    const obj = toggleObjectVisibility(name);
-    if (obj) {
-      if (obj.visible) {
-        obj.model.show();
-      } else {
-        obj.model.hide();
-      }
-      surfaceService.setSurfaceParentVisibility(name, obj.visible);
-      scheduleRender();
+    const obj = getState().objects.get(name);
+    if (obj && applyObjectVisibility(name, !obj.visible)) {
       sidebar.refresh(getState());
     }
   },

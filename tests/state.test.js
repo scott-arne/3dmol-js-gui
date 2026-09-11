@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   getState, addObject, removeObject, addSelection, removeSelection,
   renameObject, renameSelection, toggleObjectVisibility,
+  setObjectVisibility,
   toggleSelectionVisibility, pruneSelections,
   setSelectionMode, onStateChange, notifyStateChange,
   addSurfaceEntry, removeSurfaceEntry, renameSurfaceEntry,
@@ -121,6 +122,52 @@ describe('toggleObjectVisibility', () => {
 
   it('returns undefined for non-existent object', () => {
     expect(toggleObjectVisibility('nope')).toBeUndefined();
+  });
+});
+
+describe('setObjectVisibility', () => {
+  beforeEach(resetState);
+
+  it('sets the flag to exactly what it was given, idempotently', () => {
+    addObject('A', {}, 0);
+    setObjectVisibility('A', false);
+    expect(getState().objects.get('A').visible).toBe(false);
+    setObjectVisibility('A', false);
+    expect(getState().objects.get('A').visible).toBe(false);
+    setObjectVisibility('A', true);
+    expect(getState().objects.get('A').visible).toBe(true);
+  });
+
+  it('coerces the flag to a boolean', () => {
+    addObject('A', {}, 0);
+    setObjectVisibility('A', 0);
+    expect(getState().objects.get('A').visible).toBe(false);
+    setObjectVisibility('A', 'yes');
+    expect(getState().objects.get('A').visible).toBe(true);
+  });
+
+  // Notifications are coalesced onto one microtask (_notify's notifyQueued), so
+  // each assertion drains the queue first — the pattern the existing
+  // 'onStateChange / notifyStateChange' tests in this file use.
+  it('returns the entry and notifies listeners, coalesced like every other mutation', async () => {
+    addObject('A', {}, 0);
+    // addObject queued its own notification; let it drain before listening.
+    await new Promise((r) => queueMicrotask(r));
+    const listener = vi.fn();
+    onStateChange(listener);
+    const entry = setObjectVisibility('A', false);
+    expect(entry).toBe(getState().objects.get('A'));
+    await new Promise((r) => queueMicrotask(r));
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(getState());
+  });
+
+  it('returns undefined and notifies nobody for an unknown object', async () => {
+    const listener = vi.fn();
+    onStateChange(listener);
+    expect(setObjectVisibility('nope', false)).toBeUndefined();
+    await new Promise((r) => queueMicrotask(r));
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

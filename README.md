@@ -69,6 +69,17 @@ Configured sources are available through `load_remote <source>, <path> [, name] 
 and the File > Load dialog. Direct URL loading uses `load_url <name>, <format>, <url>`
 and appears in the dialog only when `allowArbitraryUrls` is true.
 
+### Embedder API
+
+A page that hosts the GUI in an iframe can drive it through three calls on the
+3Dmol viewer instance (attached by `initViewer` and `main.js`):
+
+- `viewer.fitView(selection)` frames a selection inside the viewport with the GUI's own margin, where 3Dmol's `zoomTo` fits it flush to the edge.
+- `viewer.setObjectVisible(name, visible)` shows or hides one loaded object by its sidebar name, through the same path the sidebar toggle takes, so state, surfaces, clickability, and the sidebar agree. Returns `false` when no object has that name.
+- `viewer.getObjectModel(name)` returns the 3Dmol `GLModel` behind a loaded object, or `null`. Pass it as the `model` key of a selection to confine a style to that object.
+
+Object names are the sidebar names: a requested name is trimmed before it is registered, and a name that collides with an existing object gets a `_2`, `_3`, ... suffix. A host that intends to look an object up should send trimmed, unique names.
+
 ## Commands
 
 | Command | Usage | Description |

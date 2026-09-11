@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-09-10
+
+### Added
+
+- Embedder API on the viewer instance: `setObjectVisible(name, visible)` shows or hides a loaded object through the sidebar's own path, and `getObjectModel(name)` returns its `GLModel` for model-scoped selections.
+- `setObjectVisibility(name, visible)` in the state store, the absolute form of `toggleObjectVisibility`.
+
 ## [0.2.0] - 2026-03-17
 
 ### Added
