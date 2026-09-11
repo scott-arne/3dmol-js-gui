@@ -699,4 +699,135 @@ describe('static offline smoke fixture', () => {
     expect(mockViewer.selectedAtoms).toHaveBeenCalledWith({ resn: 'LIG' });
     expect(mockViewer.zoomTo).toHaveBeenCalledWith({ resn: 'LIG' });
   });
+
+  describe('embedder API', () => {
+    it('attaches setObjectVisible and getObjectModel to the viewer instance', async () => {
+      const { mockViewer } = await bootFixtureApp();
+
+      expect(typeof mockViewer.setObjectVisible).toBe('function');
+      expect(typeof mockViewer.getObjectModel).toBe('function');
+    });
+
+    it('getObjectModel returns the model instance or null', async () => {
+      const { mockViewer, getState } = await bootFixtureApp();
+
+      const model = mockViewer.getObjectModel('static-water');
+      expect(model).toBe(getState().objects.get('static-water').model);
+      expect(model).toHaveProperty('getID');
+
+      const notFound = mockViewer.getObjectModel('no-such-object');
+      expect(notFound).toBeNull();
+    });
+
+    it('setObjectVisible hides and shows the model, updates state, schedules render, and updates sidebar', async () => {
+      const { mockViewer, getState } = await bootFixtureApp();
+      await flushStateUpdates();
+
+      const model = getState().objects.get('static-water').model;
+      model.show = vi.fn();
+      model.hide = vi.fn();
+      mockViewer.render.mockClear();
+
+      // Hide
+      const hideResult = mockViewer.setObjectVisible('static-water', false);
+      expect(hideResult).toBe(true);
+      expect(model.hide).toHaveBeenCalledTimes(1);
+      expect(getState().objects.get('static-water').visible).toBe(false);
+      await flushStateUpdates();
+      expect(mockViewer.render).toHaveBeenCalled();
+
+      const sidebarRow = document.querySelector('[data-kind="object"][data-name="static-water"]');
+      expect(sidebarRow.classList.contains('dimmed')).toBe(true);
+
+      // Show
+      model.hide.mockClear();
+      mockViewer.render.mockClear();
+      const showResult = mockViewer.setObjectVisible('static-water', true);
+      expect(showResult).toBe(true);
+      expect(model.show).toHaveBeenCalledTimes(1);
+      expect(getState().objects.get('static-water').visible).toBe(true);
+      await flushStateUpdates();
+      expect(mockViewer.render).toHaveBeenCalled();
+
+      expect(sidebarRow.classList.contains('dimmed')).toBe(false);
+    });
+
+    it('setObjectVisible returns false for non-existent objects and does not touch state', async () => {
+      const { mockViewer, getState } = await bootFixtureApp();
+
+      const model = getState().objects.get('static-water').model;
+      model.show = vi.fn();
+      model.hide = vi.fn();
+
+      const result = mockViewer.setObjectVisible('no-such-object', true);
+      expect(result).toBe(false);
+      expect(model.show).not.toHaveBeenCalled();
+      expect(model.hide).not.toHaveBeenCalled();
+    });
+
+    it('setObjectVisible propagates visibility to child surfaces', async () => {
+      const { mockViewer, addSurfaceEntry, getState } = await bootFixtureApp();
+
+      const model = getState().objects.get('static-water').model;
+      model.show = vi.fn();
+      model.hide = vi.fn();
+
+      addSurfaceEntry({
+        name: 'child_surface',
+        selection: {},
+        type: 'molecular',
+        surfaceType: 'MS',
+        parentName: 'static-water',
+        handle: 201,
+        pending: false,
+        visible: true,
+        parentVisible: true,
+      });
+      await flushStateUpdates();
+      mockViewer.setSurfaceMaterialStyle.mockClear();
+
+      mockViewer.setObjectVisible('static-water', false);
+      await flushStateUpdates();
+
+      expect(getState().surfaces.get('child_surface').parentVisible).toBe(false);
+      expect(mockViewer.setSurfaceMaterialStyle).toHaveBeenCalledWith(
+        201,
+        { color: '#FFFFFF', opacity: 0, wireframe: false }
+      );
+    });
+
+    it('setObjectVisible updates clickable models', async () => {
+      const { mockViewer, getState } = await bootFixtureApp();
+      await flushStateUpdates();
+      mockViewer.setClickable.mockClear();
+
+      const model = getState().objects.get('static-water').model;
+      model.show = vi.fn();
+      model.hide = vi.fn();
+
+      // Hide - model should be removed from clickable set
+      mockViewer.setObjectVisible('static-water', false);
+      await flushStateUpdates();
+
+      expect(mockViewer.setClickable).toHaveBeenCalledWith({}, false, expect.any(Function));
+      expect(mockViewer.setClickable).toHaveBeenCalledWith(
+        { model: -1 },
+        true,
+        expect.any(Function)
+      );
+
+      mockViewer.setClickable.mockClear();
+
+      // Show - model should be added back to clickable set
+      mockViewer.setObjectVisible('static-water', true);
+      await flushStateUpdates();
+
+      expect(mockViewer.setClickable).toHaveBeenCalledWith({}, false, expect.any(Function));
+      expect(mockViewer.setClickable).toHaveBeenCalledWith(
+        { model: [model] },
+        true,
+        expect.any(Function)
+      );
+    });
+  });
 });
